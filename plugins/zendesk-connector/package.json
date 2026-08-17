@@ -1,0 +1,53 @@
+{
+  "name": "@abd-enterprises/zendesk-mcp",
+  "version": "0.3.0",
+  "description": "OAuth-only MCP server for Zendesk Support ticket workflows.",
+  "license": "MIT",
+  "author": "ABD Enterprises",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ABD-Enterprises/zendesk-mcp.git"
+  },
+  "homepage": "https://github.com/ABD-Enterprises/zendesk-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/ABD-Enterprises/zendesk-mcp/issues"
+  },
+  "keywords": [
+    "zendesk",
+    "mcp",
+    "model-context-protocol",
+    "oauth",
+    "codex"
+  ],
+  "type": "module",
+  "bin": {
+    "zendesk-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "build:test": "npm run clean && tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build:test && node --test ./dist/*.test.js",
+    "check": "npm run typecheck && npm test",
+    "start": "node ./dist/index.js",
+    "oauth:setup": "npm run build && node ./dist/oauth-setup.js",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "zendesk": {
+      "command": "node",
+      "args": [
+        "./dist/index.js"
+      ],
+      "env": {
+        "ZENDESK_SUBDOMAIN": "${ZENDESK_SUBDOMAIN}",
+        "ZENDESK_BASE_URL": "${ZENDESK_BASE_URL}",
+        "ZENDESK_OAUTH_MODE": "${ZENDESK_OAUTH_MODE}",
+        "ZENDESK_OAUTH_CLIENT_ID": "${ZENDESK_OAUTH_CLIENT_ID}",
+        "ZENDESK_OAUTH_CLIENT_SECRET": "${ZENDESK_OAUTH_CLIENT_SECRET}",
+        "ZENDESK_OAUTH_ACCESS_TOKEN": "${ZENDESK_OAUTH_ACCESS_TOKEN}",
+        "ZENDESK_OAUTH_TOKEN_FILE": "${ZENDESK_OAUTH_TOKEN_FILE}",
+        "ZENDESK_OAUTH_SCOPE": "${ZENDESK_OAUTH_SCOPE}",
+        "ZENDESK_MAX_RETRIES": "${ZENDESK_MAX_RETRIES}",
+        "ZENDESK_MAX_RETRY_DELAY_MS": "${ZENDESK_MAX_RETRY_DELAY_MS}"
+      }
+    }
+  }
+}

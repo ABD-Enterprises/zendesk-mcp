@@ -1,0 +1,26 @@
+{
+  "name": "zendesk-connector",
+  "version": "0.3.0+codex.20260817184053",
+  "description": "Use Zendesk Support tickets from Codex through a local MCP server.",
+  "author": {
+    "name": "ABD Enterprises"
+  },
+  "interface": {
+    "displayName": "Zendesk Connector",
+    "shortDescription": "Search, inspect, and update Zendesk tickets.",
+    "longDescription": "Zendesk Connector provides an OAuth-authenticated local MCP server for Zendesk Support ticket workflows. Use Codex to search tickets, read details, add comments, create tickets, and update common ticket fields.",
+    "developerName": "ABD Enterprises",
+    "category": "Productivity",
+    "capabilities": [
+      "Search",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Find recent urgent Zendesk tickets.",
+      "Summarize Zendesk ticket 12345.",
+      "Add an internal note to a Zendesk ticket."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version:
+          - 20
+          - 22
+          - 24
+    defaults:
+      run:
+        working-directory: plugins/zendesk-connector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: plugins/zendesk-connector/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm pack --dry-run
+
+  validate-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate plugin structure
+        run: |
+          test -f plugins/zendesk-connector/.codex-plugin/plugin.json
+          test -f plugins/zendesk-connector/.mcp.json
+          node -e 'JSON.parse(require("fs").readFileSync("plugins/zendesk-connector/.codex-plugin/plugin.json"))'
+          node -e 'JSON.parse(require("fs").readFileSync("plugins/zendesk-connector/.mcp.json"))'
