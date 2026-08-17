@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -19,10 +19,15 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-test("getConfig ignores deprecated API-token credentials", () => {
+test("getConfig ignores deprecated API-token credentials", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
+  const clientFile = join(directory, "client.json");
+  await writeFile(clientFile, JSON.stringify({ subdomain: "example" }), {
+    mode: 0o600,
+  });
   process.env = {
     ...originalEnv,
-    ZENDESK_SUBDOMAIN: "example",
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
     ZENDESK_EMAIL: "agent@example.com",
     ZENDESK_API_TOKEN: "deprecated",
   };
@@ -32,6 +37,52 @@ test("getConfig ignores deprecated API-token credentials", () => {
   delete process.env.ZENDESK_OAUTH_CLIENT_SECRET;
 
   assert.throws(() => getConfig(), ZendeskAuthError);
+});
+
+test("getConfig reads an owner-only OAuth client file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
+  const clientFile = join(directory, "client.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      subdomain: "tenant",
+      mode: "authorization_code",
+      clientId: "saved-client",
+      clientSecret: "saved-secret",
+      scope: "tickets:read",
+    }),
+    { mode: 0o600 },
+  );
+  process.env = {
+    ...originalEnv,
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+  };
+  delete process.env.ZENDESK_SUBDOMAIN;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_OAUTH_MODE;
+  delete process.env.ZENDESK_OAUTH_CLIENT_ID;
+  delete process.env.ZENDESK_OAUTH_CLIENT_SECRET;
+  delete process.env.ZENDESK_OAUTH_SCOPE;
+
+  const loaded = getConfig();
+  assert.equal(loaded.baseUrl, "https://tenant.zendesk.com");
+  assert.equal(loaded.clientId, "saved-client");
+  assert.equal(loaded.clientSecret, "saved-secret");
+  assert.equal(loaded.scope, "tickets:read");
+});
+
+test("getConfig rejects an OAuth client file readable by other users", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
+  const clientFile = join(directory, "client.json");
+  await writeFile(clientFile, JSON.stringify({ subdomain: "tenant" }), {
+    mode: 0o644,
+  });
+  process.env = {
+    ...originalEnv,
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+  };
+
+  assert.throws(() => getConfig(), /chmod 600/);
 });
 
 test("access-token mode returns the configured bearer token", async () => {

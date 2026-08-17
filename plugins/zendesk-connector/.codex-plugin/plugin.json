@@ -1,6 +1,6 @@
 {
   "name": "zendesk-connector",
-  "version": "0.3.0+codex.20260817184053",
+  "version": "0.3.0+codex.20260817201249",
   "description": "Use Zendesk Support tickets from Codex through a local MCP server.",
   "author": {
     "name": "ABD Enterprises"

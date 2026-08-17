@@ -83,6 +83,22 @@ export ZENDESK_OAUTH_CLIENT_ID="your-client-identifier"
 export ZENDESK_OAUTH_CLIENT_SECRET="your-client-secret"
 ```
 
+For desktop clients that do not inherit shell environment variables, store the
+same settings in `~/.config/codex-zendesk/client.json`:
+
+```json
+{
+  "subdomain": "your-subdomain",
+  "mode": "authorization_code",
+  "clientId": "your-client-identifier",
+  "clientSecret": "your-client-secret",
+  "scope": "tickets:read tickets:write users:read organizations:read"
+}
+```
+
+Restrict the file to the current user with `chmod 600`. Environment variables
+override values from this file.
+
 Run the one-time browser authorization flow:
 
 ```sh
@@ -137,6 +153,7 @@ This remains OAuth authentication, but the server cannot renew the token.
 | `ZENDESK_OAUTH_CLIENT_ID` | | OAuth client identifier |
 | `ZENDESK_OAUTH_CLIENT_SECRET` | | Confidential OAuth client secret |
 | `ZENDESK_OAUTH_ACCESS_TOKEN` | | Existing OAuth token for `access_token` mode |
+| `ZENDESK_OAUTH_CLIENT_FILE` | `~/.config/codex-zendesk/client.json` | Owner-only confidential client configuration |
 | `ZENDESK_OAUTH_TOKEN_FILE` | `~/.config/codex-zendesk/oauth.json` | Authorization-code token store |
 | `ZENDESK_OAUTH_SCOPE` | Least-privilege ticket scopes | Space-separated Zendesk scopes |
 | `ZENDESK_OAUTH_CALLBACK_PORT` | `3219` | Local setup callback port |

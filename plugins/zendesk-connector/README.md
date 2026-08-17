@@ -17,6 +17,11 @@ export ZENDESK_OAUTH_CLIENT_ID="your-oauth-client-identifier"
 export ZENDESK_OAUTH_CLIENT_SECRET="your-oauth-client-secret"
 ```
 
+Codex desktop can instead read an owner-only
+`~/.config/codex-zendesk/client.json` file containing `subdomain`, `mode`,
+`clientId`, `clientSecret`, and `scope`. Environment variables override the
+file. Restrict it with `chmod 600`.
+
 Alternatively, set `ZENDESK_BASE_URL` to a full Zendesk URL such as
 `https://your-subdomain.zendesk.com`.
 

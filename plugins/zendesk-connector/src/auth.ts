@@ -1,4 +1,5 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -21,6 +22,16 @@ export interface ZendeskConfig {
   accessToken?: string;
   tokenFile: string;
   scope: string;
+}
+
+export interface OAuthClientFile {
+  subdomain?: string;
+  baseUrl?: string;
+  mode?: OAuthMode;
+  clientId?: string;
+  clientSecret?: string;
+  tokenFile?: string;
+  scope?: string;
 }
 
 export interface StoredToken {
@@ -50,11 +61,16 @@ export class ZendeskAuthError extends Error {
   }
 }
 
-export function resolveBaseUrl(): string | undefined {
+export function resolveBaseUrl(
+  saved: Pick<OAuthClientFile, "baseUrl" | "subdomain"> = {},
+): string | undefined {
   const explicit = env("ZENDESK_BASE_URL");
-  if (explicit) return validateBaseUrl(explicit.replace(/\/+$/, ""));
+  const configuredBaseUrl = explicit ?? saved.baseUrl;
+  if (configuredBaseUrl) {
+    return validateBaseUrl(configuredBaseUrl.replace(/\/+$/, ""));
+  }
 
-  const subdomain = env("ZENDESK_SUBDOMAIN");
+  const subdomain = env("ZENDESK_SUBDOMAIN") ?? saved.subdomain;
   if (!subdomain) return undefined;
   if (subdomain.startsWith("http://") || subdomain.startsWith("https://")) {
     return validateBaseUrl(subdomain.replace(/\/+$/, ""));
@@ -69,20 +85,27 @@ export function defaultTokenFile(): string {
   return join(homedir(), ".config", "codex-zendesk", "oauth.json");
 }
 
+export function defaultOAuthClientFile(): string {
+  return join(homedir(), ".config", "codex-zendesk", "client.json");
+}
+
 export function getConfig(): ZendeskConfig {
-  const baseUrl = resolveBaseUrl();
+  const clientFile = env("ZENDESK_OAUTH_CLIENT_FILE") ?? defaultOAuthClientFile();
+  const saved = readOAuthClientFile(clientFile);
+  const baseUrl = resolveBaseUrl(saved);
   if (!baseUrl) {
     throw new ZendeskAuthError(
       "Zendesk connector is not configured. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL.",
     );
   }
 
-  const requestedMode = env("ZENDESK_OAUTH_MODE");
+  const requestedMode = env("ZENDESK_OAUTH_MODE") ?? saved.mode;
   const accessToken = env("ZENDESK_OAUTH_ACCESS_TOKEN");
-  const clientId = env("ZENDESK_OAUTH_CLIENT_ID");
-  const clientSecret = env("ZENDESK_OAUTH_CLIENT_SECRET");
-  const tokenFile = env("ZENDESK_OAUTH_TOKEN_FILE") || defaultTokenFile();
-  const scope = env("ZENDESK_OAUTH_SCOPE") || DEFAULT_SCOPE;
+  const clientId = env("ZENDESK_OAUTH_CLIENT_ID") ?? saved.clientId;
+  const clientSecret = env("ZENDESK_OAUTH_CLIENT_SECRET") ?? saved.clientSecret;
+  const tokenFile =
+    env("ZENDESK_OAUTH_TOKEN_FILE") ?? saved.tokenFile ?? defaultTokenFile();
+  const scope = env("ZENDESK_OAUTH_SCOPE") ?? saved.scope ?? DEFAULT_SCOPE;
 
   let mode: OAuthMode;
   if (requestedMode) {
@@ -122,6 +145,44 @@ export function getConfig(): ZendeskConfig {
     tokenFile,
     scope,
   };
+}
+
+function readOAuthClientFile(clientFile: string): OAuthClientFile {
+  try {
+    const stats = statSync(clientFile);
+    if (!stats.isFile()) {
+      throw new ZendeskAuthError(
+        `OAuth client configuration ${clientFile} is not a regular file.`,
+      );
+    }
+    if ((stats.mode & 0o077) !== 0) {
+      throw new ZendeskAuthError(
+        `OAuth client configuration ${clientFile} must be readable only by its owner (chmod 600).`,
+      );
+    }
+    const payload = JSON.parse(readFileSync(clientFile, "utf8")) as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new ZendeskAuthError(
+        `OAuth client configuration ${clientFile} must contain a JSON object.`,
+      );
+    }
+    return payload as OAuthClientFile;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT" &&
+      !env("ZENDESK_OAUTH_CLIENT_FILE")
+    ) {
+      return {};
+    }
+    if (error instanceof ZendeskAuthError) throw error;
+    throw new ZendeskAuthError(
+      `Unable to read OAuth client configuration ${clientFile}.`,
+      undefined,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 function isOAuthMode(value: string): value is OAuthMode {
