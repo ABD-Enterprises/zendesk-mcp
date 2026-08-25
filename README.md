@@ -7,6 +7,24 @@ Zendesk MCP gives MCP-compatible clients a constrained set of tools to search,
 read, create, and update support tickets. It does not accept Zendesk API-token
 credentials or username/password authentication.
 
+## Service Operations console
+
+The repository also includes a local back-office application for the service
+desk workflows around the connector. It provides live Conversion Services queue
+health, native Zendesk report links, intake architecture, knowledge-pipeline
+tracking, and readiness controls while keeping the existing UCAP intake
+configuration read-only.
+
+```sh
+cd apps/operations-console
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:4177`. The server reads the existing owner-only Zendesk
+OAuth client configuration from `~/.config/codex-zendesk/client.json`. OAuth
+credentials and access tokens are never returned to the browser.
+
 ## Tools
 
 | Tool | Access | Purpose |
