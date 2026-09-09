@@ -94,9 +94,16 @@ function summarize(rows, baseUrl) {
     count: tickets.filter((ticket) => ticket[key] === name).length,
   }));
   const requestOrder = [
-    "Bug", "Access", "How-to question", "Data or content issue",
-    "Service request", "Incident or outage", "Enhancement",
-    "Other or not sure", "Unclassified",
+    "New Account - Subcontractor",
+    "New Account - VA",
+    "New Account - Other Government Agency",
+    "Update Account - Subcontractor",
+    "Update Account - VA",
+    "Update Account - Other Government Agency",
+    "Data Request",
+    "SMTS Issue",
+    "VA Incident/Issue (VBMS, CAG, VA Profile, Other)",
+    "Unclassified",
   ];
   return {
     tickets,
