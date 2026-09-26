@@ -17,6 +17,18 @@ export ZENDESK_OAUTH_CLIENT_ID="your-oauth-client-identifier"
 export ZENDESK_OAUTH_CLIENT_SECRET="your-oauth-client-secret"
 ```
 
+For deployments that should be read-only, configure an explicit tool allowlist:
+
+```sh
+export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket"
+```
+
+Write operations emit a structured audit event to stderr without ticket
+contents or credentials. Once `zendesk_status` succeeds, events include the
+authenticated Zendesk user ID. Calls made before that status check have no
+actor ID. The allowlist is a deployment control; it should be combined with
+Zendesk OAuth scopes and the account's own role permissions.
+
 Codex desktop can instead read an owner-only
 `~/.config/codex-zendesk/client.json` file containing `subdomain`, `mode`,
 `clientId`, `clientSecret`, and `scope`. Environment variables override the
@@ -50,6 +62,21 @@ cannot renew expired tokens and is intended only for testing.
 npm install
 npm run build
 ```
+
+### Container
+
+```sh
+docker build -t zendesk-mcp ./plugins/zendesk-connector
+docker run --rm -i \
+  -e ZENDESK_SUBDOMAIN=your-subdomain \
+  -e ZENDESK_OAUTH_MODE=client_credentials \
+  -e ZENDESK_OAUTH_CLIENT_ID \
+  -e ZENDESK_OAUTH_CLIENT_SECRET \
+  zendesk-mcp
+```
+
+For authorization-code deployments, mount the owner-only OAuth client and token
+files rather than placing secrets in the image.
 
 ## Tools
 

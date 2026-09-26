@@ -5,6 +5,42 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ZendeskClient } from "./client.js";
 import { createZendeskServer } from "./server.js";
 
+test("publishes only tools enabled by the deployment allowlist", async () => {
+  const original = process.env.ZENDESK_ALLOWED_TOOLS;
+  process.env.ZENDESK_ALLOWED_TOOLS = "zendesk_status,zendesk_search_tickets";
+  const server = createZendeskServer(
+    new ZendeskClient(
+      {
+        baseUrl: "https://example.zendesk.com",
+        mode: "access_token",
+        accessToken: "oauth-access-token",
+        tokenFile: "/unused/oauth.json",
+        scope: "tickets:read",
+      },
+      async () => Response.json({ user: { id: 42 } }),
+    ),
+  );
+  const client = new Client({ name: "policy-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+
+  try {
+    const tools = await client.listTools();
+    assert.deepEqual(
+      tools.tools.map((tool) => tool.name).sort(),
+      ["zendesk_search_tickets", "zendesk_status"],
+    );
+  } finally {
+    await client.close();
+    await server.close();
+    if (original === undefined) delete process.env.ZENDESK_ALLOWED_TOOLS;
+    else process.env.ZENDESK_ALLOWED_TOOLS = original;
+  }
+});
+
 test("publishes six annotated tools and serves status over MCP", async () => {
   const fetcher: typeof fetch = async (_input, init) => {
     assert.equal(

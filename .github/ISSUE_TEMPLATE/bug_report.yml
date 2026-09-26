@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible issue with Zendesk MCP.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include Zendesk ticket contents, personal data, OAuth credentials, or tokens.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.4.0
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and client
+      placeholder: Node.js 22, Codex desktop
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true

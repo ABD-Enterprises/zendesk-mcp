@@ -1,15 +1,19 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ZendeskAuthError } from "./auth.js";
+import { audit, redact } from "./audit.js";
 import { ZendeskClient, ZendeskError } from "./client.js";
+import { assertToolAllowed, configuredTools, type ZendeskToolName } from "./policy.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
 
 type JsonObject = Record<string, unknown>;
 
 export function createZendeskServer(client = new ZendeskClient()): McpServer {
+  const allowedTools = configuredTools();
+  let actorId: number | string | undefined;
   const server = new McpServer(
     { name: "zendesk-mcp", version: VERSION },
     {
@@ -18,7 +22,11 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     },
   );
 
-  server.registerTool(
+  const guard = (tool: ZendeskToolName) => {
+    assertToolAllowed(allowedTools, tool);
+  };
+
+  allowedTools.has("zendesk_status") && server.registerTool(
     "zendesk_status",
     {
       title: "Check Zendesk connection",
@@ -27,10 +35,16 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       annotations: readAnnotations,
     },
     async () =>
-      runTool(async () => {
+      runTool("zendesk_status", "read", actorId, async () => {
+        guard("zendesk_status");
         const response = await client.request<{ user: JsonObject }>(
           "/users/me.json",
         );
+        const authenticatedId = response.user.id;
+        actorId =
+          typeof authenticatedId === "number" || typeof authenticatedId === "string"
+            ? authenticatedId
+            : undefined;
         return {
           configured: true,
           baseUrl: client.baseUrl,
@@ -40,7 +54,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
-  server.registerTool(
+  allowedTools.has("zendesk_search_tickets") && server.registerTool(
     "zendesk_search_tickets",
     {
       title: "Search Zendesk tickets",
@@ -62,7 +76,8 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       annotations: readAnnotations,
     },
     async ({ query, page, perPage }) =>
-      runTool(async () => {
+      runTool("zendesk_search_tickets", "read", actorId, async () => {
+        guard("zendesk_search_tickets");
         const response = await client.request<{
           results: JsonObject[];
           count?: number;
@@ -87,7 +102,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
-  server.registerTool(
+  allowedTools.has("zendesk_get_ticket") && server.registerTool(
     "zendesk_get_ticket",
     {
       title: "Get Zendesk ticket",
@@ -100,7 +115,8 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       annotations: readAnnotations,
     },
     async ({ ticketId: id, includeComments }) =>
-      runTool(async () => {
+      runTool("zendesk_get_ticket", "read", actorId, async () => {
+        guard("zendesk_get_ticket");
         const ticketResponse = await client.request<{
           ticket: JsonObject;
           users?: JsonObject[];
@@ -129,7 +145,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
-  server.registerTool(
+  allowedTools.has("zendesk_create_ticket") && server.registerTool(
     "zendesk_create_ticket",
     {
       title: "Create Zendesk ticket",
@@ -147,7 +163,8 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       annotations: writeAnnotations(false),
     },
     async (input) =>
-      runTool(async () => {
+      runTool("zendesk_create_ticket", "write", actorId, async () => {
+        guard("zendesk_create_ticket");
         const response = await client.request<{ ticket: JsonObject }>(
           "/tickets.json",
           { method: "POST", body: buildTicketPayload(input) },
@@ -160,7 +177,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
-  server.registerTool(
+  allowedTools.has("zendesk_update_ticket") && server.registerTool(
     "zendesk_update_ticket",
     {
       title: "Update Zendesk ticket",
@@ -177,7 +194,8 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       annotations: writeAnnotations(true),
     },
     async ({ ticketId: id, ...updates }) =>
-      runTool(async () => {
+      runTool("zendesk_update_ticket", "write", actorId, async () => {
+        guard("zendesk_update_ticket");
         if (Object.values(updates).every((value) => value === undefined)) {
           throw new ZendeskError("No update fields were provided.");
         }
@@ -189,7 +207,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
-  server.registerTool(
+  allowedTools.has("zendesk_add_ticket_comment") && server.registerTool(
     "zendesk_add_ticket_comment",
     {
       title: "Comment on Zendesk ticket",
@@ -205,7 +223,8 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       annotations: writeAnnotations(false),
     },
     async ({ ticketId: id, body, public: isPublic }) =>
-      runTool(async () => {
+      runTool("zendesk_add_ticket_comment", "write", actorId, async () => {
+        guard("zendesk_add_ticket_comment");
         const response = await client.request<{ ticket: JsonObject }>(
           `/tickets/${id}.json`,
           {
@@ -283,16 +302,31 @@ function errorResult(error: unknown) {
     error instanceof ZendeskError || error instanceof ZendeskAuthError
       ? { error: error.message, status: error.status, details: error.details }
       : { error: error instanceof Error ? error.message : String(error) };
+  const safePayload = redact(payload);
   return {
     isError: true,
-    content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(safePayload, null, 2) }],
   };
 }
 
-async function runTool(action: () => Promise<unknown>) {
+async function runTool(
+  tool: ZendeskToolName,
+  operation: "read" | "write",
+  actorId: number | string | undefined,
+  action: () => Promise<unknown>,
+) {
   try {
-    return toolResult(await action());
+    const value = await action();
+    audit({ tool, operation, outcome: "success", actorId });
+    return toolResult(value);
   } catch (error) {
+    audit({
+      tool,
+      operation,
+      outcome: "error",
+      actorId,
+      status: error instanceof ZendeskError || error instanceof ZendeskAuthError ? error.status : undefined,
+    });
     return errorResult(error);
   }
 }

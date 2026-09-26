@@ -24,7 +24,17 @@ Date: 2026-09-22
 - Populate or map the Conversion Services request-type field so the request-type report becomes useful.
 - Review SLA definitions and breach reporting before using the dashboard as an operational KPI.
 - Share the dashboard with the intended Zendesk roles/groups after review.
+- Confirm each intended viewer has Zendesk Explore/Analytics access in addition to dashboard sharing. Group membership alone does not grant an Analytics seat or role.
 
 ## Access note
 
 The dashboard was created through the existing authenticated Zendesk browser session. No API key or token was retrieved or stored.
+
+## Access learning
+
+Zendesk Explore access has two separate layers:
+
+1. The dashboard must be shared with the individual or group.
+2. Each user must also be granted Explore/Analytics access through their Zendesk role or seat.
+
+Sharing the `Conversion Services | Service Performance` dashboard with the `Conversion Services Support` group does not, by itself, make the dashboard visible to group members who lack Analytics access.

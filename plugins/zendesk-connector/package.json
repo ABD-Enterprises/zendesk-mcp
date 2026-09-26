@@ -1,6 +1,6 @@
 {
   "name": "@abd-enterprises/zendesk-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "OAuth-only MCP server for Zendesk Support ticket workflows.",
   "license": "MIT",
   "author": "ABD Enterprises",
