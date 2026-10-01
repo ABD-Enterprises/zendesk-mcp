@@ -11,6 +11,23 @@ updates:
         dependency-type: production
       npm-development:
         dependency-type: development
+  - package-ecosystem: npm
+    directory: /apps/operations-console
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm-production:
+        dependency-type: production
+      npm-development:
+        dependency-type: development
+  - package-ecosystem: docker
+    directory: /plugins/zendesk-connector
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
