@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { audit, logServerShutdown, logServerStart, redact } from "./audit.js";
+import {
+  audit,
+  logOAuthLogout,
+  logServerShutdown,
+  logServerStart,
+  redact,
+} from "./audit.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 test("redacts sensitive keys recursively without changing ordinary values", () => {
@@ -85,6 +91,61 @@ test("redacts token-like values in lifecycle details", () => {
   const event = JSON.parse(lines[0]);
   assert.equal(event.details.access_token, "[REDACTED]");
   assert.equal(event.details.reason, "example");
+});
+
+test("logs an OAuth logout event without credential material", () => {
+  const lines: string[] = [];
+
+  logOAuthLogout(
+    {
+      mode: "authorization_code",
+      outcome: "success",
+      revoked: true,
+      clearedCache: true,
+      storedCredentials: "removed",
+    },
+    (line) => lines.push(line),
+  );
+
+  assert.equal(lines.length, 1);
+  const event = JSON.parse(lines[0]);
+  assert.equal(event.event, "zendesk_oauth_logout");
+  assert.equal(event.mode, "authorization_code");
+  assert.equal(event.outcome, "success");
+  assert.equal(event.revoked, true);
+  assert.equal(event.clearedCache, true);
+  assert.equal(event.storedCredentials, "removed");
+  assert.match(event.timestamp, /^\d{4}-\d{2}-\d{2}T.*Z$/);
+});
+
+test("names no credential fields in the OAuth logout event", () => {
+  const lines: string[] = [];
+
+  logOAuthLogout(
+    {
+      mode: "access_token",
+      outcome: "error",
+      revoked: false,
+      status: 403,
+      error: "Zendesk API request failed: HTTP 403 Forbidden",
+      clearedCache: true,
+      storedCredentials: "kept",
+    },
+    (line) => lines.push(line),
+  );
+
+  const event = JSON.parse(lines[0]);
+  assert.deepEqual(Object.keys(event).sort(), [
+    "clearedCache",
+    "error",
+    "event",
+    "mode",
+    "outcome",
+    "revoked",
+    "status",
+    "storedCredentials",
+    "timestamp",
+  ]);
 });
 
 function captureStderr(run: () => void): string[] {

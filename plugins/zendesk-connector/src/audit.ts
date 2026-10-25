@@ -1,3 +1,4 @@
+import type { OAuthMode } from "./auth.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 type AuditValue = string | number | boolean | null;
@@ -44,6 +45,27 @@ export interface ServerShutdownEvent {
   details?: Record<string, unknown>;
 }
 
+/** What happened to the persisted OAuth token file during a logout. */
+export type StoredCredentialsState = "removed" | "absent" | "kept";
+
+/** The lifecycle fields reported when the connector logs out. */
+export interface OAuthLogoutEvent {
+  event: "zendesk_oauth_logout";
+  mode?: OAuthMode;
+  outcome: "success" | "error";
+  timestamp: string;
+  /** True when Zendesk confirmed that the token was revoked. */
+  revoked: boolean;
+  /** The HTTP status Zendesk returned, undefined when no answer arrived. */
+  status?: number;
+  /** Why the logout did not fully succeed. Never carries credential material. */
+  error?: string;
+  /** True when the in-memory token cache was cleared. */
+  clearedCache: boolean;
+  /** What happened to the persisted OAuth token file. */
+  storedCredentials: StoredCredentialsState;
+}
+
 const SERVER_NAME = "zendesk-mcp";
 
 const stderrSink: LogSink = (line) => {
@@ -81,6 +103,23 @@ export function logServerShutdown(
     exitCode: event.exitCode,
     timestamp: new Date().toISOString(),
     ...(event.details ? { details: event.details } : {}),
+  };
+  writeEvent(payload, sink);
+}
+
+/**
+ * Reports that the connector logged out of the Zendesk OAuth session. The
+ * event names the outcome of the remote revocation and of the local cleanup,
+ * and never carries credential material.
+ */
+export function logOAuthLogout(
+  event: Omit<OAuthLogoutEvent, "event" | "timestamp">,
+  sink: LogSink = stderrSink,
+): void {
+  const payload: OAuthLogoutEvent = {
+    event: "zendesk_oauth_logout",
+    timestamp: new Date().toISOString(),
+    ...event,
   };
   writeEvent(payload, sink);
 }

@@ -1,4 +1,11 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -96,8 +103,13 @@ export function defaultOAuthClientFile(): string {
   return join(homedir(), ".config", "codex-zendesk", "client.json");
 }
 
+/** The path of the owner-only OAuth client configuration file. */
+export function oauthClientFilePath(): string {
+  return env("ZENDESK_OAUTH_CLIENT_FILE") ?? defaultOAuthClientFile();
+}
+
 export function getConfig(): ZendeskConfig {
-  const clientFile = env("ZENDESK_OAUTH_CLIENT_FILE") ?? defaultOAuthClientFile();
+  const clientFile = oauthClientFilePath();
   const saved = readOAuthClientFile(clientFile);
   const baseUrl = resolveBaseUrl(saved);
   if (!baseUrl) {
@@ -199,6 +211,7 @@ function isOAuthMode(value: string): value is OAuthMode {
 export class ZendeskOAuth {
   private token?: StoredToken;
   private refreshInFlight?: Promise<StoredToken>;
+  private loggedOut = false;
 
   constructor(
     readonly config: ZendeskConfig = getConfig(),
@@ -206,6 +219,12 @@ export class ZendeskOAuth {
   ) {}
 
   async getAccessToken(forceRefresh = false): Promise<string> {
+    if (this.loggedOut) {
+      throw new ZendeskAuthError(
+        "The Zendesk OAuth session was logged out; no further token requests are allowed.",
+      );
+    }
+
     if (this.config.mode === "access_token") {
       return this.config.accessToken!;
     }
@@ -224,6 +243,26 @@ export class ZendeskOAuth {
 
   canRefresh(): boolean {
     return this.config.mode !== "access_token";
+  }
+
+  /**
+   * Ends the OAuth session: the cached token is dropped and later token
+   * requests fail with a clear error. A refresh that is still in flight is
+   * awaited first, so it cannot write the token file back after the caller
+   * removed it.
+   */
+  async clearToken(): Promise<void> {
+    const inFlight = this.refreshInFlight;
+    if (inFlight) {
+      try {
+        await inFlight;
+      } catch {
+        // A failed refresh has nothing left to keep; the cache is dropped.
+      }
+    }
+    this.token = undefined;
+    this.refreshInFlight = undefined;
+    this.loggedOut = true;
   }
 
   status() {
@@ -336,6 +375,82 @@ export class ZendeskOAuth {
   }
 }
 
+/**
+ * The API path that revokes the token the request is authenticated with. The
+ * shared request plumbing prefixes it with `/api/v2` and the configured base
+ * URL, so the request reaches `DELETE {base}/api/v2/oauth/tokens/current`.
+ */
+export const REVOKE_CURRENT_TOKEN_PATH = "/oauth/tokens/current";
+
+/**
+ * Issues an authenticated request against the Zendesk API. `ZendeskClient.request`
+ * satisfies this shape, so a revocation reuses the retries, the headers and the
+ * error mapping of every other API call.
+ */
+export type OAuthRequester = (
+  path: string,
+  options: { method: "GET" | "POST" | "PUT" | "DELETE" },
+) => Promise<unknown>;
+
+/** The outcome of a remote token revocation. */
+export interface RevocationResult {
+  /** True when Zendesk confirmed that the token was deleted. */
+  revoked: boolean;
+  /** The HTTP status Zendesk returned, undefined when no answer arrived. */
+  status?: number;
+  /** Why the revocation failed. Never carries credential material. */
+  error?: string;
+}
+
+/**
+ * Revokes the current OAuth token at Zendesk.
+ *
+ * The outcome is reported instead of thrown: a failed revocation must never
+ * stop the caller from clearing the local credentials.
+ */
+export async function revokeCurrentToken(
+  request: OAuthRequester,
+): Promise<RevocationResult> {
+  try {
+    await request(REVOKE_CURRENT_TOKEN_PATH, { method: "DELETE" });
+    return { revoked: true };
+  } catch (error) {
+    const status = errorStatus(error);
+    return {
+      revoked: false,
+      ...(status === undefined ? {} : { status }),
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Removes the persisted OAuth token file. A missing file is not an error:
+ * there is nothing left to remove.
+ */
+export async function removeTokenFile(tokenFile: string): Promise<boolean> {
+  try {
+    await unlink(tokenFile);
+    return true;
+  } catch (error) {
+    if (isMissingFile(error)) return false;
+    throw error;
+  }
+}
+
+/**
+ * Resolves the path of the persisted OAuth token file. Unlike `getConfig` this
+ * never throws, so a logout can still clear the local credentials when the
+ * configuration is incomplete.
+ */
+export function resolveTokenFile(): string {
+  try {
+    return getConfig().tokenFile;
+  } catch {
+    return env("ZENDESK_OAUTH_TOKEN_FILE") ?? defaultTokenFile();
+  }
+}
+
 export async function writeTokenFile(
   tokenFile: string,
   token: StoredToken,
@@ -379,4 +494,25 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+/**
+ * Reads the HTTP status of a failed request. The status is read structurally
+ * because the API error type lives in the module that imports this one.
+ */
+function errorStatus(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number") return status;
+  }
+  return undefined;
+}
+
+function isMissingFile(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }

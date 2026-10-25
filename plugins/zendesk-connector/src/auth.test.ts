@@ -7,9 +7,12 @@ import {
   ZendeskAuthError,
   ZendeskOAuth,
   getConfig,
+  removeTokenFile,
+  revokeCurrentToken,
   writeTokenFile,
   type ZendeskConfig,
 } from "./auth.js";
+import { ZendeskClient } from "./client.js";
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
@@ -146,6 +149,95 @@ test("authorization-code mode rotates and persists refresh tokens", async () => 
   assert.equal(persisted.refresh_token, "new-refresh-token");
   assert.equal((await stat(tokenFile)).mode & 0o777, 0o600);
 });
+
+test("revokeCurrentToken deletes the current token and reports success", async () => {
+  const requests: RecordedRequest[] = [];
+  const client = new ZendeskClient(
+    config({ mode: "access_token", accessToken: "invented-access-token" }),
+    recordingFetcher(requests),
+  );
+
+  const result = await revokeCurrentToken((path, options) =>
+    client.request(path, options),
+  );
+
+  assert.deepEqual(result, { revoked: true });
+  assert.equal(requests.length, 1);
+  assert.equal(
+    requests[0].url,
+    "https://example.zendesk.com/api/v2/oauth/tokens/current",
+  );
+  assert.equal(requests[0].method, "DELETE");
+  assert.equal(requests[0].authorization, "Bearer invented-access-token");
+});
+
+test("revokeCurrentToken reports a rejected revocation without throwing", async () => {
+  const requests: RecordedRequest[] = [];
+  const client = new ZendeskClient(
+    config({ mode: "access_token", accessToken: "invented-access-token" }),
+    recordingFetcher(requests, () =>
+      Response.json(
+        { error: "forbidden" },
+        { status: 403, statusText: "Forbidden" },
+      ),
+    ),
+  );
+
+  const result = await revokeCurrentToken((path, options) =>
+    client.request(path, options),
+  );
+
+  assert.equal(result.revoked, false);
+  assert.equal(result.status, 403);
+  assert.match(result.error ?? "", /HTTP 403/);
+});
+
+test("revokeCurrentToken reports a failed request without throwing", async () => {
+  const requests: RecordedRequest[] = [];
+  const client = new ZendeskClient(
+    config({ mode: "access_token", accessToken: "invented-access-token" }),
+    recordingFetcher(requests, () => {
+      throw new Error("network unavailable");
+    }),
+  );
+
+  const result = await revokeCurrentToken((path, options) =>
+    client.request(path, options),
+  );
+
+  assert.equal(result.revoked, false);
+  assert.equal(result.status, undefined);
+  assert.match(result.error ?? "", /network unavailable/);
+});
+
+test("removeTokenFile removes the stored token and tolerates a missing file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-oauth-test-"));
+  const tokenFile = join(directory, "oauth.json");
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+
+  assert.equal(await removeTokenFile(tokenFile), true);
+  assert.equal(await removeTokenFile(tokenFile), false);
+});
+
+interface RecordedRequest {
+  url: string;
+  method?: string;
+  authorization: string | null;
+}
+
+function recordingFetcher(
+  requests: RecordedRequest[],
+  respond: () => Response = () => new Response(null, { status: 204 }),
+): typeof fetch {
+  return async (input, init) => {
+    requests.push({
+      url: String(input),
+      method: init?.method,
+      authorization: new Headers(init?.headers).get("authorization"),
+    });
+    return respond();
+  };
+}
 
 function config(overrides: Partial<ZendeskConfig>): ZendeskConfig {
   return {
