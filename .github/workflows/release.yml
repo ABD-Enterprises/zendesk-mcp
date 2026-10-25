@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-image:
+    name: Publish image to GHCR
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    timeout-minutes: 20
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugins/zendesk-connector/package-lock.json
+      - name: Compute the image tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref_name="${GITHUB_REF_NAME:?}"
+          image_tag="${ref_name#v}"
+          if [[ ! "$image_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "Refusing to publish: '$ref_name' does not yield a usable image tag." >&2
+            exit 1
+          fi
+          echo "Publishing image tag: $image_tag"
+          echo "IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/abd-enterprises/zendesk-mcp:$image_tag" >> "$GITHUB_ENV"
+      - name: Check the release tag and the release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking release tag '$GITHUB_REF_NAME' on commit '$GITHUB_SHA'."
+          # The script needs no git state: the ancestry check runs here and
+          # its result is passed to it. A failing check leaves the result at
+          # 0, so an unreachable origin/main refuses the release as well.
+          ancestor_ok=0
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            ancestor_ok=1
+          fi
+          bash .github/scripts/check-release-tag.sh "$GITHUB_REF_NAME" "plugins/zendesk-connector/package.json" "$ancestor_ok"
+      - name: Test the connector
+        working-directory: plugins/zendesk-connector
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci && npm run check && npm pack --dry-run
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Refuse to overwrite an existing image tag
+        shell: bash
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config
+        run: |
+          set -euo pipefail
+          image="ghcr.io/abd-enterprises/zendesk-mcp:${IMAGE_TAG}"
+          inspect_output=""
+          inspect_status=0
+          inspect_output="$(docker manifest inspect "$image" 2>&1)" || inspect_status=$?
+          if [ "$inspect_status" -eq 0 ]; then
+            echo "Refusing to publish: '$image' already exists in GHCR." >&2
+            exit 1
+          fi
+          # The script applies the fail-closed rule: only a manifest-specific
+          # "unknown manifest" answer proves the tag is free, every other
+          # answer aborts the release before any build or push.
+          printf '%s' "$inspect_output" | bash .github/scripts/check-manifest.sh "$inspect_status" "$image" "${IMAGE_TAG}"
+      - name: Build the container image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t "ghcr.io/abd-enterprises/zendesk-mcp:${IMAGE_TAG}" plugins/zendesk-connector
+      - name: Push the image to GHCR
+        shell: bash
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config
+        run: |
+          set -euo pipefail
+          docker push "ghcr.io/abd-enterprises/zendesk-mcp:${IMAGE_TAG}"
+      - name: Record the published image
+        id: record-published-image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+          digest="$(docker image inspect "$IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep "^ghcr.io/abd-enterprises/zendesk-mcp@" | head -1 || true)"
+          echo "Published $IMAGE"
+          echo "Image ID: $image_id"
+          if [ -n "$digest" ]; then
+            echo "Digest: $digest"
+          else
+            echo "Digest: not reported by the local image store"
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### Published image"
+              echo
+              echo "- Reference: \`$IMAGE\`"
+              echo "- Image ID: \`$image_id\`"
+              echo "- Digest: \`${digest:-not reported}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Remove the Docker credentials
+        if: always()
+        shell: bash
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config
+        run: |
+          set -euo pipefail
+          rm -rf -- "${DOCKER_CONFIG:?}"

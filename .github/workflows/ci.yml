@@ -1,0 +1,255 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    strategy:
+      matrix:
+        node-version:
+          - 20
+          - 22
+          - 24
+    defaults:
+      run:
+        working-directory: plugins/zendesk-connector
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: plugins/zendesk-connector/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm pack --dry-run
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  validate-plugin:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate plugin structure
+        run: |
+          test -f plugins/zendesk-connector/.codex-plugin/plugin.json
+          test -f plugins/zendesk-connector/.mcp.json
+          node -e 'JSON.parse(require("fs").readFileSync("plugins/zendesk-connector/.codex-plugin/plugin.json"))'
+          node -e 'JSON.parse(require("fs").readFileSync("plugins/zendesk-connector/.mcp.json"))'
+
+  changelog:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    permissions:
+      contents: read
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+      - name: Check the changelog structure
+        run: node scripts/check-changelog.mjs
+      - name: Run the changelog check self-tests
+        run: node scripts/check-changelog.mjs --self-test
+
+  manifest-preflight:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    permissions:
+      contents: read
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+      - name: Run the manifest preflight self-tests
+        run: node --test scripts/manifest-preflight.test.mjs
+      - name: Run the release tag guard self-tests
+        run: node --test scripts/release-tag.test.mjs
+
+  container:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build container image
+        run: docker build -t zendesk-mcp:test plugins/zendesk-connector
+
+  console:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    defaults:
+      run:
+        working-directory: apps/operations-console
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/operations-console/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  workflow-lint:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    permissions:
+      contents: read
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+      # actionlint is pinned to one released version, and the SHA256 of every
+      # runner archive is pinned here instead of being fetched from the release
+      # page. The digests below belong to actionlint 1.7.12, so a replaced or
+      # truncated download fails this job instead of being linted.
+      - name: Lint the workflow files with actionlint
+        shell: bash
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+        run: |
+          set -euo pipefail
+          version="${ACTIONLINT_VERSION:?}"
+          machine="$(uname -m)"
+          case "$machine" in
+            x86_64|amd64) arch="amd64" ;;
+            aarch64|arm64) arch="arm64" ;;
+            *)
+              echo "Unsupported runner architecture: ${machine}" >&2
+              exit 1
+              ;;
+          esac
+          case "$arch" in
+            amd64)
+              expected="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+              ;;
+            arm64)
+              expected="325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"
+              ;;
+          esac
+          archive="actionlint_${version}_linux_${arch}.tar.gz"
+          base_url="https://github.com/rhysd/actionlint/releases/download/v${version}"
+          workdir="${RUNNER_TEMP:-/tmp}/actionlint-${version}-${arch}"
+          rm -rf -- "${workdir:?}"
+          mkdir -p "$workdir"
+          curl --fail --location --silent --show-error --retry 3 \
+            --output "${workdir}/${archive}" "${base_url}/${archive}"
+          actual="$(sha256sum "${workdir}/${archive}" | awk '{ print $1 }')"
+          if [ "$actual" != "$expected" ]; then
+            echo "Checksum mismatch for ${archive}: expected ${expected}, got ${actual}." >&2
+            exit 1
+          fi
+          tar -xzf "${workdir}/${archive}" -C "$workdir"
+          if [ ! -f "${workdir}/actionlint" ]; then
+            echo "The actionlint ${version} archive holds no actionlint binary." >&2
+            exit 1
+          fi
+          chmod +x "${workdir}/actionlint"
+          workflow_files=()
+          while IFS= read -r file; do
+            workflow_files+=("$file")
+          done < <(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) -print | LC_ALL=C sort)
+          if [ "${#workflow_files[@]}" -eq 0 ]; then
+            echo "No workflow files found in .github/workflows." >&2
+            exit 1
+          fi
+          echo "Linting workflow files: ${workflow_files[*]}"
+          if ! "${workdir}/actionlint" "${workflow_files[@]}"; then
+            echo "actionlint reported errors in the workflow files." >&2
+            exit 1
+          fi
+      # A truncated commit SHA in a `uses:` pin is not an actionlint error, but
+      # GitHub refuses to start the workflow at all, so the run fails without a
+      # log that names the cause. The script reports the offending pin instead.
+      - name: Check the action pins in the workflow files
+        shell: bash
+        run: bash .github/scripts/check-action-pins.sh
+      - name: Run the action pin check self-tests
+        shell: bash
+        run: node --test scripts/action-pins.test.mjs
