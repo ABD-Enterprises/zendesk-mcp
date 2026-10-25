@@ -274,6 +274,8 @@ server writes `server_start` and `server_shutdown` events to stderr.
 | `ZENDESK_HEALTHCHECK` | | Set to `1` or `true` to validate the configuration and exit instead of serving |
 | `ZENDESK_SHUTDOWN_TIMEOUT_MS` | `5000` | Milliseconds before a hung shutdown is force-exited |
 
+Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-and-storage.md).
+
 ## Development
 
 ```sh
