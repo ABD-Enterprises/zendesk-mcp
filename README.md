@@ -42,6 +42,9 @@ See [`apps/operations-console/.env.example`](apps/operations-console/.env.exampl
 for a template. When a variable is missing, the console reports the missing
 names instead of guessing an account.
 
+For reverse-proxy, TLS, backup, recovery, upgrade, and rollback guidance, see
+the [operations guide](docs/operations.md).
+
 ## Tools
 
 | Tool | Access | Purpose |
