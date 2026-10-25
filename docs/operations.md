@@ -1,0 +1,341 @@
+# Operations
+
+This document describes how to run the Service Operations console behind a
+reverse proxy, what to back up, and how to upgrade or roll back a deployment.
+
+Two boundaries shape everything below:
+
+- The MCP connector is a STDIO server. It speaks to its MCP client over
+  stdin and stdout and serves no network port, so it is never fronted by a
+  proxy and never exposed over the network. It does make outbound HTTPS
+  requests to the Zendesk API, so a deployment needs egress to the account.
+  The only listener it opens is the one-shot callback in
+  `npm run oauth:setup`, which binds to loopback and closes when the browser
+  returns the authorization code. Its health check is a command, not an
+  endpoint.
+- The console is the only long-running HTTP service in this repository. It
+  binds to loopback, so a proxy on the same host is what makes it reachable.
+  It calls the Zendesk API on request, so it needs the same egress.
+
+Release and artifact procedures live in
+[`docs/release-checklist.md`](release-checklist.md). This document covers the
+operator steps around them.
+
+## Deployment shape
+
+One console instance serves one account configuration. The console takes its
+identifiers from the environment and keeps no account data of its own, so a
+second instance pointed at the same configuration reads the same views — it
+adds no capacity, no isolation, and no second tenant.
+
+Multi-tenant hosting is out of scope for this release. A deployment is
+single-tenant by assumption: one Zendesk account, one client configuration,
+one console instance, one OAuth client secret. The roadmap records the
+supported single-tenant deployment model as a separate piece of work, and
+shared or multi-account hosting waits for it.
+
+## Reverse proxy and TLS
+
+### What the proxy forwards
+
+The console listens on `127.0.0.1:4177` (`PORT` changes the port) and speaks
+plain HTTP to its proxy. The proxy terminates TLS; the console itself neither
+serves nor validates certificates.
+
+The traffic is ordinary request/response HTTP:
+
+| Path | Response |
+| --- | --- |
+| `GET /api/status` | JSON liveness and configuration status; never calls Zendesk |
+| `GET /api/overview` | JSON dashboard payload; calls Zendesk |
+| Everything else | The single-page frontend from the built `dist/` directory |
+
+The browser fetches `/api/overview` from the origin it loaded the page from.
+Between the proxy and the console the hop is plain HTTP; there is no
+WebSocket, server-sent event, or other streaming transport in the console, so
+the proxy needs no upgrade or buffering configuration for it.
+
+The console has no authentication of its own: the status endpoint, the
+dashboard endpoint, and the frontend are all reachable without credentials.
+The proxy is therefore the access control in front of the console, and a
+proxy that only adds TLS exposes the console to everyone who can reach it.
+Put an authentication layer (single sign-on, basic authentication, or an
+address allowlist) in front of it, or keep the proxy on a private network.
+
+Two further proxy details follow from how the console is written:
+
+- The console's file routes are rate limited per client address, and a request
+  that passes the limit is answered with `429`. The limiter reads the socket
+  address and not proxy headers, so behind a proxy every request to those
+  routes counts against the proxy's address. `ZENDESK_CONSOLE_RATE_LIMIT` and
+  `ZENDESK_CONSOLE_RATE_LIMIT_WINDOW_MS` adjust the limit. The two API
+  routes are not behind the limiter, so rate limiting them is the proxy's
+  job.
+- Every path that the console does not match is answered with the frontend
+  entry point, so the proxy forwards all paths rather than a fixed list.
+
+Run the console in production mode behind a proxy: `npm run build` followed by
+`npm start` in `apps/operations-console`. The development server starts a Vite
+dev server on the same port, which is not meant to sit behind a shared proxy.
+
+### nginx
+
+```nginx
+# /etc/nginx/conf.d/zendesk-console.conf
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name console.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/console.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/console.example.com/privkey.pem;
+
+    # The console has no authentication of its own, so the proxy is the only
+    # access control in front of it.
+    allow 203.0.113.10;
+    deny all;
+
+    location / {
+        proxy_pass http://127.0.0.1:4177;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Caddy
+
+```caddyfile
+# /etc/caddy/Caddyfile
+console.example.com {
+    tls /etc/caddy/certs/console.example.com.crt \
+        /etc/caddy/certs/console.example.com.key
+
+    @blocked not remote_ip 203.0.113.10
+    respond @blocked 403
+
+    reverse_proxy 127.0.0.1:4177
+}
+```
+
+Caddy also obtains and renews a certificate on its own when the `tls`
+directive is left out and the hostname resolves publicly; the example above
+assumes an operator-supplied certificate.
+
+### Health checks
+
+The console's health endpoint is `GET /api/status`. It never calls Zendesk,
+so it still answers when the account is unreachable:
+
+```sh
+curl -fsS http://127.0.0.1:4177/api/status
+```
+
+A configured console answers `200` with:
+
+```json
+{"ok":true,"configured":true,"missing":[]}
+```
+
+The endpoint answers `200` even when the console is missing configuration, so
+a check that looks only at the status code cannot see a misconfigured
+console. The body is the signal: `configured` must be `true` and `missing`
+must be empty. When configuration is missing, `missing` names the variables
+that are absent.
+
+The endpoint is the health check for the console only. The connector's
+health check is a command that validates the OAuth configuration and exits;
+it prints one JSON line, contacts nothing, and has no URL to point a proxy
+at:
+
+```sh
+node plugins/zendesk-connector/dist/index.js --healthcheck
+```
+
+A proxy that needs its own health path can forward one, but keep it restricted
+to the monitoring address — the response body names the configuration
+variables the console is missing.
+
+## Backup and recovery
+
+### What to back up
+
+The connector's entire local state is two owner-only files plus the
+environment configuration:
+
+- **OAuth client file** — `~/.config/codex-zendesk/client.json` by default, or
+  the path in `ZENDESK_OAUTH_CLIENT_FILE`. It carries the client secret.
+- **OAuth token file** — `~/.config/codex-zendesk/oauth.json` by default, or
+  the path in `ZENDESK_OAUTH_TOKEN_FILE`, or the `tokenFile` the client file
+  names. It exists in authorization-code mode only.
+- **Environment configuration** — the `ZENDESK_*` variables for the connector
+  and the `ZENDESK_CONSOLE_*` variables for the console, in the process
+  environment or in a secret manager. The console variables are listed in the
+  [root README](../README.md#service-operations-console).
+
+Environment variables win over the client file for every setting they name:
+the subdomain, the OAuth mode, the client identifier and secret, the scope,
+and the token path each come from the environment when it sets them. A
+deployment that supplies all of them in the environment needs no file at all;
+one that leaves any of them to the file has to back up the file as well.
+
+### No datastore to back up
+
+There is no datastore. Neither the connector nor the console keeps a database,
+a local ticket store, or a cache on disk — tickets, comments, users, and
+organizations live in the Zendesk account, and restoring a backup restores
+credentials and identifiers, not ticket data. Backups of the Zendesk account
+itself are the account's own concern.
+
+### Permissions after a restore
+
+Restore the files to the paths the deployment actually uses, then restore the
+owner-only modes. The paths come from the environment, so resolve them rather
+than assuming the default directory:
+
+```sh
+client_file="${ZENDESK_OAUTH_CLIENT_FILE:-$HOME/.config/codex-zendesk/client.json}"
+token_file="${ZENDESK_OAUTH_TOKEN_FILE:-$HOME/.config/codex-zendesk/oauth.json}"
+
+for file in "$client_file" "$token_file"; do
+  [ -f "$file" ] || continue
+  chmod 600 "$file"
+  chmod 700 "$(dirname "$file")"
+done
+```
+
+The loop skips the paths a deployment does not have: the token file exists
+only in authorization-code mode, and a deployment that supplies every setting
+in the environment has no file at all. When the client file names a
+`tokenFile`, that path — not the default — is the token file the connector
+reads, and it belongs in the loop as well.
+
+A restore keeps the owner-only mode only if the archive carried it. The
+connector refuses to start when the client file is readable by its group or
+by others, so a restore that keeps the content but loses the mode fails
+closed at startup instead of running with loose permissions. The token file
+is not checked when it is read: the connector writes it with the owner-only
+mode and replaces it atomically, so it repairs the mode on the next write,
+but until then it keeps whatever the restore left behind. The console reads
+the same client file without checking its mode, so the owner-only mode is
+the only protection there.
+
+In a container deployment the client file also has to be readable by the
+container's unprivileged `node` user. Align the owner with that user rather
+than with the host account, and keep the mode owner-only.
+
+A backup archive that carries these files carries the client secret and the
+refresh token with them. Keep the archive as a secret, and treat a copy that
+escapes as a leaked credential: revoke it as described under
+[Leaked credential](release-checklist.md#leaked-credential) before restoring
+anything.
+
+### Recovery order
+
+1. Restore the client file, and the token file in authorization-code mode, to
+   their configured paths and set the owner-only permissions as above.
+2. Restore the environment configuration: the `ZENDESK_*` variables for the
+   connector and the `ZENDESK_CONSOLE_*` variables for the console.
+3. Validate the connector configuration without contacting Zendesk:
+   `node plugins/zendesk-connector/dist/index.js --healthcheck`.
+4. Start the console and read `GET /api/status`. The body must report
+   `configured` as `true` with an empty `missing` list.
+5. Confirm the account itself with the `zendesk_status` tool — the health
+   check never reaches Zendesk, so a green health check is not proof that
+   the credentials work.
+
+## Upgrade
+
+### Container image
+
+Every released version publishes a version-tagged image and no `latest` tag,
+so the upgrade is an explicit tag change in the configuration that starts the
+container. The image reference pattern and the pull command are in the
+[container image section](../README.md#container-image) of the root README.
+
+1. Record the tag and the digest of the image that is running now; the
+   [publish checklist](release-checklist.md#publish) shows the command that
+   prints a digest. The previous tag and digest are what a rollback needs.
+2. Change the tag in the run configuration and restart the container with
+   the new image.
+3. Verify the container and the account separately: the image health check
+   reports that the configuration is present and well-formed, not that
+   Zendesk is reachable, so confirm the account with the `zendesk_status`
+   tool.
+
+The image entrypoint is the STDIO MCP server, so the container is started by
+its MCP client with stdin attached. Nothing about the image is a listening
+service, and no proxy is involved in the upgrade.
+
+### Local install
+
+From a source checkout, update the working tree and rebuild:
+
+```sh
+cd plugins/zendesk-connector
+npm ci
+npm run build
+```
+
+To install a published version instead:
+
+```sh
+npm install -g @abd-enterprises/zendesk-mcp@<version>
+```
+
+The package installs the `zendesk-mcp` command, which the MCP client can
+start in place of the `node` command that runs the built server.
+
+The console is not part of the container image. It is a separate application,
+so it is upgraded in its own directory:
+
+```sh
+cd apps/operations-console
+npm install
+npm run build
+```
+
+Restart the console process after the build.
+
+### Pre-upgrade validation
+
+The repository's canonical check is `npm run check` in
+`plugins/zendesk-connector`, and it needs no Zendesk account. Run it in the
+checkout before deploying a new version, so a broken build is caught before it
+reaches a deployment. For the console, `npm run typecheck` and `npm test` in
+`apps/operations-console` are the equivalent checks, and their tests run
+against a local mock Zendesk server.
+
+## Rollback
+
+### Artifacts
+
+The [rollback section](release-checklist.md#rollback) of
+[`docs/release-checklist.md`](release-checklist.md) covers the published
+artifacts: deprecating or unpublishing an npm version, moving a container tag
+back to the previous digest by hand, revoking a leaked credential, and
+reverting a release commit. A published version is never republished — the
+release workflow refuses to overwrite an existing tag — so a rollback moves
+the tag or pins the previous version rather than re-running the release.
+
+### Operational order
+
+1. Stop new traffic: remove the instance from the proxy's upstream
+   rotation, or stop the console process.
+2. Restore the previous artifact and configuration: pin the previous image
+   tag or npm version, and put back the configuration that shipped with it.
+   Configuration introduced by the upgrade — new environment variables,
+   changed console identifiers — belongs to the rollback, not only the
+   artifact.
+3. Verify: run the connector health check, read `GET /api/status` and
+   confirm `configured` is `true` with an empty `missing` list, then confirm
+   the account with the `zendesk_status` tool.
+4. Resume traffic: return the instance to the proxy's rotation and watch the
+   logs for the failures that prompted the rollback.
+
+When the rollback is caused by an exposed credential, revoke that credential
+first. A rollback alone does not invalidate a value that is still live
+everywhere the release reached.
