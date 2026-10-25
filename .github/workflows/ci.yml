@@ -165,6 +165,45 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+  sbom:
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    permissions:
+      contents: read
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The SBOM is built from the checked out files (the npm lock file in
+      # plugins/zendesk-connector lists the dependency tree), not from Git
+      # history, so the default shallow checkout is enough and no Git metadata
+      # is needed here.
+      # anchore/sbom-action v0.20.6 ships Syft v1.33.0. The output file name
+      # is set explicitly, so the artifact holds one CycloneDX JSON document
+      # under a stable name.
+      - uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          path: plugins/zendesk-connector
+          format: cyclonedx
+          output-file: connector.cdx.json
+      # The action writes the file relative to the workspace. The pattern
+      # matches that file in the workspace root and in the scanned directory,
+      # and a missing SBOM fails the job instead of leaving an empty artifact.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: connector-sbom
+          path: '**/connector.cdx.json'
+          if-no-files-found: error
+          retention-days: 30
+
   workflow-lint:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
     permissions:
