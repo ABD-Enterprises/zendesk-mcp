@@ -20,7 +20,8 @@ export ZENDESK_OAUTH_CLIENT_SECRET="your-oauth-client-secret"
 For deployments that should be read-only, configure an explicit tool allowlist:
 
 ```sh
-export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket"
+export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
+zendesk_list_brands,zendesk_list_groups,zendesk_list_users,zendesk_list_organizations"
 ```
 
 Write operations emit a structured audit event to stderr without ticket
@@ -47,6 +48,14 @@ The browser flow stores access and rotating refresh tokens in
 `~/.config/codex-zendesk/oauth.json` with owner-only permissions. The MCP server
 refreshes expiring tokens and updates that file automatically. Override the file
 with `ZENDESK_OAUTH_TOKEN_FILE` and scopes with `ZENDESK_OAUTH_SCOPE`.
+
+Upgrading an installation whose access token predates the `brands:read` and
+`groups:read` default scopes: re-run `npm run oauth:setup`, because that token
+does not carry the two new scopes and the list tools return 403 until it is
+renewed. If the OAuth client has allowed scopes configured, they must also
+include the new pair — Zendesk rejects any other request with
+`400 invalid_scope`. `client_credentials` mode picks the new scope up on its
+next token request.
 
 For an unattended server-to-server workflow, configure a confidential client and
 set `ZENDESK_OAUTH_MODE=client_credentials`. The connector obtains and renews an
