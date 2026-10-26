@@ -49,6 +49,10 @@ shape, configuration precedence, and explicit non-goals, see the
 
 ## Tools
 
+The full contract for every tool — inputs, result envelopes, errors, audit
+events, the allowlist, and the versioning policy — is in the
+[tool contracts](docs/tool-contracts.md) reference.
+
 | Tool | Access | Purpose |
 | --- | --- | --- |
 | `zendesk_status` | Read | Verify OAuth and identify the authenticated user |
