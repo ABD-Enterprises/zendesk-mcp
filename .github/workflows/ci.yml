@@ -292,3 +292,26 @@ jobs:
       - name: Run the action pin check self-tests
         shell: bash
         run: node --test scripts/action-pins.test.mjs
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    permissions:
+      contents: read
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # dependency-review-action v5 needs a runner at v2.327.1 or newer (node24
+      # runtime). Defaults fail the job on low severity and above, and no PR
+      # comment or SARIF upload is configured, so contents: read suffices.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
