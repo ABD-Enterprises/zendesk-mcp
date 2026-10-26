@@ -149,22 +149,59 @@ the account's own role permissions rather than relying on any one layer.
 
 ## Operating the deployment
 
-- **Backups.** The entire local state is the client file, the
-  `authorization_code` token file, and the environment configuration. What to
-  back up, how to restore the owner-only modes, and the recovery order are in
-  the [operations guide](operations.md#backup-and-recovery). There is no
-  datastore: a restore brings back credentials and identifiers, not ticket
-  data, and backups of the account itself are the account's own concern.
-- **Upgrades and rollbacks.** The container image is version-tagged with no
-  `latest`, so an upgrade is an explicit tag change and a rollback is a pin
-  to the previous tag. Record the running tag and digest before changing
-  them. Procedures for the image, a local install, and the console are in
-  the [operations guide](operations.md#upgrade) and its
-  [rollback section](operations.md#rollback).
-- **Exposed credentials.** If a credential may have been exposed, revoke it
-  in Zendesk immediately and complete the authorization flow again, per
-  [SECURITY.md](../SECURITY.md#credential-handling). A rollback or a redeploy
-  does not invalidate a value that is still live in Zendesk.
+Day-2 procedures live in the [operations guide](operations.md). This
+section states what each one means for this deployment model — one account
+per instance, one owner identity per host user — and does not repeat the
+general steps.
+
+### Reverse proxy and TLS
+
+The connector never sits behind a proxy: it binds no long-running listener,
+and the only socket it opens is the one-shot loopback OAuth callback, so it
+needs no TLS of its own. The console is the deployment's only exposed
+endpoint; it binds loopback and speaks plain HTTP, so TLS termination at
+the proxy is what puts it behind HTTPS, and the proxy is also its access
+control. One hostname serves the one account behind it, so the proxy needs
+no tenant routing and no per-tenant certificates. The configurations,
+forwarded paths, and rate-limit behavior are in the
+[operations guide](operations.md#reverse-proxy-and-tls).
+
+### Backup and recovery
+
+The deployment's entire local state is the client file, the token file
+(`authorization_code` mode only), and the environment configuration; there
+is no datastore. A restore therefore brings back credentials and
+identifiers, not ticket data — tickets, comments, users, and organizations
+live in the Zendesk account, and backups of the account itself are the
+account's own concern. An archive of these files carries the client secret
+and the refresh token with them, so keep it as a secret. What to back up,
+the owner-only modes to restore, and the recovery order are in the
+[operations guide](operations.md#backup-and-recovery).
+
+### Upgrade
+
+The container image is version-tagged with no `latest`, so an upgrade is an
+explicit tag change and nothing moves on its own; record the running tag
+and digest before changing them, because the previous tag and digest are
+what a rollback needs. One instance serves one account, so an upgrade
+changes only the software — the client file, the token file, and the
+environment configuration carry over unchanged unless the new version
+documents a configuration change. The console is a separate application and
+upgrades in its own directory against the same account configuration.
+Commands for the image, a local install, and the console are in the
+[operations guide](operations.md#upgrade).
+
+### Rollback
+
+A rollback pins the previous image tag (or npm version) using the tag and
+digest recorded before the upgrade, and restores any configuration the
+upgrade changed along with the artifact. It restores the software, not a
+different deployment: the same account, the same client, and the same
+owner-only files remain. A rollback or a redeploy does not invalidate a
+credential that is still live in Zendesk — if a credential may have been
+exposed, revoke it in Zendesk immediately and complete the authorization
+flow again, per [SECURITY.md](../SECURITY.md#credential-handling). The
+operational order is in the [operations guide](operations.md#rollback).
 
 ## Non-goals
 
