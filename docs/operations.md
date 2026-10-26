@@ -30,9 +30,10 @@ adds no capacity, no isolation, and no second tenant.
 
 Multi-tenant hosting is out of scope for this release. A deployment is
 single-tenant by assumption: one Zendesk account, one client configuration,
-one console instance, one OAuth client secret. The roadmap records the
-supported single-tenant deployment model as a separate piece of work, and
-shared or multi-account hosting waits for it.
+one console instance, one OAuth client secret. The supported model and its
+non-goals are written down in the
+[single-tenant deployment guide](single-tenant-deployment.md); shared or
+multi-account hosting waits for a change to that model.
 
 ## Reverse proxy and TLS
 
