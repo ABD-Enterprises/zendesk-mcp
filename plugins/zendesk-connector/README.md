@@ -110,9 +110,13 @@ token file is readable, or that Zendesk is reachable, so use the
 - `zendesk_status`: validates configuration and returns the authenticated user.
 - `zendesk_search_tickets`: searches tickets with Zendesk search syntax.
 - `zendesk_get_ticket`: reads a ticket with users, organization, and comments.
+- `zendesk_list_brands`: lists brands with page-based pagination.
+- `zendesk_list_groups`: lists groups with page-based pagination.
+- `zendesk_list_users`: lists users with page-based pagination.
+- `zendesk_list_organizations`: lists organizations with page-based pagination.
 - `zendesk_create_ticket`: creates a ticket.
 - `zendesk_update_ticket`: updates common ticket fields.
 - `zendesk_add_ticket_comment`: adds a public reply or internal note.
 
-All six tools use the same OAuth request layer. Use `zendesk_status` to verify
+All ten tools use the same OAuth request layer. Use `zendesk_status` to verify
 the authenticated user, OAuth mode, scope, and refresh capability.
