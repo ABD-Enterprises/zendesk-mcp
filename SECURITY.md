@@ -14,7 +14,9 @@ coordinate disclosure when a fix is available.
 ## Credential handling
 
 - Zendesk API-token and password authentication are not supported.
-- OAuth client secrets must come from the process environment.
+- OAuth client secrets never live in code or in files inside the repository;
+  they are supplied through the environment or through the owner-only client
+  file, and environment variables take precedence.
 - Authorization-code tokens are stored outside the repository with owner-only
   file permissions.
 - Tool output must never include access tokens, refresh tokens, or client

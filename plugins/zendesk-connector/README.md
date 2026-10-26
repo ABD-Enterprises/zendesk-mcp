@@ -24,7 +24,7 @@ export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_
 zendesk_list_brands,zendesk_list_groups,zendesk_list_users,zendesk_list_organizations"
 ```
 
-Write operations emit a structured audit event to stderr without ticket
+Every tool call emits a structured audit event to stderr without ticket
 contents or credentials. Once `zendesk_status` succeeds, events include the
 authenticated Zendesk user ID. Calls made before that status check have no
 actor ID. The allowlist is a deployment control; it should be combined with
