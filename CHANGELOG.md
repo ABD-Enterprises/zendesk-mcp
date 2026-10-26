@@ -4,6 +4,31 @@
 
 No changes recorded yet.
 
+## 0.6.0
+
+- Add OAuth logout and token revocation: a new connector entry point revokes
+  the live OAuth token, removes the stored token file, and emits an audit
+  event.
+- Add four read-only list tools — `zendesk_list_brands`,
+  `zendesk_list_groups`, `zendesk_list_organizations`, and
+  `zendesk_list_users` — and extend the deployment allowlist accordingly.
+- Extend test coverage with search pagination, and with groups and users in
+  the list pagination suite.
+- Document secrets and storage guidance, plus data retention and incident
+  response policies, in `SECURITY.md`.
+- Add an operations guide for the console and connector, and a single-tenant
+  deployment guide including its day-2 subsections: backup, upgrades,
+  monitoring, and incident response.
+- Add a tool-contract reference for every MCP tool (`docs/tool-contracts.md`).
+- Fix three recorded documentation contradictions and the stale roadmap
+  bullet.
+- Add the multi-user OAuth isolation design document
+  (`docs/multi-user-oauth-isolation.md`); it is design-only and changes no
+  code.
+- CI: generate a CycloneDX SBOM for the connector and run a dependency-review
+  job on pull requests.
+- Update `react` and `react-dom` in the operations console.
+
 ## 0.5.0
 
 - Add graceful shutdown: `SIGINT` and `SIGTERM` close the server and exit 0 (or
