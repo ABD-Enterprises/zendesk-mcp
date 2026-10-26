@@ -3,8 +3,9 @@
 ## Current position
 
 The repository is an OAuth-only local MCP prototype for Zendesk Support. It
-currently provides ticket search, ticket reads, ticket creation, ticket
-updates, ticket comments, and a local service-operations console.
+currently provides status validation, ticket search, ticket reads, ticket
+creation, ticket updates, ticket comments, read-only lists of brands,
+groups, users, and organizations, and a local service-operations console.
 
 It is not yet an organization-ready shared service. The largest gaps are
 multi-user OAuth isolation, authorization policy, auditability, deployment,
@@ -55,12 +56,14 @@ of scope.
 - Provide a supported Docker image.
 - Document secret-manager integration and encrypted persistent token storage.
 - Add reverse-proxy/TLS, backup, recovery, upgrade, and rollback guidance.
-- Define a supported single-tenant deployment model before attempting
-  multi-tenant hosting.
+- The supported single-tenant deployment model is defined in
+  `docs/single-tenant-deployment.md`; any multi-tenant hosting work comes
+  only after that model.
 
 ### v0.7: Zendesk resource coverage
 
-- Add brands, groups, users, organizations, ticket fields, and forms.
+- Add ticket fields and forms, and extend brands, groups, users, and
+  organizations beyond their existing read-only lists.
 - Add views, triggers, macros, automations, and SLA resources.
 - Add Guide categories, sections, and articles.
 - Investigate and add supported Explore dashboard/report operations where the
