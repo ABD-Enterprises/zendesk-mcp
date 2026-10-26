@@ -12,8 +12,12 @@ const SECOND_EXAMPLE_BRAND = {
   subdomain: "second",
 };
 const EXAMPLE_ORGANIZATION = { id: 601, name: "Example Organization" };
+const EXAMPLE_GROUP = { id: 701, name: "Example Group" };
+const EXAMPLE_USER = { id: 801, name: "Example User" };
 const EXAMPLE_NEXT_PAGE =
   "https://example.zendesk.com/api/v2/brands.json?page=2&per_page=25";
+const GROUPS_NEXT_PAGE =
+  "https://example.zendesk.com/api/v2/groups.json?page=3&per_page=10";
 
 /** Every list envelope carries these keys, in this order, before the resource. */
 const ENVELOPE_KEYS = ["count", "page", "perPage", "nextPageAvailable"];
@@ -103,6 +107,75 @@ test("lists organizations with the requested page and reports the last page", as
   }
 });
 
+test("lists groups with the requested page and reports that another page exists", async () => {
+  const { client, requests } = listClient(() => ({
+    groups: [EXAMPLE_GROUP],
+    count: 30,
+    page: 2,
+    per_page: 10,
+    next_page: GROUPS_NEXT_PAGE,
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_groups", {
+      page: 2,
+      perPage: 10,
+    });
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.pathname, "/api/v2/groups.json");
+    // The caller's `page`/`perPage` reach Zendesk as `page`/`per_page`.
+    assert.equal(request.searchParams.get("page"), "2");
+    assert.equal(request.searchParams.get("per_page"), "10");
+
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "groups"]);
+    assert.equal(payload.count, 30);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    // A non-null `next_page` on the mock answer reports a further page.
+    assert.equal(payload.nextPageAvailable, true);
+    assert.deepEqual(payload.groups, [EXAMPLE_GROUP]);
+    assert.equal(JSON.stringify(payload).includes(GROUPS_NEXT_PAGE), false);
+  } finally {
+    await session.close();
+  }
+});
+
+test("lists users with the requested page and reports the last page", async () => {
+  const { client, requests } = listClient(() => ({
+    users: [EXAMPLE_USER],
+    count: 3,
+    page: 2,
+    per_page: 10,
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_users", {
+      page: 2,
+      perPage: 10,
+    });
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.pathname, "/api/v2/users.json");
+    assert.equal(request.searchParams.get("page"), "2");
+    assert.equal(request.searchParams.get("per_page"), "10");
+
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "users"]);
+    assert.equal(payload.count, 3);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    // An absent `next_page` reports no further page, as for organizations.
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.users, [EXAMPLE_USER]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("falls back to the item count when Zendesk omits count", async () => {
   const { client, requests } = listClient(() => ({
     brands: [EXAMPLE_BRAND],
@@ -165,7 +238,7 @@ function listClient(respond: (params: URLSearchParams) => Record<string, unknown
   return { client, requests };
 }
 
-/** Connects an MCP client to a server exposing the two tested list tools. */
+/** Connects an MCP client to a server exposing the tested list tools. */
 async function connectLists(zendesk: ZendeskClient) {
   const server = createListServer(zendesk);
   const client = new Client({ name: "list-pagination-test", version: "1.0.0" });
@@ -216,7 +289,7 @@ async function listPayload(
 function createListServer(zendesk: ZendeskClient) {
   const original = process.env.ZENDESK_ALLOWED_TOOLS;
   process.env.ZENDESK_ALLOWED_TOOLS =
-    "zendesk_list_brands,zendesk_list_organizations";
+    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users";
   try {
     return createZendeskServer(zendesk);
   } finally {
