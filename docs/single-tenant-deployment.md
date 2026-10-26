@@ -32,7 +32,7 @@ The components of a deployment are:
 Two absences are part of the model:
 
 - The connector has no listener. It speaks to its MCP client over stdin and
-  stdout and is never exposed over the network. The only socket it opens is
+  stdout and is never exposed over the network. The only socket it binds is
   the one-shot loopback callback of `npm run oauth:setup`, which closes when
   the browser returns the authorization code.
 - The console has no datastore. Neither component keeps a database, a local
@@ -54,8 +54,9 @@ Each process has a fixed place in the deployment:
   own, the proxy is also the access control. The public hostname belongs to
   the deployment, for example `mcp.example.com`. nginx and Caddy examples
   are in the [operations guide](operations.md#reverse-proxy-and-tls).
-- The console needs the same egress to the Zendesk API host, because every
-  dashboard request calls the account. It keeps no account data of its own.
+- The console needs the same egress to the Zendesk API host, because each
+  dashboard view is rendered from account data. It keeps no account data on
+  disk.
 
 ### Health checks are commands
 
@@ -138,8 +139,9 @@ bounds what the server will ask for, by naming a subset of the tools. A
 read-only deployment allows the seven read tools:
 
 ```sh
-export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
-zendesk_list_brands,zendesk_list_groups,zendesk_list_users,zendesk_list_organizations"
+export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
+zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
+zendesk_list_users,zendesk_list_organizations"
 ```
 
 The allowlist is a deployment control. Combine it with the OAuth scopes and
