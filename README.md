@@ -43,7 +43,9 @@ for a template. When a variable is missing, the console reports the missing
 names instead of guessing an account.
 
 For reverse-proxy, TLS, backup, recovery, upgrade, and rollback guidance, see
-the [operations guide](docs/operations.md).
+the [operations guide](docs/operations.md). For the supported deployment
+shape, configuration precedence, and explicit non-goals, see the
+[single-tenant deployment guide](docs/single-tenant-deployment.md).
 
 ## Tools
 
