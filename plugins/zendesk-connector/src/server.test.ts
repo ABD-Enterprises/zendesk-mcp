@@ -42,7 +42,7 @@ test("publishes only tools enabled by the deployment allowlist", async () => {
   }
 });
 
-test("publishes six annotated tools and serves status over MCP", async () => {
+test("publishes ten annotated tools and serves status over MCP", async () => {
   const fetcher: typeof fetch = async (_input, init) => {
     assert.equal(
       new Headers(init?.headers).get("authorization"),
@@ -72,7 +72,7 @@ test("publishes six annotated tools and serves status over MCP", async () => {
     assert.equal(client.getServerVersion()?.version, PACKAGE_VERSION);
 
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 6);
+    assert.equal(tools.tools.length, 10);
     assert.equal(
       tools.tools.find((tool) => tool.name === "zendesk_get_ticket")
         ?.annotations?.readOnlyHint,

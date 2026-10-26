@@ -52,6 +52,10 @@ the [operations guide](docs/operations.md).
 | `zendesk_status` | Read | Verify OAuth and identify the authenticated user |
 | `zendesk_search_tickets` | Read | Search tickets with Zendesk search syntax |
 | `zendesk_get_ticket` | Read | Read a ticket, users, organization, and comments |
+| `zendesk_list_brands` | Read | List brands with page-based pagination |
+| `zendesk_list_groups` | Read | List groups with page-based pagination |
+| `zendesk_list_users` | Read | List users with page-based pagination |
+| `zendesk_list_organizations` | Read | List organizations with page-based pagination |
 | `zendesk_create_ticket` | Write | Create a ticket |
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
@@ -188,7 +192,7 @@ same settings in `~/.config/codex-zendesk/client.json`:
   "mode": "authorization_code",
   "clientId": "your-client-identifier",
   "clientSecret": "your-client-secret",
-  "scope": "tickets:read tickets:write users:read organizations:read"
+  "scope": "tickets:read tickets:write users:read organizations:read brands:read groups:read"
 }
 ```
 
@@ -210,7 +214,7 @@ tokens atomically.
 The default least-privilege scopes are:
 
 ```text
-tickets:read tickets:write users:read organizations:read
+tickets:read tickets:write users:read organizations:read brands:read groups:read
 ```
 
 Override them with `ZENDESK_OAUTH_SCOPE` when your workflow needs a different

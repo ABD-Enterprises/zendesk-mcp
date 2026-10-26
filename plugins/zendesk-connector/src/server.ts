@@ -236,6 +236,158 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_list_brands") && server.registerTool(
+    "zendesk_list_brands",
+    {
+      title: "List Zendesk brands",
+      description: "List Zendesk brands with page-based pagination.",
+      inputSchema: z.object({
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ page, perPage }) =>
+      runTool("zendesk_list_brands", "read", actorId, async () => {
+        guard("zendesk_list_brands");
+        const response = await client.request<{
+          brands: JsonObject[];
+          count?: number;
+          next_page?: string | null;
+        }>("/brands.json", {
+          query: { page, per_page: perPage },
+        });
+        const count =
+          typeof response.count === "number" ? response.count : response.brands.length;
+        return {
+          count,
+          page,
+          perPage,
+          nextPageAvailable: Boolean(response.next_page),
+          brands: response.brands,
+        };
+      }),
+  );
+
+  allowedTools.has("zendesk_list_groups") && server.registerTool(
+    "zendesk_list_groups",
+    {
+      title: "List Zendesk groups",
+      description: "List Zendesk groups with page-based pagination.",
+      inputSchema: z.object({
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ page, perPage }) =>
+      runTool("zendesk_list_groups", "read", actorId, async () => {
+        guard("zendesk_list_groups");
+        const response = await client.request<{
+          groups: JsonObject[];
+          count?: number;
+          next_page?: string | null;
+        }>("/groups.json", {
+          query: { page, per_page: perPage },
+        });
+        const count =
+          typeof response.count === "number" ? response.count : response.groups.length;
+        return {
+          count,
+          page,
+          perPage,
+          nextPageAvailable: Boolean(response.next_page),
+          groups: response.groups,
+        };
+      }),
+  );
+
+  allowedTools.has("zendesk_list_users") && server.registerTool(
+    "zendesk_list_users",
+    {
+      title: "List Zendesk users",
+      description: "List Zendesk users with page-based pagination.",
+      inputSchema: z.object({
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ page, perPage }) =>
+      runTool("zendesk_list_users", "read", actorId, async () => {
+        guard("zendesk_list_users");
+        const response = await client.request<{
+          users: JsonObject[];
+          count?: number;
+          next_page?: string | null;
+        }>("/users.json", {
+          query: { page, per_page: perPage },
+        });
+        const count =
+          typeof response.count === "number" ? response.count : response.users.length;
+        return {
+          count,
+          page,
+          perPage,
+          nextPageAvailable: Boolean(response.next_page),
+          users: response.users,
+        };
+      }),
+  );
+
+  allowedTools.has("zendesk_list_organizations") && server.registerTool(
+    "zendesk_list_organizations",
+    {
+      title: "List Zendesk organizations",
+      description: "List Zendesk organizations with page-based pagination.",
+      inputSchema: z.object({
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ page, perPage }) =>
+      runTool("zendesk_list_organizations", "read", actorId, async () => {
+        guard("zendesk_list_organizations");
+        const response = await client.request<{
+          organizations: JsonObject[];
+          count?: number;
+          next_page?: string | null;
+        }>("/organizations.json", {
+          query: { page, per_page: perPage },
+        });
+        const count =
+          typeof response.count === "number" ? response.count : response.organizations.length;
+        return {
+          count,
+          page,
+          perPage,
+          nextPageAvailable: Boolean(response.next_page),
+          organizations: response.organizations,
+        };
+      }),
+  );
+
   return server;
 }
 
