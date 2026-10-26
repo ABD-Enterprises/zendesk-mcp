@@ -8,7 +8,10 @@ implemented. Where a payload is passed through from Zendesk, its fields belong
 to the account and the API version and are not part of this contract.
 
 Every tool result is a JSON payload in a single `text` content block, so a
-caller parses the block's text to get the value described below.
+caller parses the block's text to get the value described below. A call the
+MCP SDK refuses before a handler runs — a schema-validation failure, or a
+tool the allowlist filtered out — is refused rather than wrapped in this
+envelope.
 
 ## Tools
 
@@ -46,7 +49,7 @@ the sections below describe.
 
 ### List and search results
 
-The five list tools and `zendesk_search_tickets` return a shared envelope:
+The four list tools and `zendesk_search_tickets` return a shared envelope:
 
 ```json
 {
@@ -156,7 +159,7 @@ rather than returning a tool error.
 
 What the error payload never contains: OAuth credentials, access or refresh
 tokens, or token-file contents. The payload is passed through a redaction step
-that replaces any value whose key matches `token`, `secret`, `password`,
+that replaces any value whose key contains `token`, `secret`, `password`,
 `authorization`, or `cookie` (case-insensitive) with `[REDACTED]`, recursively.
 The `details.response` body is whatever Zendesk's own error response said; it
 does not echo the connector's credentials.
