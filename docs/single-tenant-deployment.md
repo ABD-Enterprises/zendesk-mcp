@@ -219,14 +219,18 @@ Each person's deployment is provisioned separately:
 - **Separate host accounts.** Each person signs in as their own host
   user, so every default path under `~/.config/codex-zendesk/` already
   resolves to that person's own files, and the host's permission model
-  isolates the deployments from each other. One instance running as one
-  host user on behalf of several people is the shared deployment this
-  document rules out, not a smaller version of this one.
-- **Separate token files.** Each instance reads its own token file —
-  `~/.config/codex-zendesk/oauth.json` under the owning user's home by
-  default, moved by that instance's own `ZENDESK_OAUTH_TOKEN_FILE`. One
-  token file per person is what makes each token belong to the user who
-  completed that instance's authorization flow.
+  isolates each deployment's owner-only files and its stdio server
+  process from the others. That isolation covers files and processes,
+  not loopback sockets: see the console caveat below. One instance
+  running as one host user on behalf of several people is the shared
+  deployment this document rules out, not a smaller version of this one.
+- **Separate token files.** In `authorization_code` mode each instance
+  reads its own token file — `~/.config/codex-zendesk/oauth.json` under
+  the owning user's home by default, moved by that instance's own
+  `ZENDESK_OAUTH_TOKEN_FILE`. One token file per person is what makes
+  each token belong to the user who completed that instance's
+  authorization flow. (Modes without a token file — `client_credentials`
+  and `access_token` — are covered under Authentication modes above.)
 - **Separate allowlists.** Each instance parses its own
   `ZENDESK_ALLOWED_TOOLS` at startup and re-checks it on every call; the
   value set for one instance says nothing about another.
@@ -242,13 +246,18 @@ own environment. One registration per person, and no shared client file:
 the connector refuses to start when the client file is readable by group
 or other, so a file two host users can read is refused rather than shared.
 
-Sharing one registration, or one token file, defeats the reason to run
-per-user deployments: it collapses revocation back to all-or-nothing.
-Ending one person's access under a shared credential means revoking the
-one token everyone's calls depend on, and letting it stand means leaving
-that person able to act. With per-user clients and per-user token files,
-logging one person out — or revoking their client in Zendesk — changes
-nothing for anyone else.
+Sharing one client registration widens the blast radius of a leak, and
+sharing one token file defeats the reason to run per-user deployments.
+With one shared token file, ending one person's access means revoking
+the one token everyone's calls depend on, and letting it stand means
+leaving that person able to act. Per-user token files already bound
+that: logging one person out revokes only their own token, so with
+per-user clients as well — revoking or rotating one person's client in
+Zendesk, or rotating its secret — nothing anyone else runs changes.
+What stays shared under one registration is the client secret itself:
+it is read by every instance that uses it, so a leak of that secret
+reaches every token minted from it. One registration per person keeps
+that blast radius to one person's deployments.
 
 ### Per-user allowlist examples
 
@@ -262,16 +271,23 @@ zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_list_organizations"
 ```
 
-A triage role adds the internal-note tool but still cannot create or
-edit tickets:
+A triage role adds the comment tool but still cannot create or edit
+tickets. The allowlist filters tool names, not arguments, so this
+grants more than internal notes:
 
 ```sh
-# Triager: reads plus internal notes.
+# Triager: reads plus comments.
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_list_organizations,\
 zendesk_add_ticket_comment"
 ```
+
+`zendesk_add_ticket_comment` posts an internal note or a public reply —
+the caller chooses with the tool's `public` input, and an allowlist
+that includes the tool cannot force internal notes. Granting it to a
+role therefore grants customer-visible replies too; a role that must
+never reply publicly should not carry it.
 
 Each value lives in that person's MCP client configuration or
 environment, so when the tool set or a person's duties change, review
