@@ -24,8 +24,8 @@ envelope.
 | `zendesk_list_groups` | Read | List groups with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_users` | Read | List users with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
-| `zendesk_list_ticket_fields` | Read | List ticket fields with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
-| `zendesk_list_forms` | Read | List forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
+| `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of strings (optional) | Yes |
 | `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of strings (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
@@ -63,6 +63,9 @@ The six list tools and `zendesk_search_tickets` return a shared envelope:
 ```
 
 - `page` and `perPage` echo the values the call used.
+  `zendesk_list_ticket_fields` takes no parameters, so its envelope always
+  reports a single page: `page` 1, `perPage` equal to `count`, and
+  `nextPageAvailable` false.
 - `nextPageAvailable` is true when Zendesk reports another page; the caller
   advances by calling again with `page` incremented.
 - `count` is the total Zendesk reports. The list tools fall back to the
@@ -70,7 +73,7 @@ The six list tools and `zendesk_search_tickets` return a shared envelope:
   entirely when Zendesk reports no total, because a search total can be
   approximate or absent.
 - The items follow under a tool-specific key: `brands`, `groups`, `users`,
-  `organizations`, `ticketFields`, `forms`, or `results` for search.
+  `organizations`, `ticket_fields`, `ticket_forms`, or `results` for search.
 
 Each search result additionally gains an `agent_url` field (see below) when
 the result carries a ticket id.
@@ -206,7 +209,7 @@ For example, a read-only deployment allows the nine read tools:
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_list_organizations,\
-zendesk_list_ticket_fields,zendesk_list_forms"
+zendesk_list_ticket_fields,zendesk_list_ticket_forms"
 ```
 
 The allowlist is a deployment control. It bounds what the server will offer;

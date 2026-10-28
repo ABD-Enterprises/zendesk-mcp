@@ -392,45 +392,35 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     "zendesk_list_ticket_fields",
     {
       title: "List Zendesk ticket fields",
-      description: "List Zendesk ticket fields with page-based pagination.",
-      inputSchema: z.object({
-        page: z.number().int().positive().default(1),
-        perPage: z
-          .number()
-          .int()
-          .positive()
-          .max(MAX_PAGE_SIZE)
-          .default(DEFAULT_PAGE_SIZE),
-      }),
+      description:
+        "List all Zendesk ticket fields. The endpoint returns the complete " +
+        "list in one response and documents no offset pagination, so the " +
+        "call takes no parameters.",
+      inputSchema: z.object({}),
       annotations: readAnnotations,
     },
-    async ({ page, perPage }) =>
+    async () =>
       runTool("zendesk_list_ticket_fields", "read", actorId, async () => {
         guard("zendesk_list_ticket_fields");
         const response = await client.request<{
           ticket_fields: JsonObject[];
-          count?: number;
-          next_page?: string | null;
-        }>("/ticket_fields.json", {
-          query: { page, per_page: perPage },
-        });
-        const count =
-          typeof response.count === "number" ? response.count : response.ticket_fields.length;
+        }>("/ticket_fields.json");
+        const count = response.ticket_fields.length;
         return {
           count,
-          page,
-          perPage,
-          nextPageAvailable: Boolean(response.next_page),
-          ticketFields: response.ticket_fields,
+          page: 1,
+          perPage: count,
+          nextPageAvailable: false,
+          ticket_fields: response.ticket_fields,
         };
       }),
   );
 
-  allowedTools.has("zendesk_list_forms") && server.registerTool(
-    "zendesk_list_forms",
+  allowedTools.has("zendesk_list_ticket_forms") && server.registerTool(
+    "zendesk_list_ticket_forms",
     {
-      title: "List Zendesk forms",
-      description: "List Zendesk forms with page-based pagination.",
+      title: "List Zendesk ticket forms",
+      description: "List Zendesk ticket forms with page-based pagination.",
       inputSchema: z.object({
         page: z.number().int().positive().default(1),
         perPage: z
@@ -443,23 +433,23 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       annotations: readAnnotations,
     },
     async ({ page, perPage }) =>
-      runTool("zendesk_list_forms", "read", actorId, async () => {
-        guard("zendesk_list_forms");
+      runTool("zendesk_list_ticket_forms", "read", actorId, async () => {
+        guard("zendesk_list_ticket_forms");
         const response = await client.request<{
-          forms: JsonObject[];
+          ticket_forms: JsonObject[];
           count?: number;
           next_page?: string | null;
-        }>("/forms.json", {
+        }>("/ticket_forms.json", {
           query: { page, per_page: perPage },
         });
         const count =
-          typeof response.count === "number" ? response.count : response.forms.length;
+          typeof response.count === "number" ? response.count : response.ticket_forms.length;
         return {
           count,
           page,
           perPage,
           nextPageAvailable: Boolean(response.next_page),
-          forms: response.forms,
+          ticket_forms: response.ticket_forms,
         };
       }),
   );

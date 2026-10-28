@@ -20,8 +20,6 @@ const EXAMPLE_NEXT_PAGE =
   "https://example.zendesk.com/api/v2/brands.json?page=2&per_page=25";
 const GROUPS_NEXT_PAGE =
   "https://example.zendesk.com/api/v2/groups.json?page=3&per_page=10";
-const TICKET_FIELDS_NEXT_PAGE =
-  "https://example.zendesk.com/api/v2/ticket_fields.json?page=2&per_page=25";
 
 /** Every list envelope carries these keys, in this order, before the resource. */
 const ENVELOPE_KEYS = ["count", "page", "perPage", "nextPageAvailable"];
@@ -180,13 +178,9 @@ test("lists users with the requested page and reports the last page", async () =
   }
 });
 
-test("lists ticket fields with the requested page and reports that another page exists", async () => {
+test("lists every ticket field in one unpaginated response", async () => {
   const { client, requests } = listClient(() => ({
     ticket_fields: [EXAMPLE_TICKET_FIELD],
-    count: 30,
-    page: 1,
-    per_page: 25,
-    next_page: TICKET_FIELDS_NEXT_PAGE,
   }));
   const session = await connectLists(client);
 
@@ -196,50 +190,51 @@ test("lists ticket fields with the requested page and reports that another page 
     assert.equal(requests.length, 1);
     const request = requests[0];
     assert.equal(request.pathname, "/api/v2/ticket_fields.json");
-    assert.equal(request.searchParams.get("page"), "1");
-    assert.equal(request.searchParams.get("per_page"), "25");
+    // The endpoint documents no offset pagination: no page query is sent.
+    assert.equal(request.searchParams.has("page"), false);
+    assert.equal(request.searchParams.has("per_page"), false);
 
-    // The envelope's resource key is camelCase, like `nextPageAvailable`.
-    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "ticketFields"]);
-    assert.equal(payload.count, 30);
+    // The envelope's resource key is snake_case, as Zendesk names it.
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "ticket_fields"]);
+    // The complete list arrives as one page, so the envelope reports one
+    // page holding every item and no further page.
+    assert.equal(payload.count, 1);
     assert.equal(payload.page, 1);
-    assert.equal(payload.perPage, 25);
-    assert.equal(payload.nextPageAvailable, true);
-    assert.deepEqual(payload.ticketFields, [EXAMPLE_TICKET_FIELD]);
-    assert.equal(JSON.stringify(payload).includes(TICKET_FIELDS_NEXT_PAGE), false);
+    assert.equal(payload.perPage, 1);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.ticket_fields, [EXAMPLE_TICKET_FIELD]);
   } finally {
     await session.close();
   }
 });
 
-test("lists forms with the requested page and reports the last page", async () => {
+test("lists ticket forms with the requested page and reports the last page", async () => {
   const { client, requests } = listClient(() => ({
-    forms: [EXAMPLE_FORM],
-    count: 3,
-    page: 2,
-    per_page: 10,
+    ticket_forms: [EXAMPLE_FORM],
   }));
   const session = await connectLists(client);
 
   try {
-    const payload = await listPayload(session.client, "zendesk_list_forms", {
+    const payload = await listPayload(session.client, "zendesk_list_ticket_forms", {
       page: 2,
       perPage: 10,
     });
 
     assert.equal(requests.length, 1);
     const request = requests[0];
-    assert.equal(request.pathname, "/api/v2/forms.json");
+    assert.equal(request.pathname, "/api/v2/ticket_forms.json");
     assert.equal(request.searchParams.get("page"), "2");
     assert.equal(request.searchParams.get("per_page"), "10");
 
-    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "forms"]);
-    assert.equal(payload.count, 3);
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "ticket_forms"]);
+    // Zendesk's ticket-forms response carries neither count nor next_page,
+    // so the count falls back to the page's length and no further page is
+    // reported, as for organizations.
+    assert.equal(payload.count, 1);
     assert.equal(payload.page, 2);
     assert.equal(payload.perPage, 10);
-    // An absent `next_page` reports no further page, as for organizations.
     assert.equal(payload.nextPageAvailable, false);
-    assert.deepEqual(payload.forms, [EXAMPLE_FORM]);
+    assert.deepEqual(payload.ticket_forms, [EXAMPLE_FORM]);
   } finally {
     await session.close();
   }
@@ -358,7 +353,7 @@ async function listPayload(
 function createListServer(zendesk: ZendeskClient) {
   const original = process.env.ZENDESK_ALLOWED_TOOLS;
   process.env.ZENDESK_ALLOWED_TOOLS =
-    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users,zendesk_list_ticket_fields,zendesk_list_forms";
+    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users,zendesk_list_ticket_fields,zendesk_list_ticket_forms";
   try {
     return createZendeskServer(zendesk);
   } finally {

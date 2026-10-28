@@ -12,7 +12,7 @@ const ALL_TOOLS = [
   "zendesk_list_users",
   "zendesk_list_organizations",
   "zendesk_list_ticket_fields",
-  "zendesk_list_forms",
+  "zendesk_list_ticket_forms",
 ] as const;
 
 export type ZendeskToolName = (typeof ALL_TOOLS)[number];
