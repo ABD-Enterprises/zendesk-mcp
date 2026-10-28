@@ -32,9 +32,10 @@ complete the authorization flow again.
 What is retained, where, by whom, and for how long, per class of data:
 
 - Zendesk ticket and user data: the connector transfers tickets, comments,
-  users, organizations, brands, and groups live during tool calls and keeps
-  no copy locally; neither the connector nor the operations console has a
-  datastore on disk (`docs/operations.md`, "No datastore to back up").
+  users, organizations, brands, groups, ticket field definitions, and
+  ticket form definitions live during tool calls and keeps no copy locally;
+  neither the connector nor the operations console has a datastore on disk
+  (`docs/operations.md`, "No datastore to back up").
   Whatever an MCP client or an operator's log sink keeps is chosen there and
   is outside this repository's control. Retention inside the Zendesk account
   is the account's own concern.
