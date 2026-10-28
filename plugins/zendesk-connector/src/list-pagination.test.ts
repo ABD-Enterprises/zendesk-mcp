@@ -14,6 +14,8 @@ const SECOND_EXAMPLE_BRAND = {
 const EXAMPLE_ORGANIZATION = { id: 601, name: "Example Organization" };
 const EXAMPLE_GROUP = { id: 701, name: "Example Group" };
 const EXAMPLE_USER = { id: 801, name: "Example User" };
+const EXAMPLE_TICKET_FIELD = { id: 901, title: "Example Field", type: "text" };
+const EXAMPLE_FORM = { id: 951, name: "Example Form" };
 const EXAMPLE_NEXT_PAGE =
   "https://example.zendesk.com/api/v2/brands.json?page=2&per_page=25";
 const GROUPS_NEXT_PAGE =
@@ -176,6 +178,68 @@ test("lists users with the requested page and reports the last page", async () =
   }
 });
 
+test("lists every ticket field in one unpaginated response", async () => {
+  const { client, requests } = listClient(() => ({
+    ticket_fields: [EXAMPLE_TICKET_FIELD],
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_ticket_fields", {});
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.pathname, "/api/v2/ticket_fields.json");
+    // The endpoint documents no offset pagination: no page query is sent.
+    assert.equal(request.searchParams.has("page"), false);
+    assert.equal(request.searchParams.has("per_page"), false);
+
+    // The envelope's resource key is snake_case, as Zendesk names it.
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "ticket_fields"]);
+    // The complete list arrives as one page, so the envelope reports one
+    // page holding every item and no further page.
+    assert.equal(payload.count, 1);
+    assert.equal(payload.page, 1);
+    assert.equal(payload.perPage, 1);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.ticket_fields, [EXAMPLE_TICKET_FIELD]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("lists ticket forms with the requested page and reports the last page", async () => {
+  const { client, requests } = listClient(() => ({
+    ticket_forms: [EXAMPLE_FORM],
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_ticket_forms", {
+      page: 2,
+      perPage: 10,
+    });
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.pathname, "/api/v2/ticket_forms.json");
+    assert.equal(request.searchParams.get("page"), "2");
+    assert.equal(request.searchParams.get("per_page"), "10");
+
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "ticket_forms"]);
+    // Zendesk's ticket-forms response carries neither count nor next_page,
+    // so the count falls back to the page's length and no further page is
+    // reported, as for organizations.
+    assert.equal(payload.count, 1);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.ticket_forms, [EXAMPLE_FORM]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("falls back to the item count when Zendesk omits count", async () => {
   const { client, requests } = listClient(() => ({
     brands: [EXAMPLE_BRAND],
@@ -289,7 +353,7 @@ async function listPayload(
 function createListServer(zendesk: ZendeskClient) {
   const original = process.env.ZENDESK_ALLOWED_TOOLS;
   process.env.ZENDESK_ALLOWED_TOOLS =
-    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users";
+    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users,zendesk_list_ticket_fields,zendesk_list_ticket_forms";
   try {
     return createZendeskServer(zendesk);
   } finally {

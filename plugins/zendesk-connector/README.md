@@ -21,7 +21,8 @@ For deployments that should be read-only, configure an explicit tool allowlist:
 
 ```sh
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
-zendesk_list_brands,zendesk_list_groups,zendesk_list_users,zendesk_list_organizations"
+zendesk_list_brands,zendesk_list_groups,zendesk_list_users,\
+zendesk_list_organizations,zendesk_list_ticket_fields,zendesk_list_ticket_forms"
 ```
 
 Every tool call emits a structured audit event to stderr without ticket
@@ -123,9 +124,12 @@ token file is readable, or that Zendesk is reachable, so use the
 - `zendesk_list_groups`: lists groups with page-based pagination.
 - `zendesk_list_users`: lists users with page-based pagination.
 - `zendesk_list_organizations`: lists organizations with page-based pagination.
+- `zendesk_list_ticket_fields`: lists all ticket fields (one unpaginated
+  response).
+- `zendesk_list_ticket_forms`: lists ticket forms with page-based pagination.
 - `zendesk_create_ticket`: creates a ticket.
 - `zendesk_update_ticket`: updates common ticket fields.
 - `zendesk_add_ticket_comment`: adds a public reply or internal note.
 
-All ten tools use the same OAuth request layer. Use `zendesk_status` to verify
+All twelve tools use the same OAuth request layer. Use `zendesk_status` to verify
 the authenticated user, OAuth mode, scope, and refresh capability.

@@ -24,6 +24,8 @@ envelope.
 | `zendesk_list_groups` | Read | List groups with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_users` | Read | List users with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
+| `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of strings (optional) | Yes |
 | `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of strings (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
@@ -49,7 +51,7 @@ the sections below describe.
 
 ### List and search results
 
-The four list tools and `zendesk_search_tickets` return a shared envelope:
+The six list tools and `zendesk_search_tickets` return a shared envelope:
 
 ```json
 {
@@ -61,6 +63,9 @@ The four list tools and `zendesk_search_tickets` return a shared envelope:
 ```
 
 - `page` and `perPage` echo the values the call used.
+  `zendesk_list_ticket_fields` takes no parameters, so its envelope always
+  reports a single page: `page` 1, `perPage` equal to `count`, and
+  `nextPageAvailable` false.
 - `nextPageAvailable` is true when Zendesk reports another page; the caller
   advances by calling again with `page` incremented.
 - `count` is the total Zendesk reports. The list tools fall back to the
@@ -68,7 +73,7 @@ The four list tools and `zendesk_search_tickets` return a shared envelope:
   entirely when Zendesk reports no total, because a search total can be
   approximate or absent.
 - The items follow under a tool-specific key: `brands`, `groups`, `users`,
-  `organizations`, or `results` for search.
+  `organizations`, `ticket_fields`, `ticket_forms`, or `results` for search.
 
 Each search result additionally gains an `agent_url` field (see below) when
 the result carries a ticket id.
@@ -167,7 +172,7 @@ does not echo the connector's credentials.
 ## Annotations contract
 
 Every read tool — `zendesk_status`, `zendesk_search_tickets`,
-`zendesk_get_ticket`, and the four `zendesk_list_*` tools — is marked:
+`zendesk_get_ticket`, and the six `zendesk_list_*` tools — is marked:
 
 ```json
 { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
@@ -189,7 +194,7 @@ scopes are.
 
 `ZENDESK_ALLOWED_TOOLS` narrows the deployed tool surface to a named subset:
 
-- Unset or empty, all ten tools are available.
+- Unset or empty, all twelve tools are available.
 - Set to a comma-separated list of tool names, only those tools are
   registered. A filtered tool does not appear in `tools/list`, and calls to it
   are refused. Each handler also re-checks the policy at call time, so a tool
@@ -198,12 +203,13 @@ scopes are.
   name is rejected at startup: the server refuses to start and reports the
   problem, naming any offending tool names.
 
-For example, a read-only deployment allows the seven read tools:
+For example, a read-only deployment allows the nine read tools:
 
 ```sh
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
-zendesk_list_users,zendesk_list_organizations"
+zendesk_list_users,zendesk_list_organizations,\
+zendesk_list_ticket_fields,zendesk_list_ticket_forms"
 ```
 
 The allowlist is a deployment control. It bounds what the server will offer;
