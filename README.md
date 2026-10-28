@@ -62,6 +62,8 @@ events, the allowlist, and the versioning policy — is in the
 | `zendesk_list_groups` | Read | List groups with page-based pagination |
 | `zendesk_list_users` | Read | List users with page-based pagination |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination |
+| `zendesk_list_ticket_fields` | Read | List ticket fields with page-based pagination |
+| `zendesk_list_forms` | Read | List forms with page-based pagination |
 | `zendesk_create_ticket` | Write | Create a ticket |
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
