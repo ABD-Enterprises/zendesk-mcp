@@ -203,6 +203,108 @@ exposed, revoke it in Zendesk immediately and complete the authorization
 flow again, per [SECURITY.md](../SECURITY.md#credential-handling). The
 operational order is in the [operations guide](operations.md#rollback).
 
+## One deployment per host user
+
+Several people can use this connector on one host without sharing a
+deployment, by composing the model this document defines: one
+single-tenant deployment per person, each under that person's own host
+user. This is Option A of the
+[design document](multi-user-oauth-isolation.md), which stays the source
+of truth for the reasoning and for what this composition does not cover.
+It composes the single-tenant model; it does not extend it, and nothing
+multi-tenant is implied or supported.
+
+Each person's deployment is provisioned separately:
+
+- **Separate host accounts.** Each person signs in as their own host
+  user, so every default path under `~/.config/codex-zendesk/` already
+  resolves to that person's own files, and the host's permission model
+  isolates each deployment's owner-only files and its stdio server
+  process from the others. That isolation covers files and processes,
+  not loopback sockets: see the
+  [console caveat](operations.md#several-instances-on-one-host) in the
+  operations guide. One instance
+  running as one host user on behalf of several people is the shared
+  deployment this document rules out, not a smaller version of this one.
+- **Separate token files.** In `authorization_code` mode each instance
+  reads its own token file — `~/.config/codex-zendesk/oauth.json` under
+  the owning user's home by default, moved by that instance's own
+  `ZENDESK_OAUTH_TOKEN_FILE`. One token file per person is what makes
+  each token belong to the user who completed that instance's
+  authorization flow. (Modes without a token file — `client_credentials`
+  and `access_token` — are covered under
+  [One OAuth client per deployment](#one-oauth-client-per-deployment)
+  above.)
+- **Separate allowlists.** Each instance parses its own
+  `ZENDESK_ALLOWED_TOOLS` at startup and re-checks it on every call; the
+  value set for one instance says nothing about another.
+
+### Per-user OAuth client registration
+
+Each person registers their own confidential OAuth client in the account,
+as described in the
+[root README](../README.md#configure-zendesk-oauth), and keeps the client
+id and secret in their own client file (`~/.config/codex-zendesk/client.json`
+under their own home, moved by `ZENDESK_OAUTH_CLIENT_FILE`) or in their
+own environment. One registration per person, and no shared client file:
+the connector refuses to start when the client file is readable by group
+or other. The console reads the same file without checking its mode, so
+the owner-only mode is the only protection there — a file two host users
+can read is refused by the connector rather than shared, and kept out of
+the console's reach only by its mode.
+
+Sharing one client registration widens the blast radius of a leak, and
+sharing one token file defeats the reason to run per-user deployments.
+With one shared token file, ending one person's access means revoking
+the one token everyone's calls depend on, and letting it stand means
+leaving that person able to act. Per-user token files already bound
+that: logging one person out revokes only their own token, so with
+per-user clients as well — revoking or rotating one person's client in
+Zendesk, or rotating its secret — nothing anyone else runs changes.
+What stays shared under one registration is the client secret itself:
+it is read by every instance that uses it, so a leak of that secret
+reaches every token minted from it. One registration per person keeps
+that blast radius to one person's deployments.
+
+### Per-user allowlist examples
+
+Different people on one host commonly carry different allowlists. A
+reader gets the seven read tools and nothing that writes:
+
+```sh
+# Reader: reads only.
+export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
+zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
+zendesk_list_users,zendesk_list_organizations"
+```
+
+A triage role adds the comment tool but still cannot create or edit
+tickets. The allowlist filters tool names, not arguments, so this
+grants more than internal notes:
+
+```sh
+# Triager: reads plus comments.
+export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
+zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
+zendesk_list_users,zendesk_list_organizations,\
+zendesk_add_ticket_comment"
+```
+
+`zendesk_add_ticket_comment` posts an internal note or a public reply —
+the caller chooses with the tool's `public` input, and an allowlist
+that includes the tool cannot force internal notes. Granting it to a
+role therefore grants customer-visible replies too; a role that must
+never reply publicly should not carry it.
+
+Each value lives in that person's MCP client configuration or
+environment, so when the tool set or a person's duties change, review
+each instance's allowlist rather than assuming one edit covers the host.
+The allowlist stays a narrowing control: it bounds what each server will
+offer, while the OAuth scopes and the account's own role permissions
+still bound what Zendesk will allow. How to collect each instance's audit
+output is in the
+[operations guide](operations.md#several-instances-on-one-host).
+
 ## Non-goals
 
 The repository makes no claim on the shapes below. A deployment that needs

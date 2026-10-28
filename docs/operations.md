@@ -35,6 +35,104 @@ non-goals are written down in the
 [single-tenant deployment guide](single-tenant-deployment.md); shared or
 multi-account hosting waits for a change to that model.
 
+## Several instances on one host
+
+One host can carry several of the deployments the
+[deployment guide](single-tenant-deployment.md#one-deployment-per-host-user)
+defines — one single-tenant instance per person, each under its own host
+user with its own client file, token file (in `authorization_code`
+mode), and allowlist. That guide
+states the provisioning rules; this section covers the audit stream and
+the day-2 operation of the set. The design behind it, and what it does
+not claim, live in the
+[design document](multi-user-oauth-isolation.md). This is N single-tenant
+instances composed, not multi-tenant hosting, which stays out of scope.
+
+### Collecting per-user audit sinks
+
+Every handled call emits exactly one audit event as a single JSON line
+on that instance's stderr, plus the lifecycle lines, as the
+[tool contracts](tool-contracts.md#audit-contract) define. The connector
+writes no log file itself: the process that starts it — that person's
+MCP client configuration or their process supervisor — owns the stderr
+stream and is what captures it. Keep each person's stream in its own
+file: the only identity a line carries is the Zendesk user id, so it is
+the per-user file that attributes events to a person. Two shapes that
+work:
+
+- An MCP client that logs its child server's stderr to a per-user path.
+- A supervisor that starts the server and appends stderr to a per-user
+  file. Stdout must stay untouched — it carries the MCP protocol — so
+  the redirection moves stderr only. The file carries Zendesk user ids,
+  so keep it owner-only:
+
+  ```sh
+  umask 077
+  mkdir -p ~/.local/state/codex-zendesk
+  node /path/to/zendesk-mcp/plugins/zendesk-connector/dist/index.js \
+    2>>~/.local/state/codex-zendesk/audit.ndjson
+  ```
+
+  (A globally installed `zendesk-mcp` command works in place of the
+  `node` path; the source install has no such command.) An existing
+  file with wider permissions is fixed by `chmod 600` on it and
+  `chmod 700` on its directory.
+
+Each file holds one JSON object per line, so read it with `jq`, for
+example:
+
+```sh
+jq -r 'select(.event == "zendesk_tool_call") |
+  [.timestamp, .actorId // "unknown", .tool, .operation, .outcome] | @tsv' \
+  ~/.local/state/codex-zendesk/audit.ndjson
+```
+
+`actorId` — the authenticated Zendesk user's id — is held in memory and
+established by a successful `zendesk_status` call, the first after each
+start. That call's own event and any event before it carry no `actorId`
+and read as `unknown` above, and so does every event after a restart:
+run the tool once per instance after each start — including after
+provisioning and after a restore — and only if the instance's
+allowlist includes `zendesk_status`, if later events must carry it. Audit lines exclude
+ticket contents and credentials; the full field list is in the
+[tool contracts](tool-contracts.md#audit-contract).
+
+### Day-2 operation of the set
+
+Most day-2 procedures run once per person, as that person, because
+each instance's configuration and owner-only files live under that
+person's account. Host-level pieces — the reverse proxy and TLS section
+below — are configured once for the host, not per person:
+
+- **Health checks.** Run the connector's health-check command as each
+  user; it validates that user's configuration and contacts nothing.
+  A console, when used, is one instance per user and binds its own
+  loopback port (`PORT` changes it). The console has no authentication,
+  and loopback is host-wide, not per-user: any local user who can reach
+  the port reads that dashboard, and the proxy section below is not
+  access control against those local users — it only fronts the port it
+  is configured for.
+  The console also does not use the per-user token file: it reads its
+  own client file and mints its own token from it, so the per-user
+  token-file isolation above does not constrain what a console exposes.
+  On a shared host, run a per-user console only where every local user
+  is trusted to see every other user's dashboard, or do not run one.
+- **Backups.** Back up each user's files separately, to that user's
+  paths, and restore each user's owner-only modes as the
+  [backup section](#permissions-after-a-restore) shows. Never merge
+  archives, and never copy one user's client or token file to another
+  user: the copied credential is the shared deployment the
+  [deployment guide](single-tenant-deployment.md#non-goals) rules out.
+- **Upgrades and rollbacks.** Each instance upgrades on its own only
+  when each user runs their own install; a shared checkout or global
+  install upgrades every instance pointing at it together. Either way,
+  record the running version per instance, verify each account with
+  that instance's `zendesk_status` after an upgrade, and roll back only
+  the instances that need it. When an upgrade documents a configuration
+  change, apply it to every user's instance deliberately — the same
+  care applies to `ZENDESK_ALLOWED_TOOLS`, where drift between instances
+  is the real risk of running the same server as several people.
+
 ## Reverse proxy and TLS
 
 ### What the proxy forwards
