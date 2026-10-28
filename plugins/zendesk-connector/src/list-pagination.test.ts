@@ -227,9 +227,9 @@ test("lists ticket forms with the requested page and reports the last page", asy
     assert.equal(request.searchParams.get("per_page"), "10");
 
     assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "ticket_forms"]);
-    // Zendesk's ticket-forms response carries neither count nor next_page,
-    // so the count falls back to the page's length and no further page is
-    // reported, as for organizations.
+    // This response carries neither count nor next_page, so the count
+    // falls back to the page's length and no further page is reported,
+    // as for organizations.
     assert.equal(payload.count, 1);
     assert.equal(payload.page, 2);
     assert.equal(payload.perPage, 10);
