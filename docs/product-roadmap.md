@@ -2,14 +2,19 @@
 
 ## Current position
 
-The repository is an OAuth-only local MCP prototype for Zendesk Support. It
+The repository is an OAuth-only local MCP server for Zendesk Support. It
 currently provides status validation, ticket search, ticket reads, ticket
 creation, ticket updates, ticket comments, read-only lists of brands,
-groups, users, and organizations, and a local service-operations console.
+groups, users, organizations, ticket fields, and ticket forms, and a local
+service-operations console.
 
-It is not yet an organization-ready shared service. The largest gaps are
-multi-user OAuth isolation, authorization policy, auditability, deployment,
-release engineering, and broader Zendesk resource coverage.
+It is not yet an organization-ready shared service. Authorization policy,
+auditability, deployment, and release engineering have shipped; the largest
+gaps are multi-user OAuth isolation (a design in
+`docs/multi-user-oauth-isolation.md`), broader Zendesk resource coverage
+beyond the landed tools, a live run of the read-only end-to-end harness
+against a disposable Zendesk sandbox, signed release artifacts, and the
+independent security review that v1.0 requires.
 
 Customer-specific brands, groups, dashboard IDs, ticket counts, URLs, and
 operational handoff notes belong in a customer deployment or private operations
@@ -84,19 +89,16 @@ of scope.
 The following work can be completed in the current repository without needing
 new Zendesk credentials or customer-side configuration:
 
-1. Establish neutral public-product branding and remove customer-specific
-   references from the public package documentation.
-2. Add CI workflows for typecheck, tests, package dry runs, and dependency
-   auditing.
-3. Add a changelog, versioning policy, issue templates, and a release checklist.
-4. Add a policy module with configurable read/write tool allowlists.
-5. Add structured audit events and secret/content redaction tests.
-6. Harden OAuth configuration validation and refresh-token concurrency handling.
-7. Add Docker packaging, a health check, graceful shutdown, and deployment
-   documentation.
-8. Add generic test fixtures and contract tests for the existing Zendesk tools.
-9. Design the resource-module interfaces for Guide, ticket configuration, and
-   organizational resources without enabling untested production writes.
+1. Design the resource modules for the Zendesk resources that are not yet
+   in the tool set (views, triggers, macros, automations, SLA policies,
+   and Guide content), specifying each module's OAuth scopes and
+   read/write behavior without enabling untested production writes.
+2. Extend the brands, groups, users, and organizations tools beyond their
+   existing read-only lists.
+3. Investigate the Explore dashboard and report surface and write up the
+   browser-only boundary where the Zendesk API does not expose it.
+4. Plan and draft the migration and upgrade documentation for existing
+   deployments.
 
 ## Explicit non-goals
 
