@@ -5,8 +5,8 @@
 The repository is an OAuth-only local MCP server for Zendesk Support. It
 currently provides status validation, ticket search, ticket reads, ticket
 creation, ticket updates, ticket comments, read-only lists of brands,
-groups, users, organizations, ticket fields, and ticket forms, and a local
-service-operations console.
+groups, users, organizations, ticket fields, and ticket forms, plus a
+local service-operations console.
 
 It is not yet an organization-ready shared service. Authorization policy,
 auditability, deployment, and release engineering have shipped; the largest
@@ -67,8 +67,8 @@ of scope.
 
 ### v0.7: Zendesk resource coverage
 
-- Add ticket fields and forms, and extend brands, groups, users, and
-  organizations beyond their existing read-only lists.
+- Extend brands, groups, users, and organizations beyond their existing
+  read-only lists.
 - Add views, triggers, macros, automations, and SLA resources.
 - Add Guide categories, sections, and articles.
 - Investigate and add supported Explore dashboard/report operations where the
@@ -79,9 +79,9 @@ of scope.
 
 - Stabilize MCP tool contracts and versioning.
 - Publish security, privacy, data-retention, and incident-response policies.
-- Add SBOM generation, dependency scanning, and signed release artifacts.
+- Add signed release artifacts.
 - Complete end-to-end tests against a disposable Zendesk sandbox.
-- Publish migration and upgrade documentation.
+- Publish migration and breaking-change documentation.
 - Complete an independent security review before recommending production use.
 
 ## Buildable today
@@ -97,8 +97,9 @@ new Zendesk credentials or customer-side configuration:
    existing read-only lists.
 3. Investigate the Explore dashboard and report surface and write up the
    browser-only boundary where the Zendesk API does not expose it.
-4. Plan and draft the migration and upgrade documentation for existing
-   deployments.
+4. Plan and draft migration and breaking-change documentation for
+   existing deployments; upgrade and rollback guidance already exists in
+   `docs/operations.md`.
 
 ## Explicit non-goals
 
