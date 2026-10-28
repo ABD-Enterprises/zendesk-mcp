@@ -115,6 +115,42 @@ set and well-formed — not that they are correct, that the authorization-code
 token file is readable, or that Zendesk is reachable, so use the
 `zendesk_status` tool for readiness.
 
+## End-to-end tests
+
+The end-to-end harness (`e2e/run-e2e.mjs`) spawns the built server
+(`dist/index.js`) and speaks MCP over its stdio, asserting real request to
+response behavior for the read-only surface: `zendesk_status`, the list tools,
+`zendesk_search_tickets`, and — when `ZENDESK_E2E_TICKET_ID` names a ticket —
+`zendesk_get_ticket`. The harness never calls a write tool, never prints token
+values, and always relocates `ZENDESK_OAUTH_CLIENT_FILE` and
+`ZENDESK_OAUTH_TOKEN_FILE` to a private temporary directory, so a run never
+reads the invoking host's `~/.config/codex-zendesk` files.
+
+```sh
+npm run e2e:mock
+```
+
+This suite is hermetic: it drives the harness against a local `node:http`
+mock Zendesk and needs no account, no network access, and no credentials. It
+also covers the unconfigured skip path. Run `npm run build` first so
+`dist/index.js` exists.
+
+```sh
+ZENDESK_SUBDOMAIN=your-sandbox-subdomain \
+ZENDESK_OAUTH_ACCESS_TOKEN=... \
+ZENDESK_E2E_TICKET_ID=123 \
+npm run e2e
+```
+
+Point `npm run e2e` at a disposable sandbox with `ZENDESK_BASE_URL` (or
+`ZENDESK_SUBDOMAIN`) and `ZENDESK_OAUTH_ACCESS_TOKEN`; `ZENDESK_E2E_TICKET_ID`
+is optional. When those variables are unset the harness prints a clear skip
+message and exits 0. The harness is read-only: whatever the account allows,
+this phase only calls read tools.
+
+A live run needs an owner-provided disposable sandbox account and is never
+part of `npm run check` or CI.
+
 ## Tools
 
 - `zendesk_status`: validates configuration and returns the authenticated user.
