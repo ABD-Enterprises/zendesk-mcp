@@ -40,7 +40,8 @@ multi-account hosting waits for a change to that model.
 One host can carry several of the deployments the
 [deployment guide](single-tenant-deployment.md#one-deployment-per-host-user)
 defines — one single-tenant instance per person, each under its own host
-user with its own client file, token file, and allowlist. That guide
+user with its own client file, token file (in `authorization_code`
+mode), and allowlist. That guide
 states the provisioning rules; this section covers the audit stream and
 the day-2 operation of the set. The design behind it, and what it does
 not claim, live in the
@@ -55,8 +56,9 @@ on that instance's stderr, plus the lifecycle lines, as the
 writes no log file itself: the process that starts it — that person's
 MCP client configuration or their process supervisor — owns the stderr
 stream and is what captures it. Keep each person's stream in its own
-file: a line carries only the Zendesk user id, so it is the per-user
-file that attributes events to a person. Two shapes that work:
+file: the only identity a line carries is the Zendesk user id, so it is
+the per-user file that attributes events to a person. Two shapes that
+work:
 
 - An MCP client that logs its child server's stderr to a per-user path.
 - A supervisor that starts the server and appends stderr to a per-user
@@ -76,8 +78,8 @@ file that attributes events to a person. Two shapes that work:
   file with wider permissions is fixed by `chmod 600` on it and
   `chmod 700` on its directory.
 
-Each file holds one JSON object per line, so read it with `jq`. On
-invented data:
+Each file holds one JSON object per line, so read it with `jq`, for
+example:
 
 ```sh
 jq -r 'select(.event == "zendesk_tool_call") |
@@ -86,12 +88,12 @@ jq -r 'select(.event == "zendesk_tool_call") |
 ```
 
 `actorId` — the authenticated Zendesk user's id — is held in memory and
-established only by the first successful `zendesk_status` call. That
-call's own event and any event before it carry no `actorId` and read as
-`unknown` above, and so does every event after a restart: run the tool
-once per instance after each start — including after provisioning and
-after a restore — and only if the instance's allowlist includes
-`zendesk_status`, if later events must carry it. Audit lines exclude
+established by a successful `zendesk_status` call, the first after each
+start. That call's own event and any event before it carry no `actorId`
+and read as `unknown` above, and so does every event after a restart:
+run the tool once per instance after each start — including after
+provisioning and after a restore — and only if the instance's
+allowlist includes `zendesk_status`, if later events must carry it. Audit lines exclude
 ticket contents and credentials; the full field list is in the
 [tool contracts](tool-contracts.md#audit-contract).
 
@@ -100,15 +102,16 @@ ticket contents and credentials; the full field list is in the
 Most day-2 procedures run once per person, as that person, because
 each instance's configuration and owner-only files live under that
 person's account. Host-level pieces — the reverse proxy and TLS section
-above — are configured once for the host, not per person:
+below — are configured once for the host, not per person:
 
 - **Health checks.** Run the connector's health-check command as each
   user; it validates that user's configuration and contacts nothing.
   A console, when used, is one instance per user and binds its own
   loopback port (`PORT` changes it). The console has no authentication,
   and loopback is host-wide, not per-user: any local user who can reach
-  the port reads that dashboard, and the proxy above is not access
-  control against them — it only fronts the port it is configured for.
+  the port reads that dashboard, and the proxy section below is not
+  access control against those local users — it only fronts the port it
+  is configured for.
   The console also does not use the per-user token file: it reads its
   own client file and mints its own token from it, so the per-user
   token-file isolation above does not constrain what a console exposes.

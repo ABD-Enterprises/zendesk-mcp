@@ -221,7 +221,9 @@ Each person's deployment is provisioned separately:
   resolves to that person's own files, and the host's permission model
   isolates each deployment's owner-only files and its stdio server
   process from the others. That isolation covers files and processes,
-  not loopback sockets: see the console caveat below. One instance
+  not loopback sockets: see the
+  [console caveat](operations.md#several-instances-on-one-host) in the
+  operations guide. One instance
   running as one host user on behalf of several people is the shared
   deployment this document rules out, not a smaller version of this one.
 - **Separate token files.** In `authorization_code` mode each instance
@@ -230,7 +232,9 @@ Each person's deployment is provisioned separately:
   `ZENDESK_OAUTH_TOKEN_FILE`. One token file per person is what makes
   each token belong to the user who completed that instance's
   authorization flow. (Modes without a token file — `client_credentials`
-  and `access_token` — are covered under Authentication modes above.)
+  and `access_token` — are covered under
+  [One OAuth client per deployment](#one-oauth-client-per-deployment)
+  above.)
 - **Separate allowlists.** Each instance parses its own
   `ZENDESK_ALLOWED_TOOLS` at startup and re-checks it on every call; the
   value set for one instance says nothing about another.
@@ -244,7 +248,10 @@ id and secret in their own client file (`~/.config/codex-zendesk/client.json`
 under their own home, moved by `ZENDESK_OAUTH_CLIENT_FILE`) or in their
 own environment. One registration per person, and no shared client file:
 the connector refuses to start when the client file is readable by group
-or other, so a file two host users can read is refused rather than shared.
+or other. The console reads the same file without checking its mode, so
+the owner-only mode is the only protection there — a file two host users
+can read is refused by the connector rather than shared, and kept out of
+the console's reach only by its mode.
 
 Sharing one client registration widens the blast radius of a leak, and
 sharing one token file defeats the reason to run per-user deployments.
