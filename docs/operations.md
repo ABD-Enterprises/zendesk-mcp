@@ -35,6 +35,81 @@ non-goals are written down in the
 [single-tenant deployment guide](single-tenant-deployment.md); shared or
 multi-account hosting waits for a change to that model.
 
+## Several instances on one host
+
+One host can carry several of the deployments the
+[deployment guide](single-tenant-deployment.md#one-deployment-per-host-user)
+defines — one single-tenant instance per person, each under its own host
+user with its own client file, token file, and allowlist. That guide
+states the provisioning rules; this section covers the audit stream and
+the day-2 operation of the set. The design behind it, and what it does
+not claim, live in the
+[design document](multi-user-oauth-isolation.md). This is N single-tenant
+instances composed, not multi-tenant hosting, which stays out of scope.
+
+### Collecting per-user audit sinks
+
+Every handled call emits exactly one audit event as a single JSON line
+on that instance's stderr, plus the lifecycle lines, as the
+[tool contracts](tool-contracts.md#audit-contract) define. The connector
+writes no log file itself: the process that starts it — that person's
+MCP client configuration or their process supervisor — owns the stderr
+stream and is what captures it. Keep each person's stream in its own
+file: a line carries only the Zendesk user id, so it is the per-user
+file that attributes events to a person. Two shapes that work:
+
+- An MCP client that logs its child server's stderr to a per-user path.
+- A supervisor that starts the server and appends stderr to a per-user
+  file. Stdout must stay untouched — it carries the MCP protocol — so
+  the redirection moves stderr only:
+
+  ```sh
+  mkdir -p ~/.local/state/codex-zendesk
+  zendesk-mcp 2>>~/.local/state/codex-zendesk/audit.ndjson
+  ```
+
+Each file holds one JSON object per line, so read it with `jq`. On
+invented data:
+
+```sh
+jq -r 'select(.event == "zendesk_tool_call") |
+  [.timestamp, .actorId // "unknown", .tool, .operation, .outcome] | @tsv' \
+  ~/.local/state/codex-zendesk/audit.ndjson
+```
+
+`actorId` — the authenticated Zendesk user's id — is established only by
+the first successful `zendesk_status` call: that call's own event and
+any event before it carry no `actorId` and read as `unknown` above. Run
+that tool once per instance after provisioning, and after a restore, if
+later events must carry it. Audit lines exclude ticket contents and
+credentials; the full field list is in the
+[tool contracts](tool-contracts.md#audit-contract).
+
+### Day-2 operation of the set
+
+Every procedure in this document runs once per person, as that person,
+because each instance's configuration and owner-only files live under
+that person's account:
+
+- **Health checks.** Run the connector's health-check command as each
+  user; it validates that user's configuration and contacts nothing. A
+  console, when used, is one instance per user and binds its own loopback
+  port (`PORT` changes it), so decide the port mapping alongside the
+  per-user proxy configuration.
+- **Backups.** Back up each user's files separately, to that user's
+  paths, and restore each user's owner-only modes as the
+  [backup section](#permissions-after-a-restore) shows. Never merge
+  archives, and never copy one user's client or token file to another
+  user: the copied credential is the shared deployment the
+  [deployment guide](single-tenant-deployment.md#non-goals) rules out.
+- **Upgrades and rollbacks.** Each instance upgrades on its own, so
+  record the running version per instance, verify each account with that
+  instance's `zendesk_status` after an upgrade, and roll back only the
+  instances that need it. When an upgrade documents a configuration
+  change, apply it to every user's instance deliberately — the same
+  care applies to `ZENDESK_ALLOWED_TOOLS`, where drift between instances
+  is the real risk of running the same server as several people.
+
 ## Reverse proxy and TLS
 
 ### What the proxy forwards

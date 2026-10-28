@@ -292,11 +292,13 @@ of ordering, not commitments):
 1. **This change (design only).** This document. No code, no behavior
    change, no version bump, and — per the repository's changelog rule — no
    CHANGELOG entry, because ordinary changes add none.
-2. **Next documentation release.** Extend the operations and deployment
-   docs with the Option A guidance: one deployment per host user,
-   per-user OAuth client registration, per-user `ZENDESK_ALLOWED_TOOLS`
-   examples, and how to collect and read per-user audit sinks. Still no
-   connector code change.
+2. **Next documentation release — landed.** Extend the operations and
+   deployment docs with the Option A guidance: one deployment per host
+   user, per-user OAuth client registration, per-user
+   `ZENDESK_ALLOWED_TOOLS` examples, and how to collect and read per-user
+   audit sinks. Still no connector code change. Landed in the
+   [deployment guide](single-tenant-deployment.md#one-deployment-per-host-user)
+   and the [operations guide](operations.md#several-instances-on-one-host).
 3. **Later minor release, gated on a prototype.** Investigate Option C1:
    verify the Zendesk API questions listed above (PKCE support, concurrent
    per-user token behavior), confirm the gateway adds no credential
