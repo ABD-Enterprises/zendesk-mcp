@@ -57,7 +57,8 @@ workflow that pushes.
 
 ## After release
 
-- [ ] Record artifact digests and release commit in the release record.
+- [ ] Record artifact digests and release commit in the release record,
+  `docs/release-records.md`.
 - [ ] Monitor reported errors and security advisories.
 
 ## Rollback
