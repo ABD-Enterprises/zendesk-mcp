@@ -219,17 +219,20 @@ jobs:
           // error (the connector is not configured) also proves the module
           // loaded and ran. Only a failure to even load — a syntax error, an
           // unresolved import, a missing production dependency — is a
-          // smoke-test failure.
+          // smoke-test failure. The timeout stops an entry that keeps its
+          // event loop alive from burning the job limit.
           const result = spawnSync(process.execPath, ['-e', `import(${JSON.stringify(pathToFileURL(entry).href)})`], {
             env: { PATH: process.env.PATH },
             stdio: ['ignore', 'pipe', 'pipe'],
             encoding: 'utf8',
+            timeout: 30000,
           });
           const diagnostics = `${result.stdout || ''}${result.stderr || ''}`;
-          const loaded = result.status === 0 || /not configured|is only for/.test(diagnostics);
-          if (result.error || !loaded) {
+          const loaded = result.status === 0 || /not configured/.test(diagnostics);
+          if (result.error || result.signal || !loaded) {
             console.error('The installed entry point did not load:');
             if (result.error) console.error(result.error.message);
+            if (result.signal) console.error(`Killed by signal ${result.signal}.`);
             console.error(diagnostics);
             process.exit(1);
           }

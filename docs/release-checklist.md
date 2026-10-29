@@ -11,6 +11,20 @@
 - [ ] Review OAuth scopes and enabled tool policy for the release.
 - [ ] Review dependency and GitHub Actions security alerts.
 - [ ] Have a second reviewer inspect authentication, policy, logging, and writes.
+- [ ] Confirm npm trusted publishing is armed (one-time per package, plus a
+  per-release variable check): on npmjs.com, for
+  `@abd-enterprises/zendesk-mcp`, Settings → Trusted Publisher → GitHub
+  Actions, register `ABD-Enterprises/zendesk-mcp` with workflow file
+  `release.yml` (the caller — GitHub's OIDC `workflow_ref` claim names the
+  calling workflow of a reusable-workflow job), and grant **Allow npm
+  publish** — configurations created
+  after 2026-09-03 default to stage-publish only, which the workflow's
+  `npm publish` does not satisfy. Confirm the repo variable is set:
+  `gh variable get NPM_TRUSTED_PUBLISHING` must print `true`. Both are
+  required before the tag push below; without them the release run still
+  goes green but publishes only the image, silently skipping npm, and a
+  first registration expires if the first publish does not land within 2
+  days.
 
 ## Publish
 
@@ -45,19 +59,14 @@ only builds an image, and the CI workflow builds the image without pushing it:
   reference and digest as well.
 - [ ] Publish the GitHub release with changelog notes and checksums.
 - [ ] Verify the npm package published with the tag: the `publish to npm`
-  job runs the same release after the image job and publishes
+  job runs in the same release after the image job and publishes
   `@abd-enterprises/zendesk-mcp` with OIDC provenance — no token or
   one-time password is ever used, and nothing is stored in the repository.
-  Publishing stays off until the operator has registered the trusted
-  publisher on npmjs.com (Settings → Trusted Publisher → GitHub Actions,
-  workflow file `release.yml`; the first publish must land within 2 days of
-  registration) and set the repo variable `NPM_TRUSTED_PUBLISHING=true`;
-  until then the job is skipped. Register `release.yml`: the publish job is a
-  reusable-workflow call, and GitHub's OIDC `workflow_ref` claim names the
-  calling workflow. If the first publish fails with ENEEDAUTH and the run log
-  shows npm matched a different filename, add `npm-publish.yml` as a second
-  trusted publisher (npm does not validate the filename when saving). Confirm
-  the result with
+  If the job was skipped, the trusted-publisher registration or the
+  `NPM_TRUSTED_PUBLISHING` variable was missing (see Before release). If it
+  failed with ENEEDAUTH and the run log shows npm matched a different
+  workflow filename, add `npm-publish.yml` as a second trusted publisher
+  (npm does not validate the filename when saving). Confirm the result with
   `npm view @abd-enterprises/zendesk-mcp version` and the provenance on the
   npm package page.
 - [ ] Set the GHCR package visibility to public in the package settings; a new
@@ -89,19 +98,22 @@ published artifacts. See [Leaked credential](#leaked-credential).
 ### npm package
 
 - Deprecate the bad version and keep it installable:
-  `npm deprecate @abd-enterprises/zendesk-mcp@0.6.0 "use 0.6.1 instead"`.
-  Deprecation is reversible and is the safer default.
+  `npm deprecate @abd-enterprises/zendesk-mcp@<bad-version> "use
+  <good-version> instead"`. Deprecation is reversible and is the safer
+  default.
 - Unpublish the bad version only when it must not be installable at all:
-  `npm unpublish @abd-enterprises/zendesk-mcp@0.6.0`. Within 72 hours of
-  publishing, npm accepts the unpublish without further conditions. After 72
-  hours it stays self-service while the package has fewer than 300 weekly
-  downloads, no other package depends on it, and it has a single owner or
-  maintainer; only when one of those conditions fails does the unpublish need
-  an npm support request. An unpublish also leaves the version in caches and
-  lockfiles that already resolved it, and it does not remove the other
-  published versions.
+  `npm unpublish @abd-enterprises/zendesk-mcp@<bad-version>`. Within 72
+  hours of publishing, npm accepts the unpublish without further conditions.
+  After 72 hours it stays self-service while the package has fewer than 300
+  weekly downloads, no other package depends on it, and it has a single
+  owner or maintainer; only when one of those conditions fails does the
+  unpublish need an npm support request. An unpublish also leaves the
+  version in caches and lockfiles that already resolved it, and it does not
+  remove the other published versions.
 - Move the `latest` tag back to the last good version:
-  `npm dist-tag add @abd-enterprises/zendesk-mcp@0.5.0 latest`.
+  `npm dist-tag add @abd-enterprises/zendesk-mcp@<good-version> latest`.
+  (No version is published yet as of 0.6.1, so both rollback commands above
+  only apply once a first version exists on the registry.)
 - Ship a fixed version instead: bump the `package.json` version to a new one,
   tag it (the workflow refuses to reuse a published version), and push the
   tag. The release workflow publishes both artifacts for that tag — the
