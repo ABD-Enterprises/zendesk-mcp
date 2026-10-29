@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createInterface, type Interface } from "node:readline/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -36,6 +36,25 @@ const CLIENT_ID_QUESTION =
   "OAuth client id (Zendesk Admin Center > Apps and integrations > APIs > OAuth clients): ";
 /** The prompt that asks for the OAuth client secret. */
 const CLIENT_SECRET_QUESTION = "OAuth client secret: ";
+/** The message printed when the account answer was empty. */
+const ACCOUNT_CANCELLED_MESSAGE =
+  "Setup cancelled: no Zendesk subdomain was entered.";
+/** The message printed when the client id answer was empty. */
+const CLIENT_ID_CANCELLED_MESSAGE =
+  "Setup cancelled: no OAuth client id was entered.";
+/** The message printed when the client secret answer was empty. */
+const CLIENT_SECRET_CANCELLED_MESSAGE =
+  "Setup cancelled: no OAuth client secret was entered.";
+/** The message printed when the prompt closed before the setup finished. */
+const PROMPT_CLOSED_MESSAGE =
+  "Setup cancelled: the prompt was closed before the setup finished.";
+/**
+ * The message printed when the account answer is neither a subdomain nor a
+ * URL. It names no environment variable, because the reader is answering a
+ * prompt rather than setting one, and it does not repeat the answer.
+ */
+const INVALID_ACCOUNT_MESSAGE =
+  "Not a valid Zendesk subdomain or URL (for example acme-tools or https://acme-tools.zendesk.com).";
 
 interface OAuthSetupTokenResponse {
   access_token: string;
@@ -190,19 +209,21 @@ export async function runOAuthSetup(
 
     if (missing.account) {
       const account = await askForAccount(ask, writeError);
-      if (account === undefined) return fail(CANCELLED_MESSAGE);
-      // The answer is stored under "subdomain" even when it is a full URL:
-      // `resolveBaseUrl` accepts both spellings.
-      entered.subdomain = account;
+      if (account === undefined) return fail(ACCOUNT_CANCELLED_MESSAGE);
+      // A full URL is stored under "baseUrl" and a bare subdomain under
+      // "subdomain": the operations console builds the URL from "subdomain"
+      // itself, so a URL in that field would be doubled.
+      if (isBaseUrl(account)) entered.baseUrl = account;
+      else entered.subdomain = account;
     }
     if (missing.clientId) {
       const clientId = await ask(CLIENT_ID_QUESTION);
-      if (!clientId) return fail(CANCELLED_MESSAGE);
+      if (!clientId) return fail(CLIENT_ID_CANCELLED_MESSAGE);
       entered.clientId = clientId;
     }
     if (missing.clientSecret) {
       const clientSecret = await ask(CLIENT_SECRET_QUESTION, { mask: true });
-      if (!clientSecret) return fail(CANCELLED_MESSAGE);
+      if (!clientSecret) return fail(CLIENT_SECRET_CANCELLED_MESSAGE);
       entered.clientSecret = clientSecret;
     }
 
@@ -228,14 +249,13 @@ export async function runOAuthSetup(
   } catch (error) {
     // A prompt that fails — the user closed the terminal, for instance —
     // must not end the run with a stack trace.
-    return fail(isPromptAbort(error) ? CANCELLED_MESSAGE : errorMessage(error));
+    return fail(
+      isPromptAbort(error) ? PROMPT_CLOSED_MESSAGE : errorMessage(error),
+    );
   } finally {
     prompter?.close();
   }
 }
-
-/** The message a run that entered nothing prints. */
-const CANCELLED_MESSAGE = "Setup cancelled: no values were entered.";
 
 /** True when a prompt ended because the terminal closed (Ctrl+D). */
 function isPromptAbort(error: unknown): boolean {
@@ -259,13 +279,23 @@ async function askForAccount(
     const answer = await ask(ACCOUNT_QUESTION);
     if (!answer) return undefined;
     try {
-      resolveBaseUrl({ subdomain: answer });
+      // The answer is validated the way it will be stored, so a URL is
+      // checked as a URL and a bare name as a subdomain.
+      resolveBaseUrl(
+        isBaseUrl(answer) ? { baseUrl: answer } : { subdomain: answer },
+      );
       return answer;
-    } catch (error) {
-      // The answer is unusable, so it is reported and asked again.
-      writeError(`${errorMessage(error)}\n`);
+    } catch {
+      // The answer is unusable, so it is reported and asked again. The
+      // message names no environment variable and does not repeat the answer.
+      writeError(`${INVALID_ACCOUNT_MESSAGE}\n`);
     }
   }
+}
+
+/** True when the account answer is a full URL rather than a bare name. */
+function isBaseUrl(answer: string): boolean {
+  return answer.startsWith("http://") || answer.startsWith("https://");
 }
 
 /**
@@ -296,7 +326,9 @@ function missingValuesMessage(
   const fields: string[] = [];
   if (missing.account) {
     needs.push("the Zendesk subdomain");
-    variables.push("ZENDESK_SUBDOMAIN");
+    // Either variable names the account: one carries a subdomain, the other a
+    // full URL.
+    variables.push("ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL");
     fields.push('"subdomain"');
   }
   if (missing.clientId && missing.clientSecret) {
@@ -402,7 +434,7 @@ interface CallbackServerOptions {
  * that code. A callback without a valid code or with the wrong state fails
  * the run.
  */
-export function waitForAuthorizationCode(
+function waitForAuthorizationCode(
   options: CallbackServerOptions,
 ): Promise<string> {
   const { port, path, expectedState } = options;
@@ -448,7 +480,7 @@ export function waitForAuthorizationCode(
 }
 
 /** Exchanges an authorization code for the token the connector stores. */
-export async function exchangeCode(
+async function exchangeCode(
   config: ZendeskConfig,
   redirectUri: string,
   code: string,
@@ -491,7 +523,7 @@ export async function exchangeCode(
 }
 
 /** Opens the authorization URL in the user's browser. */
-export function openBrowser(
+function openBrowser(
   url: string,
   writeOut: (line: string) => void = (line) => {
     console.log(line);
@@ -516,7 +548,7 @@ export function openBrowser(
 }
 
 /** Parses JSON, and falls back to the raw text when it is not JSON. */
-export function safeJson(text: string): unknown {
+function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
@@ -525,7 +557,7 @@ export function safeJson(text: string): unknown {
 }
 
 /** True when a token response carries both tokens the connector stores. */
-export function isTokenResponse(
+function isTokenResponse(
   value: unknown,
 ): value is OAuthSetupTokenResponse {
   return Boolean(
@@ -549,61 +581,142 @@ function defaultSaveClientFile(
     const merged: OAuthClientFile = { ...saved, ...values };
     await mkdir(dirname(clientFile), { recursive: true, mode: 0o700 });
     const temporary = `${clientFile}.${process.pid}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(merged, null, 2)}\n`, {
-      mode: 0o600,
-    });
-    await rename(temporary, clientFile);
-    await chmod(clientFile, 0o600);
+    try {
+      await writeFile(temporary, `${JSON.stringify(merged, null, 2)}\n`, {
+        mode: 0o600,
+      });
+      await rename(temporary, clientFile);
+      await chmod(clientFile, 0o600);
+    } catch (error) {
+      // A failed write must not leave the temporary file behind: it holds the
+      // client secret.
+      await rm(temporary, { force: true }).catch(() => {});
+      throw error;
+    }
     return clientFile;
   };
 }
 
 /** Asks a question on the terminal; the secret is not echoed. */
-interface Prompter {
-  /** Asks one question and returns the trimmed answer. */
+export interface Prompter {
+  /** Asks one question and returns the answer. */
   ask: (question: string, options?: { mask?: boolean }) => Promise<string>;
-  /** Releases the terminal. */
+  /** Releases the terminal. A pending answer fails with an abort error. */
   close: () => void;
+}
+
+/** The streams a prompter reads the answers from and writes the questions to. */
+export interface PrompterStreams {
+  /** The stream the answers arrive on. Defaults to `process.stdin`. */
+  input?: NodeJS.ReadableStream;
+  /** The stream the questions are written to. Defaults to `process.stdout`. */
+  output?: NodeJS.WritableStream;
+  /**
+   * Whether the input behaves like a terminal. Left unset, readline decides
+   * from the output, the way it does on its own.
+   */
+  terminal?: boolean;
+  /**
+   * How many answers readline keeps so the reader can recall them. Zero keeps
+   * none, so a typed secret cannot be recalled and printed.
+   */
+  historySize?: number;
 }
 
 /**
  * The default prompter: one readline interface for the whole run, and a
  * muted output while a secret is typed.
  */
-function createReadlinePrompter(): Prompter {
+export function createReadlinePrompter(streams: PrompterStreams = {}): Prompter {
+  const input = streams.input ?? process.stdin;
+  const output = streams.output ?? process.stdout;
   let rl: Interface | undefined;
-  let output: { write(chunk: string): boolean } | undefined;
+  let closed = false;
+  let cancelPending: ((error: Error) => void) | undefined;
+
   const ensure = (): Interface => {
     if (!rl) {
-      output = process.stdout as unknown as { write(chunk: string): boolean };
-      rl = createInterface({ input: process.stdin, output: process.stdout });
+      rl = createInterface({
+        input,
+        output,
+        terminal: streams.terminal,
+        // No history: a typed secret must not be recalled into the output.
+        historySize: streams.historySize ?? 0,
+      });
     }
     return rl;
   };
+
+  /** Asks readline one question that a `close` call can cancel. */
+  const askLine = async (question: string): Promise<string> => {
+    const line = ensure();
+    const asked = line.question(question);
+    // The race below reports the failure, so the question's own rejection is
+    // already handled and cannot escape as an unhandled rejection.
+    asked.catch(() => {});
+    let cancel: ((error: Error) => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      cancel = reject;
+    });
+    cancelPending = cancel;
+    try {
+      return await Promise.race([asked, cancelled]);
+    } finally {
+      cancelPending = undefined;
+    }
+  };
+
   return {
     async ask(question: string, options?: { mask?: boolean }): Promise<string> {
-      const line = ensure();
+      if (closed) throw promptClosedError();
       if (!options?.mask) {
-        return (await line.question(question)).trim();
+        return (await askLine(question)).trim();
       }
       // The question is written before the output is muted, so the reader
       // sees what is asked but not what is typed.
-      const stream = output!;
-      stream.write(question);
-      const original = stream.write;
-      stream.write = () => true;
+      output.write(question);
+      const restore = muteOutput(output);
       try {
-        return (await line.question("")).trim();
+        // The secret is kept exactly as it was typed: a secret may begin or
+        // end with a space, and only an empty answer counts as nothing.
+        return await askLine("");
       } finally {
-        stream.write = original;
-        stream.write("\n");
+        restore();
+        output.write("\n");
       }
     },
     close(): void {
+      closed = true;
+      cancelPending?.(promptClosedError());
       rl?.close();
       rl = undefined;
     },
   };
+}
+
+/**
+ * Stops the output from receiving anything while a secret is typed, and
+ * returns a function that puts it back.
+ */
+function muteOutput(output: NodeJS.WritableStream): () => void {
+  const target = output as unknown as { write: (chunk: string) => boolean };
+  const original = target.write;
+  const hadOwn = Object.prototype.hasOwnProperty.call(target, "write");
+  target.write = () => true;
+  return () => {
+    if (hadOwn) {
+      target.write = original;
+      return;
+    }
+    delete (target as { write?: unknown }).write;
+  };
+}
+
+/** The error a closed prompt reports; it reads like an aborted prompt. */
+function promptClosedError(): Error {
+  const error = new Error("The prompt was closed before the setup finished.");
+  (error as Error & { code?: string }).code = "ABORT_ERR";
+  return error;
 }
 
 /** True when a value names one of the supported OAuth modes. */

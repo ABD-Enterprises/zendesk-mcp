@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, test } from "node:test";
 import type { OAuthClientFile, StoredToken, ZendeskConfig } from "./auth.js";
-import { runOAuthSetup, type OAuthSetupOptions } from "./oauth-setup.js";
+import {
+  createReadlinePrompter,
+  runOAuthSetup,
+  type OAuthSetupOptions,
+  type Prompter,
+} from "./oauth-setup.js";
 
 const originalEnv = { ...process.env };
 // Temporary fixture directories are tracked so each test removes its own.
@@ -245,7 +260,7 @@ test("reports the missing values when the run cannot prompt", async () => {
   assert.equal(result.err.length, 2);
   assert.equal(
     result.err[0],
-    `Zendesk OAuth setup needs the Zendesk subdomain, the OAuth client id and secret. Set ZENDESK_SUBDOMAIN, ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain", "clientId" and "clientSecret" to ${files.clientFile}.\n`,
+    `Zendesk OAuth setup needs the Zendesk subdomain, the OAuth client id and secret. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL, ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain", "clientId" and "clientSecret" to ${files.clientFile}.\n`,
   );
   assert.equal(
     result.err[1],
@@ -296,6 +311,7 @@ test("asks again when the account answer is not a subdomain", async () => {
   const result = await runSetup({
     answers: [
       "bad value!!!",
+      "https://not a url",
       "acme-tools",
       "example-client-id",
       "example-client-secret",
@@ -304,10 +320,20 @@ test("asks again when the account answer is not a subdomain", async () => {
   });
 
   assert.equal(result.code, 0);
-  assert.equal(result.questions.length, 5);
+  assert.equal(result.questions.length, 6);
   assert.match(result.questions[0], /^Zendesk subdomain/);
   assert.match(result.questions[1], /^Zendesk subdomain/);
-  assert.match(result.err[0], /is not a valid subdomain/);
+  assert.match(result.questions[2], /^Zendesk subdomain/);
+  // The message belongs to the prompt: it names no environment variable and
+  // does not repeat the answer.
+  for (const line of result.err) {
+    assert.equal(
+      line,
+      "Not a valid Zendesk subdomain or URL (for example acme-tools or https://acme-tools.zendesk.com).\n",
+    );
+    assert.doesNotMatch(line, /ZENDESK_/);
+    assert.doesNotMatch(line, /bad value|not a url/);
+  }
   assert.equal(
     result.authorizations[0].baseUrl,
     "https://acme-tools.zendesk.com",
@@ -320,13 +346,37 @@ test("cancels the run when the first answer is empty", async () => {
 
   assert.equal(result.code, 1);
   assert.deepEqual(result.questions.length, 1);
-  assert.equal(result.err[0], "Setup cancelled: no values were entered.\n");
+  assert.equal(
+    result.err[0],
+    "Setup cancelled: no Zendesk subdomain was entered.\n",
+  );
   assert.equal(
     result.err[1],
     "Run npm run doctor to check the configuration.\n",
   );
   assert.equal(await readFile(files.clientFile, "utf8"), "{}");
   await assert.rejects(() => readFile(files.tokenFile, "utf8"));
+});
+
+test("names the field that was left empty when the run is cancelled", async () => {
+  await sandbox();
+  const withoutId = await runSetup({ answers: ["acme-tools", ""] });
+
+  assert.equal(withoutId.code, 1);
+  assert.equal(
+    withoutId.err[0],
+    "Setup cancelled: no OAuth client id was entered.\n",
+  );
+
+  const withoutSecret = await runSetup({
+    answers: ["acme-tools", "example-client-id", ""],
+  });
+
+  assert.equal(withoutSecret.code, 1);
+  assert.equal(
+    withoutSecret.err[0],
+    "Setup cancelled: no OAuth client secret was entered.\n",
+  );
 });
 
 test("reports a closed terminal instead of a stack trace", async () => {
@@ -348,7 +398,10 @@ test("reports a closed terminal instead of a stack trace", async () => {
 
   assert.equal(code, 1);
   assert.deepEqual(out, []);
-  assert.equal(err[0], "Setup cancelled: no values were entered.\n");
+  assert.equal(
+    err[0],
+    "Setup cancelled: the prompt was closed before the setup finished.\n",
+  );
   assert.equal(
     err[1],
     "Run npm run doctor to check the configuration.\n",
@@ -440,7 +493,7 @@ test("reports a client file that cannot be written", async () => {
   await assert.rejects(() => readFile(files.tokenFile, "utf8"));
 });
 
-test("stores a full account URL under the subdomain field", async () => {
+test("stores a full account URL under the baseUrl field", async () => {
   const files = await sandbox();
   const result = await runSetup({
     answers: [
@@ -452,8 +505,41 @@ test("stores a full account URL under the subdomain field", async () => {
   });
 
   assert.equal(result.code, 0);
-  const client = JSON.parse(await readFile(files.clientFile, "utf8"));
-  assert.equal(client.subdomain, "https://acme-tools.zendesk.com");
+  const client = JSON.parse(
+    await readFile(files.clientFile, "utf8"),
+  ) as Record<string, unknown>;
+  const subdomain = client.subdomain;
+  // A URL goes under "baseUrl": a reader that builds the URL from
+  // "subdomain" would double the scheme.
+  assert.deepEqual(client, {
+    baseUrl: "https://acme-tools.zendesk.com",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+  });
+  assert.equal(subdomain, undefined);
+  assert.equal(
+    result.authorizations[0].baseUrl,
+    "https://acme-tools.zendesk.com",
+  );
+});
+
+test("stores a bare subdomain under the subdomain field", async () => {
+  const files = await sandbox();
+  const result = await runSetup({
+    answers: ["acme-tools", "example-client-id", "example-client-secret", "y"],
+  });
+
+  assert.equal(result.code, 0);
+  const client = JSON.parse(
+    await readFile(files.clientFile, "utf8"),
+  ) as Record<string, unknown>;
+  const baseUrl = client.baseUrl;
+  assert.deepEqual(client, {
+    subdomain: "acme-tools",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+  });
+  assert.equal(baseUrl, undefined);
   assert.equal(
     result.authorizations[0].baseUrl,
     "https://acme-tools.zendesk.com",
@@ -501,4 +587,186 @@ test("asks again when the save answer is not understood", async () => {
   assert.equal(result.questions.length, 5);
   assert.ok(result.questions[3].startsWith("Save these values to"));
   assert.ok(result.questions[4].startsWith("Save these values to"));
+});
+
+test("uses the values in the client file without prompting", async () => {
+  const files = await sandbox();
+  await writeFile(
+    files.clientFile,
+    JSON.stringify({
+      subdomain: "acme-tools",
+      clientId: "example-client-id",
+      clientSecret: "example-client-secret",
+    }),
+    { mode: 0o600 },
+  );
+  const asked: string[] = [];
+  const out: string[] = [];
+  const err: string[] = [];
+  const authorizations: { baseUrl: string; redirectUri: string }[] = [];
+
+  const code = await runOAuthSetup({
+    prompt: async (question) => {
+      asked.push(question);
+      throw new Error("a configured run must not prompt");
+    },
+    authorize: async (config, redirectUri) => {
+      authorizations.push({ baseUrl: config.baseUrl, redirectUri });
+      return fakeToken;
+    },
+    writeOut: (line) => out.push(line),
+    writeError: (line) => err.push(line),
+  });
+
+  assert.equal(code, 0);
+  assert.deepEqual(asked, []);
+  assert.deepEqual(err, []);
+  assert.equal(authorizations.length, 1);
+  assert.equal(authorizations[0].baseUrl, "https://acme-tools.zendesk.com");
+  assert.deepEqual(
+    JSON.parse(await readFile(files.tokenFile, "utf8")),
+    fakeToken,
+  );
+});
+
+test("removes the temporary file when the client file cannot be written", async () => {
+  const directory = await tempDir();
+  const clientFile = join(directory, "client.json");
+  const tokenFile = join(directory, "oauth.json");
+  process.env = cleanEnv({
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+    ZENDESK_OAUTH_TOKEN_FILE: tokenFile,
+  });
+  const answers = [
+    "acme-tools",
+    "example-client-id",
+    "example-client-secret",
+    "y",
+  ];
+  const err: string[] = [];
+  const out: string[] = [];
+
+  const code = await runOAuthSetup({
+    prompt: async (question) => {
+      const answer = answers.shift();
+      if (answer === undefined) {
+        throw new Error(`no scripted answer for the question: ${question}`);
+      }
+      if (answers.length === 3) {
+        // The path turns into a directory while the reader answers, so the
+        // rename fails after the temporary file was written.
+        await mkdir(clientFile);
+      }
+      return answer;
+    },
+    isInteractive: () => true,
+    authorize: async () => fakeToken,
+    writeOut: (line) => out.push(line),
+    writeError: (line) => err.push(line),
+  });
+
+  assert.equal(code, 1);
+  assert.deepEqual(out, []);
+  assert.equal(err.length, 2);
+  assert.doesNotMatch(err[0], / at .*\(.*:\d+:\d+\)/);
+  assert.equal(
+    err[1],
+    "Run npm run doctor to check the configuration.\n",
+  );
+  // The temporary file held the secret, so it is gone.
+  assert.deepEqual(
+    (await readdir(directory)).filter((name) => name.endsWith(".tmp")),
+    [],
+  );
+  // The run stopped before the authorization, so no token was stored.
+  await assert.rejects(() => readFile(tokenFile, "utf8"));
+});
+
+/** A prompter wired to in-memory streams, with the output captured. */
+function createPrompter(): {
+  prompter: Prompter;
+  input: PassThrough;
+  output: PassThrough;
+  captured: () => string;
+} {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  // The width keeps readline's line refresh in shape.
+  (output as PassThrough & { columns?: number }).columns = 80;
+  let written = "";
+  output.on("data", (chunk: Buffer | string) => {
+    written += chunk.toString();
+  });
+  // Terminal mode is what gives readline a history to recall from, so the
+  // prompter is exercised the way a real terminal exercises it.
+  const prompter = createReadlinePrompter({ input, output, terminal: true });
+  return { prompter, input, output, captured: () => written };
+}
+
+test("never writes a masked answer to the output", async () => {
+  const { prompter, input, captured } = createPrompter();
+
+  const secret = prompter.ask("OAuth client secret: ", { mask: true });
+  input.write("example-client-secret\n");
+  assert.equal(await secret, "example-client-secret");
+
+  const next = prompter.ask("Save these values? [Y/n] ");
+  input.write("y\n");
+  assert.equal(await next, "y");
+
+  // The secret is in neither the masked question nor the one after it.
+  assert.ok(!captured().includes("example-client-secret"));
+  assert.ok(captured().includes("OAuth client secret: "));
+  prompter.close();
+});
+
+test("does not recall a typed value into the output", async () => {
+  const { prompter, input, captured } = createPrompter();
+
+  const secret = prompter.ask("OAuth client secret: ", { mask: true });
+  input.write("example-client-secret\n");
+  await secret;
+
+  // The reader presses the up arrow, the way a terminal recalls the last
+  // line. Nothing may come back: the secret must not be printable.
+  input.write("\x1b[A");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const next = prompter.ask("Save these values? [Y/n] ");
+  input.write("y\n");
+  await next;
+
+  assert.ok(!captured().includes("example-client-secret"));
+  prompter.close();
+});
+
+test("keeps a secret exactly as it was typed", async () => {
+  const { prompter, input } = createPrompter();
+
+  const secret = prompter.ask("OAuth client secret: ", { mask: true });
+  input.write("  example client secret  \n");
+
+  // A secret may begin or end with a space; only an empty answer is empty.
+  assert.equal(await secret, "  example client secret  ");
+  prompter.close();
+});
+
+test("close ends the prompt and refuses further questions", async () => {
+  const { prompter, input } = createPrompter();
+
+  const pending = prompter
+    .ask("OAuth client secret: ", { mask: true })
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+  prompter.close();
+
+  const failure = await pending;
+  assert.ok(failure instanceof Error);
+  assert.equal((failure as Error & { code?: string }).code, "ABORT_ERR");
+
+  await assert.rejects(() => prompter.ask("Another question: "));
+  // The interface is gone, so the input no longer reaches a question.
+  input.write("example-client-secret\n");
 });

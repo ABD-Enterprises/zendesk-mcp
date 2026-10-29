@@ -56,8 +56,9 @@ The connector treats it as sensitive:
   fails. When the variable is unset, an absent default file is not an error,
   and the connector falls back to the environment variables.
 
-The one-time browser flow (`npm run oauth:setup`) reads the same configuration
-and writes its result to the token file.
+The one-time browser flow (`npm run oauth:setup`) reads the same configuration,
+prompts for anything missing, writes its result to the token file, and can save
+the entered values to the client file.
 
 ### The token file
 
