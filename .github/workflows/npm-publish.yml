@@ -14,7 +14,8 @@ name: Publish npm (reusable)
 #   package version, failing loudly on mismatch.
 # - packed-contents verification: the built entry point and every relative
 #   import it reaches must be inside the packed tarball.
-# - executable smoke test: the built entry point runs.
+# - executable smoke test: the packed tarball installs into a scratch
+#   directory (production dependencies only) and its entry point loads.
 # - provenance: `npm publish --dry-run --provenance` before the real
 #   `npm publish --provenance`.
 # - `npm ci --ignore-scripts` + an explicit build, so the build runs once.
@@ -61,16 +62,37 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # No npm cache here on purpose: a release build should not reuse a cache
+      # No npm cache here on purpose: a release build must not reuse a cache
       # that a pull-request build populated, and npm's own trusted-publishing
-      # guidance is to never cache a release build.
+      # guidance is to never cache a release build. package-manager-cache
+      # defaults to true (it keys off the packageManager field), so it is
+      # switched off explicitly rather than by absence.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ inputs.node-version }}
           registry-url: https://registry.npmjs.org/
-      # --ignore-scripts: the package's build would otherwise run during
-      # install; the next step builds explicitly, so this keeps it to one
-      # build.
+          package-manager-cache: false
+      # OIDC trusted publishing requires npm >= 11.5.1. The default
+      # node-version (24) satisfies it, but the input can be overridden, so
+      # the floor is asserted here instead of trusted: an older npm fails
+      # with a clear message instead of an opaque ENEEDAUTH at publish time.
+      - name: require npm new enough for OIDC trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          floor="11.5.1"
+          current="$(npm --version)"
+          # sort -V puts the older of the two first; anything other than the
+          # floor in first place means the installed npm is too old.
+          if [ "$(printf '%s\n%s\n' "$floor" "$current" | sort -V | head -n1)" != "$floor" ]; then
+            echo "npm $current is older than $floor, which OIDC trusted publishing requires." >&2
+            exit 1
+          fi
+          echo "npm $current satisfies the OIDC floor ($floor)."
+      # --ignore-scripts: no install-time lifecycle script runs here — neither
+      # any dependency's nor a future one this package might add (its build
+      # is hooked to prepack, not install). The next step builds explicitly,
+      # so the build runs exactly once and only from that step.
       - run: npm ci --ignore-scripts
       - run: npm run build
       # The caller checks `NPM_TRUSTED_PUBLISHING` before invoking this
@@ -128,9 +150,12 @@ jobs:
 
           // Collect the entry and, transitively, every relative import it
           // reaches. Imports are `.js` specifiers compiled from TypeScript;
-          // each resolved file is checked for further relative imports. This
-          // is a static walk over the built output, not a module loader, so
-          // it errs toward reporting a file that must be present.
+          // each resolved file is checked for further relative imports. The
+          // pattern covers `from './x.js'` (import and export), side-effect
+          // `import './x.js'`, literal `import('./x.js')` and
+          // `require('./x.js')`. This is a static walk over the built
+          // output, not a module loader, so it errs toward reporting a file
+          // that must be present.
           const seen = new Set();
           const queue = [entry];
           while (queue.length > 0) {
@@ -142,7 +167,8 @@ jobs:
               process.exit(1);
             }
             const source = fs.readFileSync(rel, 'utf8');
-            for (const match of source.matchAll(/from\s+['"](\.[^'"]+\.js)['"]/g)) {
+            const importPattern = /(?:from\s+|import\s*\(\s*|require\s*\(\s*|import\s+)['"](\.[^'"]+\.js)['"]/g;
+            for (const match of source.matchAll(importPattern)) {
               const resolved = path.normalize(path.join(path.dirname(rel), match[1]));
               if (!seen.has(resolved)) queue.push(resolved);
             }
@@ -162,28 +188,39 @@ jobs:
           NODE
         env:
           ENTRY: ${{ inputs.entry }}
-      # The built entry point must be loadable by Node — a syntax error, a bad
-      # import, or a missing dependency in the tarball fails here. This runs
-      # the module in a child process and requires it to survive evaluation
-      # without a throw. The connector's entry always reaches for Zendesk
-      # configuration once evaluated (there is no --help mode), so this proves
-      # the shipped bytes are structurally sound without needing credentials
-      # or opening a network connection; the packed-contents check above
-      # already proved the runtime imports are inside the tarball.
+      # The published artifact must survive a consumer install: pack the
+      # tarball, install it into a scratch directory with only its production
+      # dependencies, and load the installed entry point. That catches a
+      # runtime dependency accidentally moved to devDependencies (which the
+      # repo's own node_modules would mask), a broken `files` list, and a
+      # syntax or import error in the built output. A clean exit (0) is
+      # ideal; the connector's entry always reaches for Zendesk
+      # configuration once evaluated (there is no --help mode), so a
+      # controlled "not configured" error also proves the module loaded.
+      # --ignore-scripts keeps the tarball's bytes identical to the ones the
+      # packed-contents check above validated, and no credentials or network
+      # calls to any service are needed.
       - name: entry-point smoke test
         shell: bash
         run: |
           set -euo pipefail
-          ENTRY="$ENTRY" node <<'NODE'
+          scratch="$(mktemp -d)"
+          trap 'rm -rf -- "$scratch"' EXIT
+          pkg_name="$(node -p 'require("./package.json").name')"
+          tarball_name="$(npm pack --ignore-scripts --pack-destination "$scratch" --json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename')"
+          npm install --prefix "$scratch/install" --ignore-scripts --no-audit --no-fund "$scratch/$tarball_name"
+          ENTRY="$scratch/install/node_modules/$pkg_name/$ENTRY" node <<'NODE'
           const { spawnSync } = require('node:child_process');
+          const { pathToFileURL } = require('node:url');
           const entry = process.env.ENTRY;
           if (!entry) { console.error('ENTRY is not set'); process.exit(1); }
-          // Evaluate the entry with an empty environment and stdin closed. A
-          // clean exit (0) is ideal; a controlled configuration error (the
-          // connector is not configured) also proves the module loaded and
-          // ran. Only a failure to even load — a syntax error, an unresolved
-          // import, a missing file — is a smoke-test failure.
-          const result = spawnSync(process.execPath, ['-e', `import(${JSON.stringify('./' + entry)})`], {
+          // Evaluate the installed entry with an empty environment and stdin
+          // closed. A clean exit (0) is ideal; a controlled configuration
+          // error (the connector is not configured) also proves the module
+          // loaded and ran. Only a failure to even load — a syntax error, an
+          // unresolved import, a missing production dependency — is a
+          // smoke-test failure.
+          const result = spawnSync(process.execPath, ['-e', `import(${JSON.stringify(pathToFileURL(entry).href)})`], {
             env: { PATH: process.env.PATH },
             stdio: ['ignore', 'pipe', 'pipe'],
             encoding: 'utf8',
@@ -191,17 +228,23 @@ jobs:
           const diagnostics = `${result.stdout || ''}${result.stderr || ''}`;
           const loaded = result.status === 0 || /not configured|is only for/.test(diagnostics);
           if (result.error || !loaded) {
-            console.error('The built entry point did not load:');
+            console.error('The installed entry point did not load:');
             if (result.error) console.error(result.error.message);
             console.error(diagnostics);
             process.exit(1);
           }
-          console.log(`Loaded the built entry point (${entry}) without a load error.`);
+          console.log(`Loaded the installed entry point (${entry}) without a load error.`);
           NODE
         env:
           ENTRY: ${{ inputs.entry }}
-      # Provenance is generated inside CI, so the dry-run exercises the same
-      # path the real publish takes before anything is published.
+      # What the dry run proves: the package packs, the CLI accepts the flags,
+      # and (on npm >= 11.5.1) it takes the OIDC path without an immediate
+      # refusal. What it cannot prove: npm treats OIDC authentication as
+      # best-effort inside a dry run and only generates provenance when it
+      # really publishes, so a misconfigured trusted publisher is caught at
+      # the real publish step below, not here. The dry run still fails
+      # loudly on packaging and permission problems before anything is
+      # published.
       # --ignore-scripts: the package declares a `prepack` that runs the build
       # again; the explicit build above already produced the bytes the
       # packed-contents and smoke checks validated, and re-running prepack

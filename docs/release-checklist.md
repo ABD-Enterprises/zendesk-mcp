@@ -52,7 +52,12 @@ only builds an image, and the CI workflow builds the image without pushing it:
   publisher on npmjs.com (Settings → Trusted Publisher → GitHub Actions,
   workflow file `release.yml`; the first publish must land within 2 days of
   registration) and set the repo variable `NPM_TRUSTED_PUBLISHING=true`;
-  until then the job is skipped. Confirm the result with
+  until then the job is skipped. Register `release.yml`: the publish job is a
+  reusable-workflow call, and GitHub's OIDC `workflow_ref` claim names the
+  calling workflow. If the first publish fails with ENEEDAUTH and the run log
+  shows npm matched a different filename, add `npm-publish.yml` as a second
+  trusted publisher (npm does not validate the filename when saving). Confirm
+  the result with
   `npm view @abd-enterprises/zendesk-mcp version` and the provenance on the
   npm package page.
 - [ ] Set the GHCR package visibility to public in the package settings; a new
@@ -98,11 +103,10 @@ published artifacts. See [Leaked credential](#leaked-credential).
 - Move the `latest` tag back to the last good version:
   `npm dist-tag add @abd-enterprises/zendesk-mcp@0.5.0 latest`.
 - Ship a fixed version instead: bump the `package.json` version to a new one,
-  tag it (the workflow refuses to reuse a published version), and let the
-  release workflow publish the matching image. The npm release stays a
-  separate manual step, so publish the fixed version as well: run
-  `npm publish` in `plugins/zendesk-connector` and confirm it with
-  `npm view @abd-enterprises/zendesk-mcp version`.
+  tag it (the workflow refuses to reuse a published version), and push the
+  tag. The release workflow publishes both artifacts for that tag — the
+  image and the npm package — so there is no separate npm step; confirm it
+  with `npm view @abd-enterprises/zendesk-mcp version`.
 
 ### Container image
 
@@ -142,8 +146,8 @@ the repository does not invalidate it anywhere else.
   the release tag and the release record have to be updated with it, and the
   artifacts have to be released again afterwards.
 - Release a fixed version afterwards. The workflow cannot republish a version
-  that is already published, so the fix needs a new version: a new tag for
-  the image, and a separate `npm publish` for the package.
+  that is already published, so the fix needs a new version: a new tag, from
+  which the release workflow publishes both the image and the npm package.
 - Report suspected credential exposure as described in
   [SECURITY.md](../SECURITY.md).
 

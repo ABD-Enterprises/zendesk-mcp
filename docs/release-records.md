@@ -17,6 +17,8 @@ checklist). One section per released version, newest first.
 - Container image: `ghcr.io/abd-enterprises/zendesk-mcp:0.6.0`, digest
   `ghcr.io/abd-enterprises/zendesk-mcp@sha256:c879960c79004b20365b544a0ed256e9e2360551bb463061ae2af5e9a8ea9091`,
   pushed by the release workflow for the tag.
-- npm package: `@abd-enterprises/zendesk-mcp` version 0.6.0 is not yet
-  published as of 2026-10-27. Publishing it by hand is the checklist's manual
-  step and is pending; there is no publish date to record.
+- npm package: `@abd-enterprises/zendesk-mcp` version 0.6.0 was never
+  published — the tag predates the automated OIDC npm publish path (added
+  for 0.6.1), and its release run predates the `publish-npm` job, so there
+  is no npm artifact and no publish date to record. Automated npm publishing
+  starts with 0.6.1; the registry has no 0.6.0 to deprecate or unpublish.
