@@ -607,6 +607,32 @@ test("stores the origin of an account URL that carries a path", async () => {
   );
 });
 
+test("accepts an account URL whose scheme is not lowercase", async () => {
+  const files = await sandbox();
+  const result = await runSetup({
+    answers: [
+      "HTTPS://acme-tools.zendesk.com",
+      "example-client-id",
+      "example-client-secret",
+      "y",
+    ],
+  });
+
+  assert.equal(result.code, 0);
+  // A scheme is case-insensitive, so the answer is a URL rather than a
+  // subdomain: it is never rejected, and it is stored as its origin under
+  // "baseUrl" the way any other URL answer is.
+  const client = JSON.parse(
+    await readFile(files.clientFile, "utf8"),
+  ) as Record<string, unknown>;
+  assert.equal(client.baseUrl, "https://acme-tools.zendesk.com");
+  assert.equal(client.subdomain, undefined);
+  assert.equal(
+    result.authorizations[0].baseUrl,
+    "https://acme-tools.zendesk.com",
+  );
+});
+
 test("stores a bare subdomain under the subdomain field", async () => {
   const files = await sandbox();
   const result = await runSetup({

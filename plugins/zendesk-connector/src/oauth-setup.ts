@@ -327,7 +327,8 @@ async function askForAccount(
 
 /** True when the account answer is a full URL rather than a bare name. */
 function isBaseUrl(answer: string): boolean {
-  return answer.startsWith("http://") || answer.startsWith("https://");
+  // A scheme is case-insensitive: HTTPS://… is a URL, not a subdomain.
+  return /^https?:\/\//i.test(answer);
 }
 
 /**
