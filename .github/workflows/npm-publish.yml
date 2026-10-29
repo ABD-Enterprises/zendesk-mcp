@@ -1,0 +1,174 @@
+name: Publish npm (reusable)
+
+# One canonical npm-publish implementation, reused by any workflow in this
+# repository via `workflow_call`. It carries the release invariants that must
+# not be weakened, mirroring the OIDC trusted-publishing setup used by
+# deffenda/cfr-free: no token secret ever exists — publishing authenticates
+# with GitHub's OIDC `id-token`, and provenance is generated in CI.
+#
+# Preserved invariants (HIGH-risk release infra; do not remove or weaken):
+# - activation gate: the CALLER gates on `vars.NPM_TRUSTED_PUBLISHING == 'true'`
+#   (see release.yml); publishing stays disabled until the operator registers
+#   the trusted publisher on npmjs.com and flips that repo variable.
+# - tag/package version match: the tag without its leading `v` must equal the
+#   package version, failing loudly on mismatch.
+# - packed-contents verification: the built entry point and every relative
+#   import it reaches must be inside the packed tarball.
+# - executable smoke test: the built entry point runs.
+# - provenance: `npm publish --dry-run --provenance` before the real
+#   `npm publish --provenance`.
+# - `npm ci --ignore-scripts` + an explicit build, so the build runs once.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node version used to build and publish.
+        type: string
+        default: "22"
+      package-dir:
+        description: Directory (relative to repo root) holding the package.
+        type: string
+        default: plugins/zendesk-connector
+      entry:
+        description: Built entry point, relative to package-dir, run as the smoke test.
+        type: string
+        default: dist/index.js
+
+# The publish step needs the OIDC token to mint the npm provenance; nothing
+# else in the workflow is privileged.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-npm:
+    name: publish to npm (OIDC provenance)
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ${{ inputs.package-dir }}
+    steps:
+      - name: Start with fresh Git metadata on self-hosted runners
+        working-directory: ${{ runner.temp }}
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          test "$workspace" != /
+          rm -rf -- "$workspace/.git"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: https://registry.npmjs.org/
+          cache: npm
+          cache-dependency-path: ${{ inputs.package-dir }}/package-lock.json
+      # --ignore-scripts: the package's build would otherwise run during
+      # install; the next step builds explicitly, so this keeps it to one
+      # build.
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      # The caller checks `NPM_TRUSTED_PUBLISHING` before invoking this
+      # workflow, so reaching here means publishing is armed. This re-check
+      # fails closed if the workflow is ever called without that gate, so a
+      # stray call cannot publish by accident.
+      - name: refuse to publish unless trusted publishing is armed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${NPM_TRUSTED_PUBLISHING:-}" != "true" ]; then
+            echo "Refusing to publish: NPM_TRUSTED_PUBLISHING is not 'true'." >&2
+            echo "Register the trusted publisher on npmjs.com and set the repo variable." >&2
+            exit 1
+          fi
+        env:
+          NPM_TRUSTED_PUBLISHING: ${{ vars.NPM_TRUSTED_PUBLISHING }}
+      # The tag (the workflow ref) must equal the package version. On a tag
+      # push GITHUB_REF_NAME is the tag; the `v` prefix is stripped before
+      # comparison. A mismatch means package.json was not bumped before the
+      # tag was cut, which is a release error.
+      - name: tag/package version match
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref_name="${GITHUB_REF_NAME:?}"
+          tag="${ref_name#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "Refusing to publish: tag '$ref_name' != package.json version '$pkg'." >&2
+            echo "Bump package.json before tagging." >&2
+            exit 1
+          fi
+      # The packed tarball must contain the built entry point and every
+      # relative import that entry reaches, so a publish can never ship a
+      # package whose runtime imports are missing from the tarball.
+      - name: verify packed entry point and imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENTRY="$ENTRY" node <<'NODE'
+          const { execSync } = require('node:child_process');
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const entry = process.env.ENTRY; // e.g. dist/index.js, relative to cwd
+          if (!entry) { console.error('ENTRY is not set'); process.exit(1); }
+
+          // Collect the entry and, transitively, every relative import it
+          // reaches. Imports are `.js` specifiers compiled from TypeScript;
+          // each resolved file is checked for further relative imports. This
+          // is a static walk over the built output, not a module loader, so
+          // it errs toward reporting a file that must be present.
+          const seen = new Set();
+          const queue = [entry];
+          while (queue.length > 0) {
+            const rel = queue.shift();
+            if (seen.has(rel)) continue;
+            seen.add(rel);
+            if (!fs.existsSync(rel)) {
+              console.error('Built file is missing: ' + rel);
+              process.exit(1);
+            }
+            const source = fs.readFileSync(rel, 'utf8');
+            for (const match of source.matchAll(/from\s+['"](\.[^'"]+\.js)['"]/g)) {
+              const resolved = path.normalize(path.join(path.dirname(rel), match[1]));
+              if (!seen.has(resolved)) queue.push(resolved);
+            }
+          }
+
+          const out = execSync('npm pack --dry-run --ignore-scripts --json', { encoding: 'utf8' });
+          const parsed = JSON.parse(out);
+          const files = new Set((parsed[0]?.files || []).map((f) => f.path));
+          const missing = [...seen].filter((f) => !files.has(f));
+          if (missing.length > 0) {
+            console.error('Missing from packed package:');
+            for (const f of missing) console.error('  ' + f);
+            process.exit(1);
+          }
+          console.log('Packed package contains the entry point and all its imports:');
+          for (const f of seen) console.log('  ' + f);
+          NODE
+        env:
+          ENTRY: ${{ inputs.entry }}
+      # The entry point must actually run. `--help` is the lightest way to
+      # prove the binary loads without contacting any network service.
+      - name: executable smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          node "$ENTRY" --help >/dev/null
+        env:
+          ENTRY: ${{ inputs.entry }}
+      # Provenance is generated inside CI, so the dry-run exercises the same
+      # path the real publish takes before anything is published.
+      - name: publish (dry run, with provenance)
+        shell: bash
+        run: npm publish --dry-run --provenance --access public
+      - name: publish
+        shell: bash
+        run: npm publish --provenance --access public

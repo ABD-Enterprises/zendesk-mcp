@@ -139,3 +139,28 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf -- "${DOCKER_CONFIG:?}"
+
+  # Publish the npm package for this tag through the reusable OIDC workflow.
+  #
+  # Activation gate (operator-only): publishing stays disabled until the
+  # operator registers the trusted publisher on npmjs.com for
+  # @abd-enterprises/zendesk-mcp (GitHub Actions -> ABD-Enterprises/zendesk-mcp
+  # -> release.yml, one-time; the first publish must land within 2 days of
+  # registration) and sets the repo variable NPM_TRUSTED_PUBLISHING=true.
+  # No token secret exists — the job authenticates with GitHub's OIDC
+  # id-token and publishes with provenance.
+  #
+  # It needs the image job so a release never publishes an npm package for a
+  # commit whose image failed to publish: one gate, one verdict.
+  publish-npm:
+    name: publish to npm
+    needs: [publish-image]
+    if: vars.NPM_TRUSTED_PUBLISHING == 'true'
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC) — no token secret
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      node-version: "22"
+      package-dir: plugins/zendesk-connector
+      entry: dist/index.js
