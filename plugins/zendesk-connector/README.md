@@ -91,7 +91,9 @@ the checks that matter before the first request:
   re-running setup is the remedy for the token problem — the file is missing,
   unparseable, or lacks a token field (a path or permission problem skips it),
   and setup needs the port.
-- The stored token file in `authorization_code` mode: it exists (a missing
+- The stored token file in `authorization_code` mode: its path is not the
+  OAuth client file (setup's atomic write would replace the client
+  credentials with the token), it exists (a missing
   file means "run `npm run oauth:setup`"; a stat failure other than a missing
   path is reported with its own advice instead), is a regular file, parses
   as JSON, and contains both an `access_token` and a `refresh_token` (renewal

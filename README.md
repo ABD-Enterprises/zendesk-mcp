@@ -319,7 +319,9 @@ contacting Zendesk:
   when re-running setup is the remedy for the token problem — the file is
   missing, unparseable, or lacks a token field (a path or permission problem
   skips it), and setup needs the port.
-- The stored token file in `authorization_code` mode: it must exist (a missing
+- The stored token file in `authorization_code` mode: its path must not be
+  the OAuth client file (setup's atomic write would replace the client
+  credentials with the token), it must exist (a missing
   file is reported as "run `npm run oauth:setup`"), be a regular file, parse
   as JSON, and contain both an `access_token` and a `refresh_token` (renewal
   fails without one once the access token expires). It must also be readable
@@ -407,6 +409,7 @@ Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-a
 | `ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET are required for this OAuth mode.` | `ZENDESK_OAUTH_MODE` (in the environment or as `"mode"` in `client.json`) is set explicitly and either credential is missing. Set both values (environment or `client.json`) as in the row above. |
 | `No refresh token found in ...` or `Unable to read OAuth token file ...` | The authorization-code token store is missing, unparseable, or holds no refresh token. Run `npm run oauth:setup` again, and check `ZENDESK_OAUTH_TOKEN_FILE` if the file lives elsewhere. The doctor's variant ending `Check that the path exists and this user can access it.` means the file exists but this user cannot open it — fix its ownership or permissions instead of re-running setup (the port is not checked for it). |
 | `OAuth token file ... is not a regular file.` | Something other than a file sits at the token path, usually a directory. Setup's atomic write cannot replace it, so remove the directory (or fix `ZENDESK_OAUTH_TOKEN_FILE`) instead of re-running setup; the doctor skips the port check because the repair needs no port. |
+| `OAuth token file ... is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path...` | `ZENDESK_OAUTH_TOKEN_FILE` names the same file as `ZENDESK_OAUTH_CLIENT_FILE` (or as the default client path). Re-running setup would replace the client credentials with the token, so point the token variable at a different path instead; the doctor skips the port check because the repair needs no port. `--logout` refuses to delete the file for the same reason. |
 | `OAuth client configuration ... must be readable only by its owner (chmod 600).` | The client file is accessible to group or others. Run `chmod 600 ~/.config/codex-zendesk/client.json` (or fix the file `ZENDESK_OAUTH_CLIENT_FILE` names). |
 | `ZENDESK_READ_ONLY must be 1, true, 0, or false.` | The read-only flag holds an unrecognized value. Set it to `1` (or `true`) to enable, `0` (or `false`) to disable, or unset it. |
 | `ZENDESK_READ_ONLY conflicts with write tools in ZENDESK_ALLOWED_TOOLS: ...` | Read-only mode is on but the allowlist names write tools. Remove those names from `ZENDESK_ALLOWED_TOOLS`, or unset `ZENDESK_READ_ONLY` if writes are intended. |

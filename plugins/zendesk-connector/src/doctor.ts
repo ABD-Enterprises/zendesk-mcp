@@ -1,9 +1,11 @@
 import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
+import { resolve } from "node:path";
 import {
   CALLBACK_PORT_ERROR,
   getConfig,
   isValidCallbackPort,
+  oauthClientFilePath,
   resolveCallbackPort,
   type ZendeskConfig,
 } from "./auth.js";
@@ -140,18 +142,30 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
 }
 
 /**
- * Inspects the stored authorization-code token file: its file state first
- * (present, a regular file, owner-only permissions), then its contents
- * (parseable JSON with an `access_token` and a `refresh_token`).
+ * Inspects the stored authorization-code token file: first that its path is
+ * not the OAuth client file, then its file state (present, a regular file,
+ * owner-only permissions), then its contents (parseable JSON with an
+ * `access_token` and a `refresh_token`).
  *
  * The missing-file, unparseable, and incomplete-token messages reuse the
  * exact strings startup produces, so the troubleshooting table covers the
- * doctor's output too. The file-state messages (unreadable path, not a
- * regular file, permissions) are the doctor's own: startup reads the token
- * file without inspecting it, and the permission check is additionally
- * skipped on Windows, where Node reports synthetic permission bits.
+ * doctor's output too. The other messages (the client-file path, unreadable
+ * path, not a regular file, permissions) are the doctor's own: startup reads
+ * the token file without inspecting it, and the permission check is
+ * additionally skipped on Windows, where Node reports synthetic permission
+ * bits.
  */
 function inspectTokenFile(tokenFile: string): TokenFileState {
+  // The same guard logout applies: if the token path is the client file,
+  // re-running setup would write the token over the client credentials.
+  // The remedy is fixing the path, not setup, so no port is probed.
+  if (resolve(tokenFile) === resolve(oauthClientFilePath())) {
+    return {
+      setupNeeded: false,
+      problem: `OAuth token file ${tokenFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
+    };
+  }
+
   const unreadable: TokenFileState = {
     setupNeeded: true,
     problem: `Unable to read OAuth token file ${tokenFile}. Run npm run oauth:setup from the plugin directory.`,

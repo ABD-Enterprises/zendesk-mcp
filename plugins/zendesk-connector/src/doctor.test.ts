@@ -316,6 +316,29 @@ test("reports a token path that is not a regular file without probing the port",
   assert.deepEqual(problems, [`OAuth token file ${tokenFile} is not a regular file.`]);
 });
 
+test("reports a token path that is the OAuth client file without probing the port", async () => {
+  const directory = await tempDir();
+  // Both variables naming one file is the setup trap: oauth:setup's atomic
+  // write would replace the client credentials with the token. The remedy is
+  // fixing the path, not re-running setup, so the port is not probed.
+  const clientFile = join(directory, "client.json");
+  await writeFile(clientFile, JSON.stringify({ subdomain: "example" }), {
+    mode: 0o600,
+  });
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
+  const { calls, probe } = probeRecorder("free");
+
+  const problems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile: clientFile }),
+    probePort: probe,
+  });
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(problems, [
+    `OAuth token file ${clientFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
+  ]);
+});
+
 test("reports a token file that does not parse", async () => {
   const tokenFile = await tempTokenFile("{not json");
 
