@@ -603,14 +603,25 @@ async function exchangeCode(
     // the response's diagnosable shape without leaking credential material.
     // redact() works on object keys, so a body that never parsed into a
     // JSON object (a proxy's HTML error page, say) is described by its
-    // size instead of echoed: nothing in it is structured enough to redact
-    // reliably, and a page that echoed the request would carry the client
-    // secret and the one-time code.
+    // media type and size instead of echoed: nothing in it is structured
+    // enough to redact reliably, and a page that echoed the request would
+    // carry the client secret and the one-time code. The media type is
+    // narrowed to a plain type/subtype first — a header is free text, and
+    // nothing stops a middlebox from stuffing a token into one.
+    const mediaType = response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      ?.trim()
+      .toLowerCase();
+    const described =
+      mediaType !== undefined && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mediaType)
+        ? ` ${mediaType}`
+        : "";
     const shown =
       payload !== null && typeof payload === "object" && !Array.isArray(payload)
         ? JSON.stringify(redact(payload))
         : text
-          ? `(non-object body of ${text.length} bytes)`
+          ? `(non-object${described} body of ${Buffer.byteLength(text, "utf8")} bytes)`
           : "(empty body)";
     throw new Error(
       `Zendesk token exchange failed: HTTP ${response.status} ${shown}`,

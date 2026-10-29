@@ -806,6 +806,7 @@ test("opens the authorization URL through the injected launcher", async () => {
 async function exchangeFailure(
   body: string,
   contentType: string,
+  status = 200,
 ): Promise<{
   error: Error;
   out: string[];
@@ -838,7 +839,7 @@ async function exchangeFailure(
       `unexpected network call from the flow: ${url}`,
     );
     return new Response(body, {
-      status: 200,
+      status,
       headers: { "Content-Type": contentType },
     });
   }) as typeof fetch;
@@ -919,10 +920,17 @@ test("never prints a token from a rejected token-exchange body", async () => {
   // check, and stringifying that body as-is would put the access token into
   // the thrown error — where a caller may log or show it. This crafts
   // exactly that body, so the assertion pins the invariant the roadmap
-  // claims for errors: no credential material, ever.
+  // claims for errors: no credential material, ever. The client secret is
+  // in the body too, the way a middlebox echoing the *request* would put it
+  // there — so the assertion below binds to redact() rather than passing
+  // because the secret was never present to begin with.
   const leakedToken = "example-access-token-must-not-be-printed";
   const { error, out, requests, tokenFile } = await exchangeFailure(
-    JSON.stringify({ access_token: leakedToken, token_type: "bearer" }),
+    JSON.stringify({
+      access_token: leakedToken,
+      client_secret: "example-client-secret",
+      token_type: "bearer",
+    }),
     "application/json",
   );
 
@@ -945,19 +953,110 @@ test("never prints a token from a rejected token-exchange body", async () => {
   await assert.rejects(readFile(tokenFile), /ENOENT/);
 });
 
-test("describes a non-object exchange body by size instead of echoing it", async () => {
+test("describes a non-object exchange body by media type and size", async () => {
   // redact() works on object keys, so a body that never parsed into a JSON
   // object cannot be filtered by it — and a page that echoed the request
   // would carry the client secret and the one-time code. Such a body is
-  // therefore named by size and nothing more.
+  // therefore named by its media type and size and nothing more.
   const leakedToken = "example-plaintext-token-must-not-be-printed";
   const body = `access_token=${leakedToken}`;
   const { error, requests } = await exchangeFailure(body, "text/plain");
 
   assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
   assert.ok(!error.message.includes(leakedToken));
-  assert.ok(error.message.includes(`(non-object body of ${body.length} bytes)`));
+  assert.ok(
+    error.message.includes(
+      `(non-object text/plain body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    ),
+  );
   assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+});
+
+test("never echoes a rejected exchange body that is not a JSON object", async () => {
+  // The branches the two tests above do not reach, each pinned against the
+  // same invariant: whatever the rejected body's shape, the thrown error
+  // carries its size or its redacted form and never its raw content. The
+  // cases share one helper, so each still travels the real browser flow.
+  const leakedToken = "example-nested-token-must-not-be-printed";
+  const cases: Array<{
+    name: string;
+    body: string;
+    contentType: string;
+    status?: number;
+    shown: (body: string) => string;
+  }> = [
+    {
+      // A body that never parsed: safeJson falls back to the raw text, so
+      // the size note is the only thing that can be shown.
+      name: "an empty body",
+      body: "",
+      contentType: "application/json",
+      shown: () => "(empty body)",
+    },
+    {
+      // A top-level array is an object to redact() but not a token
+      // response, and its entries are unkeyed values redact() passes
+      // through — so it takes the size note too, not redact().
+      name: "a top-level array",
+      body: JSON.stringify([{ access_token: leakedToken }]),
+      contentType: "application/json",
+      shown: (body) =>
+        `(non-object application/json body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    },
+    {
+      // A JSON null: an object to neither the shape check nor redact().
+      name: "a JSON null",
+      body: "null",
+      contentType: "application/json",
+      shown: (body) =>
+        `(non-object application/json body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    },
+    {
+      // The nested case the recursion in redact() exists for: the token is
+      // two levels down, under a key that names it.
+      name: "a nested token",
+      body: JSON.stringify({ data: { nested: { access_token: leakedToken } } }),
+      contentType: "application/json",
+      shown: () => JSON.stringify({ data: { nested: { access_token: "[REDACTED]" } } }),
+    },
+    {
+      // A rejected status with a JSON error body: the non-ok branch takes
+      // the same path, and the status reaches the message intact.
+      name: "a non-ok JSON error",
+      body: JSON.stringify({
+        error: "invalid_grant",
+        access_token: leakedToken,
+      }),
+      contentType: "application/json",
+      status: 401,
+      shown: () =>
+        JSON.stringify({ error: "invalid_grant", access_token: "[REDACTED]" }),
+    },
+  ];
+
+  for (const testCase of cases) {
+    const { error, requests } = await exchangeFailure(
+      testCase.body,
+      testCase.contentType,
+      testCase.status,
+    );
+    assert.match(
+      error.message,
+      new RegExp(
+        `^Zendesk token exchange failed: HTTP ${testCase.status ?? 200} `,
+      ),
+      testCase.name,
+    );
+    assert.ok(
+      !error.message.includes(leakedToken),
+      `${testCase.name} leaked the token: ${error.message}`,
+    );
+    assert.ok(
+      error.message.includes(testCase.shown(testCase.body)),
+      `${testCase.name} did not show the expected body: ${error.message}`,
+    );
+    assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+  }
 });
 
 test("refuses a client file that other users can read", async (ctx) => {
