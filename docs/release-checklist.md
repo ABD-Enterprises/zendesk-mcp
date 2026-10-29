@@ -19,13 +19,18 @@
   publish first. From a clean checkout of the release commit, in
   `plugins/zendesk-connector`, set a placeholder version without committing
   it (`npm version 0.0.0 --no-git-tag-version`), run
-  `npm ci --ignore-scripts`, `npm run build`, then publish it interactively
-  under a non-release dist-tag so `latest` stays free for the first
-  workflow publish: `npm login`, then
+  `npm ci --ignore-scripts` and `npm run build` (the publish re-runs the
+  same build through `prepack`), then publish it interactively under a
+  non-release dist-tag so `latest` stays free for the first workflow
+  publish: `npm login`, then
   `npm publish --access public --tag bootstrap`. Restore the version files
-  afterwards (`git checkout -- package.json package-lock.json`). This
-  placeholder carries no provenance and is the only version ever published
-  by hand — the registration below and every release after it use OIDC.
+  afterwards (`git checkout -- package.json package-lock.json`) and log
+  out again (`npm logout`), so no publish credential stays in `~/.npmrc`.
+  This placeholder carries no provenance and is the only version ever
+  published by hand — the registration below and every release after it
+  use OIDC. Until the first release publish lands there is no `latest`
+  dist-tag, so an unversioned `npm install @abd-enterprises/zendesk-mcp`
+  fails with ETARGET during that window; that is expected.
 - [ ] Confirm npm trusted publishing is armed (one-time per package, plus a
   per-release variable check): on npmjs.com, for
   `@abd-enterprises/zendesk-mcp`, Settings → Trusted Publisher → GitHub
@@ -53,7 +58,7 @@ version without its leading `v`. The same tag also publishes the npm package
 `.github/workflows/npm-publish.yml` workflow, using OIDC trusted publishing —
 no npm token or password is ever stored. `plugins/zendesk-connector/Dockerfile`
 only builds an image, and the CI workflow builds the image without pushing it:
-`release.yml` is the only workflow that pushes.
+`release.yml` is the only workflow that pushes an image.
 
 - [ ] Confirm that `plugins/zendesk-connector/package.json` carries the
   intended `version`, that `CHANGELOG.md` has a section for it, and that the
@@ -81,8 +86,9 @@ only builds an image, and the CI workflow builds the image without pushing it:
   one-time password is ever used by the workflow, and nothing is stored in
   the repository. (The one-time bootstrap publish under Before release is
   the single exception, and it runs by hand, not in CI.) If the job was
-  skipped, `NPM_TRUSTED_PUBLISHING` is not set to `true`
-  (see Before release). If it failed with ENEEDAUTH ("Unable to
+  skipped in an otherwise green run, `NPM_TRUSTED_PUBLISHING` is not set
+  to `true` (see Before release); in a red run the image job failing
+  skips it as well. If it failed with ENEEDAUTH ("Unable to
   authenticate"), the trusted publisher is not registered or npm matched a
   different workflow filename — in the latter case add
   `npm-publish.yml` as a second trusted publisher (npm does not validate
@@ -134,9 +140,9 @@ published artifacts. See [Leaked credential](#leaked-credential).
   remove the other published versions.
 - Move the `latest` tag back to the last good version:
   `npm dist-tag add @abd-enterprises/zendesk-mcp@<good-version> latest`.
-  (Both rollback commands above apply only to versions that are actually on
-  the registry; until the first release publish lands, the only version
-  there is the `bootstrap` placeholder from Before release.)
+  (The deprecate and unpublish commands above act only on versions that
+  are actually on the registry; until the first release publish lands, the
+  only version there is the `bootstrap` placeholder from Before release.)
 - Ship a fixed version instead: bump the `package.json` version to a new one,
   tag it (the workflow refuses to reuse a published version), and push the
   tag. The release workflow publishes both artifacts for that tag — the
