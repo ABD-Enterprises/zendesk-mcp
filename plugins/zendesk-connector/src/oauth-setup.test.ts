@@ -806,7 +806,7 @@ test("opens the authorization URL through the injected launcher", async () => {
 async function exchangeFailure(
   body: string,
   contentType: string,
-  status = 200,
+  responseStatus = 200,
 ): Promise<{
   error: Error;
   out: string[];
@@ -839,7 +839,7 @@ async function exchangeFailure(
       `unexpected network call from the flow: ${url}`,
     );
     return new Response(body, {
-      status,
+      status: responseStatus,
       headers: { "Content-Type": contentType },
     });
   }) as typeof fetch;
@@ -994,9 +994,11 @@ test("never echoes a rejected exchange body that is not a JSON object", async ()
       shown: () => "(empty body)",
     },
     {
-      // A top-level array is an object to redact() but not a token
-      // response, and its entries are unkeyed values redact() passes
-      // through — so it takes the size note too, not redact().
+      // redact() does recurse into arrays, so an array body would have its
+      // keyed entries redacted. It takes the size note anyway: the shape
+      // check rejects an array, and the guard at the call site keeps the
+      // message to a size rather than a redacted list whose unkeyed values
+      // redact() cannot filter.
       name: "a top-level array",
       body: JSON.stringify([{ access_token: leakedToken }]),
       contentType: "application/json",
@@ -1015,9 +1017,31 @@ test("never echoes a rejected exchange body that is not a JSON object", async ()
       // The nested case the recursion in redact() exists for: the token is
       // two levels down, under a key that names it.
       name: "a nested token",
-      body: JSON.stringify({ data: { nested: { access_token: leakedToken } } }),
+      body: JSON.stringify({
+        data: { nested: { access_token: leakedToken } },
+      }),
       contentType: "application/json",
-      shown: () => JSON.stringify({ data: { nested: { access_token: "[REDACTED]" } } }),
+      shown: () =>
+        JSON.stringify({
+          data: { nested: { access_token: "[REDACTED]" } },
+        }),
+    },
+    {
+      // A body carrying only the secret, with no token in it at all: the
+      // first test's secret assertion shares a message with its token
+      // assertion, so this case is what actually pins that a key the
+      // filter knows is stripped on its own.
+      name: "a secret with no token",
+      body: JSON.stringify({
+        error: "invalid_client",
+        client_secret: "example-client-secret",
+      }),
+      contentType: "application/json",
+      shown: () =>
+        JSON.stringify({
+          error: "invalid_client",
+          client_secret: "[REDACTED]",
+        }),
     },
     {
       // A rejected status with a JSON error body: the non-ok branch takes

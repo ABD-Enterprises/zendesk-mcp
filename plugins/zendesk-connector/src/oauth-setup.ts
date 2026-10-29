@@ -599,29 +599,40 @@ async function exchangeCode(
     // A rejected body can still carry a real token: a 200 that fails the
     // shape check (a missing refresh_token, say) would otherwise print the
     // access token into the thrown error, which a caller may log or show.
-    // The audit sink's redact() is the house filter, so the message keeps
-    // the response's diagnosable shape without leaking credential material.
-    // redact() works on object keys, so a body that never parsed into a
-    // JSON object (a proxy's HTML error page, say) is described by its
-    // media type and size instead of echoed: nothing in it is structured
-    // enough to redact reliably, and a page that echoed the request would
-    // carry the client secret and the one-time code. The media type is
-    // narrowed to a plain type/subtype first — a header is free text, and
-    // nothing stops a middlebox from stuffing a token into one.
+    // The audit sink's redact() is the house filter, so it strips the keys
+    // the filter knows — token, secret, password, authorization, cookie —
+    // and the message keeps the rest of the response's diagnosable shape.
+    // redact() matches on key names, so it cannot see a token that a
+    // middlebox parked in the value of some innocuous key; that limit is
+    // the filter's, shared with every audit line, and the call site keeps
+    // its contract rather than growing a second, different redactor.
+    //
+    // A body that never parsed into a JSON object (a proxy's HTML error
+    // page, say) has no keys at all to filter, so it is described by its
+    // media type and size instead of echoed: a page that echoed the
+    // request would carry the client secret and the one-time code. The
+    // media type is narrowed to a short, plain type/subtype first — a
+    // header is free text, and nothing stops a middlebox from stuffing a
+    // token-shaped subtype into one.
     const mediaType = response.headers
       .get("content-type")
       ?.split(";")[0]
       ?.trim()
       .toLowerCase();
     const described =
-      mediaType !== undefined && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mediaType)
+      mediaType !== undefined &&
+      mediaType.length <= 40 &&
+      /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mediaType)
         ? ` ${mediaType}`
         : "";
+    // The size is the utf-8 length of the decoded text, which is what the
+    // message has in hand; a count of the raw wire bytes is not.
+    const size = Buffer.byteLength(text, "utf8");
     const shown =
       payload !== null && typeof payload === "object" && !Array.isArray(payload)
         ? JSON.stringify(redact(payload))
         : text
-          ? `(non-object${described} body of ${Buffer.byteLength(text, "utf8")} bytes)`
+          ? `(non-object${described} body of ${size} ${size === 1 ? "byte" : "bytes"})`
           : "(empty body)";
     throw new Error(
       `Zendesk token exchange failed: HTTP ${response.status} ${shown}`,
