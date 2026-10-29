@@ -985,9 +985,12 @@ test("describes a non-object exchange body by media type and size", async () => 
 test("never echoes the raw content of a rejected exchange body", async () => {
   // The branches the two tests above do not reach, each pinned against the
   // same expectation: whatever the rejected body's shape, the thrown error
-  // carries its size, its media type, or its redacted form — and never its
-  // raw content. The cases share one helper, so each still travels the
-  // real browser flow.
+  // carries its size, its media type, or its key-filtered form — never the
+  // raw bytes. The filter reads key names only, so a secret that is only a
+  // value or a key name is beyond it, as the call site's comment says;
+  // what these cases pin is that the body's raw content never reaches the
+  // message. The cases share one helper, so each still travels the real
+  // browser flow.
   const leakedToken = "example-nested-token-must-not-be-printed";
   const cases: Array<{
     name: string;
@@ -1186,6 +1189,20 @@ test("never echoes the raw content of a rejected exchange body", async () => {
         const points = [...JSON.stringify({ a: "x".repeat(505) + "😀".repeat(5) })];
         return `${points.slice(0, 512).join("")}… (body of ${Buffer.byteLength(body, "utf8")} bytes)`;
       },
+    },
+    {
+      // A body nested past the call stack's depth: both filters recurse,
+      // so they overflow where the single stringify this message used to
+      // do did not. Nothing leaks — the throw still fires — and the note
+      // names the body unprintable rather than echoing any of it. The
+      // depth is chosen well past the overflow point on the whole CI
+      // matrix, so the case does not depend on the exact stack size of
+      // the machine it runs on.
+      name: "a body nested past the stack's depth",
+      body: `${'{"a":'.repeat(10000)}1${"}".repeat(10000)}`,
+      contentType: "application/json",
+      shown: (body) =>
+        `(unprintable object body of ${Buffer.byteLength(body, "utf8")} bytes)`,
     },
     {
       // No content-type header at all. The stub encodes the body to bytes

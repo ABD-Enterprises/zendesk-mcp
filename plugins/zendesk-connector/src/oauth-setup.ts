@@ -646,10 +646,22 @@ async function exchangeCode(
     // message has in hand; a count of the raw wire bytes is not.
     const size = Buffer.byteLength(text, "utf8");
     const count = `${size} ${size === 1 ? "byte" : "bytes"}`;
-    const echo =
-      payload !== null && typeof payload === "object" && !Array.isArray(payload)
-        ? JSON.stringify(dropExchangeEcho(redact(payload)))
-        : undefined;
+    const objectShaped =
+      payload !== null && typeof payload === "object" && !Array.isArray(payload);
+    // Both filters recurse, and they run before the single JSON.stringify
+    // this message used to do — so a body nested past the call stack's
+    // depth overflows here where the old code did not. Nothing leaks: the
+    // throw below still fires, and its note names the body as unprintable
+    // rather than echoing any of it. A body that parsed from JSON can
+    // never be circular, so depth is the only thing this catch sees.
+    let echo: string | undefined;
+    if (objectShaped) {
+      try {
+        echo = JSON.stringify(dropExchangeEcho(redact(payload)));
+      } catch {
+        echo = undefined;
+      }
+    }
     // The echo is bounded too: a multi-megabyte body would otherwise be
     // embedded whole, and past the bound the size says everything the
     // reader needs. The cut counts code points, not UTF-16 units — the
@@ -657,8 +669,9 @@ async function exchangeCode(
     // the halves of a surrogate pair and leave a lone one behind — it
     // stops one point past the bound to learn whether a cut is needed at
     // all, and it runs after both filters, so a cut cannot resurrect what
-    // they removed. Only the bound-many points are ever held, so a body
-    // megabytes long costs the memory of one at the bound.
+    // they removed. The cut itself holds at most the bound's points; the
+    // echo string above is materialized whole, so what the cut bounds is
+    // the message, not the memory a large body costs on the way there.
     const points: string[] = [];
     let truncated = false;
     if (echo !== undefined) {
@@ -672,9 +685,11 @@ async function exchangeCode(
     }
     const shown =
       echo === undefined
-        ? text
-          ? `(non-object${described} body of ${count})`
-          : "(empty body)"
+        ? objectShaped
+          ? `(unprintable object body of ${count})`
+          : text
+            ? `(non-object${described} body of ${count})`
+            : "(empty body)"
         : truncated
           ? `${points.slice(0, MAX_ECHO_CHARACTERS).join("")}… (body of ${count})`
           : echo;
