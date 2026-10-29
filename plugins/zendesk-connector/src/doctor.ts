@@ -50,7 +50,9 @@ interface TokenFileState {
    * file or parent directory is ENOENT, so it stays true: setup creates the
    * parent when it stores the token. Other file-state problems (a directory
    * where the file belongs, loose permissions, a file this user cannot
-   * open) set it to false: re-running setup does not obviously fix them.
+   * open) set it to false: their report names the path or permissions to
+   * repair directly — a fix that needs no callback port — even though
+   * re-running setup would also replace the file.
    */
   setupNeeded: boolean;
   /** Why the token file is not usable as stored, undefined when it is fine. */

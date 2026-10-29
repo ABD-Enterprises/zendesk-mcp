@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import {
+  isValidCallbackPort,
+  resolveCallbackPort,
   ZendeskAuthError,
   ZendeskOAuth,
   getConfig,
@@ -217,6 +219,55 @@ test("removeTokenFile removes the stored token and tolerates a missing file", as
 
   assert.equal(await removeTokenFile(tokenFile), true);
   assert.equal(await removeTokenFile(tokenFile), false);
+});
+
+test("resolveCallbackPort reads only trimmed decimal digits", () => {
+  // The parser is shared by oauth:setup and the doctor, so every spelling
+  // must bind the same port — or the same error — in both.
+  delete process.env.ZENDESK_OAUTH_CALLBACK_PORT;
+  assert.equal(resolveCallbackPort(), 3219);
+
+  const cases: ReadonlyArray<readonly [string, number, boolean]> = [
+    // value, resolveCallbackPort(), isValidCallbackPort() of that result
+    ["3219", 3219, true],
+    [" 3219 ", 3219, true],
+    ["1", 1, true],
+    ["65535", 65535, true],
+    ["0", 0, false],
+    ["65536", 65536, false],
+    ["0x10", Number.NaN, false],
+    ["1e3", Number.NaN, false],
+    ["+3219", Number.NaN, false],
+    ["3219.0", Number.NaN, false],
+    ["", Number.NaN, false],
+    ["${PORT}", Number.NaN, false],
+  ];
+  for (const [value, expectedPort, expectedValid] of cases) {
+    process.env.ZENDESK_OAUTH_CALLBACK_PORT = value;
+    const port = resolveCallbackPort();
+    if (Number.isNaN(expectedPort)) {
+      assert.ok(Number.isNaN(port), `value ${JSON.stringify(value)} must not parse`);
+    } else {
+      assert.equal(port, expectedPort, `value ${JSON.stringify(value)}`);
+    }
+    // The pair must agree: a spelling the parser rejects fails the shared
+    // validity check, so both consumers report CALLBACK_PORT_ERROR instead
+    // of binding a port nobody registered as the callback URL.
+    assert.equal(
+      isValidCallbackPort(port),
+      expectedValid,
+      `value ${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test("isValidCallbackPort accepts only integers within the TCP range", () => {
+  assert.equal(isValidCallbackPort(1), true);
+  assert.equal(isValidCallbackPort(65535), true);
+  assert.equal(isValidCallbackPort(0), false);
+  assert.equal(isValidCallbackPort(65536), false);
+  assert.equal(isValidCallbackPort(3219.5), false);
+  assert.equal(isValidCallbackPort(Number.NaN), false);
 });
 
 interface RecordedRequest {
