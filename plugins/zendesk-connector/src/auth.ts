@@ -477,7 +477,8 @@ function validateBaseUrl(value: string): string {
   return url.origin;
 }
 
-function env(name: string): string | undefined {
+/** Reads a trimmed env value; empty and literal `${...}` placeholders count as unset. */
+export function env(name: string): string | undefined {
   const value = process.env[name]?.trim();
   return value && !/^\$\{[^}]+\}$/.test(value) ? value : undefined;
 }

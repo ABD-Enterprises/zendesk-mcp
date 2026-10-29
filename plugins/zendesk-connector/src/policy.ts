@@ -1,4 +1,4 @@
-import { ZendeskAuthError } from "./auth.js";
+import { env, ZendeskAuthError } from "./auth.js";
 
 const ALL_TOOLS = [
   "zendesk_status",
@@ -25,8 +25,8 @@ const WRITE_TOOLS: ReadonlySet<string> = new Set([
 
 /** True when `ZENDESK_READ_ONLY` is set to an enabled value; rejects others. */
 function readOnlyEnabled(): boolean {
-  const raw = process.env.ZENDESK_READ_ONLY?.trim().toLowerCase();
-  if (raw === undefined || raw === "") return false;
+  const raw = env("ZENDESK_READ_ONLY")?.toLowerCase();
+  if (raw === undefined) return false;
   if (raw === "1" || raw === "true") return true;
   if (raw === "0" || raw === "false") return false;
   throw new ZendeskAuthError("ZENDESK_READ_ONLY must be 1, true, 0, or false.");
@@ -34,7 +34,7 @@ function readOnlyEnabled(): boolean {
 
 export function configuredTools(): ReadonlySet<string> {
   const readOnly = readOnlyEnabled();
-  const configured = process.env.ZENDESK_ALLOWED_TOOLS?.trim();
+  const configured = env("ZENDESK_ALLOWED_TOOLS");
   if (!configured) {
     if (!readOnly) return new Set(ALL_TOOLS);
     const readTools = ALL_TOOLS.filter((tool) => !WRITE_TOOLS.has(tool));

@@ -224,8 +224,9 @@ zendesk_list_ticket_fields,zendesk_list_ticket_forms"
   refuses to start and names the conflicting tools. Read-only mode never
   silently re-enables a write tool, and disabling it (`0`, `false`, or unset)
   restores the allowlist's usual meaning.
-- Any other value is rejected at startup with `ZENDESK_READ_ONLY must be 1,
-  true, 0, or false.`
+- Any other non-empty value is rejected at startup with `ZENDESK_READ_ONLY
+  must be 1, true, 0, or false.` (an empty or whitespace-only value counts as
+  unset, per the trim rule).
 
 The allowlist is a deployment control. It bounds what the server will offer;
 OAuth scopes and the account's own role permissions bound what Zendesk will

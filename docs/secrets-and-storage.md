@@ -213,8 +213,8 @@ Four constraints apply:
   container environment variable is part of the container configuration and is
   readable through the runtime's inspection API; a mounted file is not.
 - Never bake a secret into an image layer. The image entrypoint is the STDIO
-  MCP server, and the healthcheck reports unhealthy until the OAuth
-  configuration is present.
+  MCP server, and the healthcheck reports unhealthy until the configuration
+  and tool policy are present.
 
 ### Keeping a manager-seeded token file in sync
 

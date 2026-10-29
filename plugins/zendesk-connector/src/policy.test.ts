@@ -52,6 +52,14 @@ test("read-only mode accepts disabled values and an unset variable", () => {
     process.env.ZENDESK_READ_ONLY = value;
     assert.deepEqual([...configuredTools()], toolNames());
   }
+  delete process.env.ZENDESK_READ_ONLY;
+  assert.deepEqual([...configuredTools()], toolNames());
+});
+
+test("an unsubstituted placeholder counts as unset for both policy variables", () => {
+  process.env.ZENDESK_READ_ONLY = "${ZENDESK_READ_ONLY}";
+  process.env.ZENDESK_ALLOWED_TOOLS = "${ZENDESK_ALLOWED_TOOLS}";
+  assert.deepEqual([...configuredTools()], toolNames());
 });
 
 test("read-only mode rejects unrecognized values", () => {
