@@ -4,6 +4,28 @@
 
 No changes recorded yet.
 
+## 0.6.1
+
+- Add a reusable OIDC trusted-publishing workflow
+  (`.github/workflows/npm-publish.yml`) that publishes the connector to npm
+  with provenance and no stored token. The release workflow calls it for
+  every `v*` tag, gated behind the operator-only `NPM_TRUSTED_PUBLISHING` repo
+  variable. It preserves the release invariants: tag/package version match,
+  packed-entry-and-imports verification, an executable smoke test, and a
+  provenance dry-run before the real publish.
+- Add an interactive `npm run oauth:setup` flow that guides a first-time OAuth
+  setup, prompting for any missing subdomain, client id, or client secret and
+  completing the browser authorization against the account's loopback callback.
+- Add a `npm run doctor` preflight command that validates the OAuth
+  configuration and reports what is missing before serving.
+- Add `ZENDESK_READ_ONLY=1` to serve only the read-only tools, plus a
+  read-only end-to-end sandbox harness.
+- Add read-only `zendesk_list_ticket_fields` and `zendesk_list_ticket_forms`
+  tools.
+- Add a README quickstart and troubleshooting table.
+- Update the roadmap position, tool and retention counts, isolation phase-2
+  guidance, and the 0.6.0 release record.
+
 ## 0.6.0
 
 - Add OAuth logout and token revocation: a new connector entry point revokes
