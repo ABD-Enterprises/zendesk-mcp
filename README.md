@@ -333,12 +333,13 @@ node plugins/zendesk-connector/dist/index.js --doctor
 A clean run prints one all-clear line on stdout and exits 0. Every problem is
 one actionable line on stderr and the exit code is 1, so a script can gate on
 it. The configuration and token-file messages are the server's own error
-strings (the port and permission messages are the doctor's), and nothing
-printed carries credential values.
+strings (the port, permission, and not-a-regular-file messages are the
+doctor's), and nothing printed carries credential values.
 
 An explicit command-line flag always wins over the environment-variable
 shortcuts: `--doctor` (or `--logout`) runs its own mode even on a host that
-exports `ZENDESK_HEALTHCHECK=1`.
+exports `ZENDESK_HEALTHCHECK=1`. When two mode flags appear together, the
+order is `--healthcheck`, then `--doctor`, then `--logout`.
 
 ### Healthcheck and shutdown
 

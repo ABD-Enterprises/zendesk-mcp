@@ -127,17 +127,11 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
     const stats = statSync(tokenFile);
     mode = stats.mode;
     isFile = stats.isFile();
-  } catch (error) {
-    // ENOENT means setup has not stored a token yet; any other stat failure
-    // (a permission problem on the directory, say) is reported as an
-    // unreadable file without claiming that setup will fix it.
-    const missing =
-      error instanceof Error &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT";
-    return missing
-      ? unreadable
-      : { setupNeeded: false, problem: unreadable.problem };
+  } catch {
+    // Any stat failure — a missing file, or a path this user cannot read —
+    // reuses startup's message and probes the port: both point the user at
+    // re-running setup, which needs the port.
+    return unreadable;
   }
 
   if (!isFile) {

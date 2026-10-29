@@ -95,10 +95,10 @@ matter before the first request:
 
 A clean run prints one all-clear line on stdout and exits 0. Each problem is
 one actionable line on stderr and the exit code is 1. The configuration and
-token-file messages are the server's own error strings (the port and
-permission messages are the doctor's), and nothing printed carries credential
-values. An explicit `--doctor` flag wins over the `ZENDESK_HEALTHCHECK`
-environment-variable shortcut.
+token-file messages are the server's own error strings (the port, permission,
+and not-a-regular-file messages are the doctor's), and nothing printed carries
+credential values. An explicit `--doctor` flag wins over the
+`ZENDESK_HEALTHCHECK` environment-variable shortcut.
 
 ## Healthcheck and shutdown
 

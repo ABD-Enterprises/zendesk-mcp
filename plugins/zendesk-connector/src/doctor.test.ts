@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,8 @@ import type { ZendeskConfig } from "./auth.js";
 import { checkDoctor, isDoctorRequested, runDoctor } from "./doctor.js";
 
 const originalEnv = { ...process.env };
+// Temporary fixture directories are tracked so each test removes its own.
+const tempDirs: string[] = [];
 // The doctor validates the tool policy and reads the callback port; ambient
 // values would make these tests depend on the host environment.
 function hostEnv(): NodeJS.ProcessEnv {
@@ -23,8 +25,13 @@ delete process.env.ZENDESK_ALLOWED_TOOLS;
 delete process.env.ZENDESK_READ_ONLY;
 delete process.env.ZENDESK_OAUTH_CALLBACK_PORT;
 
-afterEach(() => {
+afterEach(async () => {
   process.env = { ...hostEnv() };
+  await Promise.all(
+    tempDirs
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
 });
 
 /** The host environment without any account configuration. */
@@ -99,7 +106,7 @@ test("reports an invalid read-only flag on its own", async () => {
 });
 
 test("asks for oauth:setup when the token file is missing and the port is free", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   const { calls, probe } = probeRecorder(true);
 
   const problems = await checkDoctor({
@@ -115,7 +122,7 @@ test("asks for oauth:setup when the token file is missing and the port is free",
 });
 
 test("reports a busy callback port before the missing token file", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   const { calls, probe } = probeRecorder(false);
 
   const problems = await checkDoctor({
@@ -131,7 +138,7 @@ test("reports a busy callback port before the missing token file", async () => {
 });
 
 test("reports an unusable callback port without probing it", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   process.env.ZENDESK_OAUTH_CALLBACK_PORT = "not-a-port";
   const { calls, probe } = probeRecorder(true);
 
@@ -239,7 +246,7 @@ test("reports a read-only allowlist that names a write tool", async () => {
 });
 
 test("an explicit --doctor flag wins over the healthcheck environment variable", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   const clientFile = join(directory, "client.json");
   const tokenFile = join(directory, "oauth.json");
   await writeFile(
@@ -277,7 +284,7 @@ test("an explicit --doctor flag wins over the healthcheck environment variable",
 });
 
 test("the default probe reports a free port as free", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   const listener = createServer();
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   const address = listener.address();
@@ -312,7 +319,7 @@ test("skips the token and port checks outside authorization_code mode", async ()
 });
 
 test("the default probe reports a port that is genuinely in use", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   const listener = createServer();
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   const address = listener.address();
@@ -335,7 +342,7 @@ test("the default probe reports a port that is genuinely in use", async () => {
 });
 
 test("passes against a real authorization-code configuration", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   const clientFile = join(directory, "client.json");
   const tokenFile = join(directory, "oauth.json");
   await writeFile(
@@ -439,8 +446,15 @@ function runEntry(args: string[], env: NodeJS.ProcessEnv): Promise<EntryResult> 
 }
 
 async function tempTokenFile(contents: string): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const directory = await tempDir();
   const tokenFile = join(directory, "oauth.json");
   await writeFile(tokenFile, contents, { mode: 0o600 });
   return tokenFile;
+}
+
+/** Creates a temporary fixture directory that `afterEach` removes. */
+async function tempDir(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  tempDirs.push(directory);
+  return directory;
 }
