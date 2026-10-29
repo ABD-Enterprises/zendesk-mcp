@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import {
   chmod,
   mkdir,
@@ -7,15 +8,18 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import type { OAuthClientFile, StoredToken, ZendeskConfig } from "./auth.js";
 import {
   createReadlinePrompter,
+  isMainModule,
   runOAuthSetup,
   type OAuthSetupOptions,
   type Prompter,
@@ -306,6 +310,44 @@ test("refuses an unknown OAuth mode without prompting", async () => {
   );
 });
 
+test("refuses access_token mode without prompting", async () => {
+  const files = await sandbox({ ZENDESK_OAUTH_MODE: "access_token" });
+  const result = await runSetup();
+
+  assert.equal(result.code, 1);
+  assert.deepEqual(result.questions, []);
+  assert.equal(
+    result.err[0],
+    "oauth:setup is only for authorization_code mode. Remove ZENDESK_OAUTH_MODE or set it to authorization_code.\n",
+  );
+  assert.equal(
+    result.err[1],
+    "Run npm run doctor to check the configuration.\n",
+  );
+  // The setup never ran, so no token file was written.
+  await assert.rejects(() => readFile(files.tokenFile, "utf8"));
+});
+
+test("refuses an access token without a mode without prompting", async () => {
+  const files = await sandbox({
+    ZENDESK_OAUTH_ACCESS_TOKEN: "example-access-token",
+  });
+  const result = await runSetup();
+
+  assert.equal(result.code, 1);
+  assert.deepEqual(result.questions, []);
+  assert.equal(
+    result.err[0],
+    "oauth:setup is only for authorization_code mode. Remove ZENDESK_OAUTH_ACCESS_TOKEN to run setup.\n",
+  );
+  assert.equal(
+    result.err[1],
+    "Run npm run doctor to check the configuration.\n",
+  );
+  // The setup never ran, so no token file was written.
+  await assert.rejects(() => readFile(files.tokenFile, "utf8"));
+});
+
 test("asks again when the account answer is not a subdomain", async () => {
   await sandbox();
   const result = await runSetup({
@@ -346,14 +388,11 @@ test("cancels the run when the first answer is empty", async () => {
 
   assert.equal(result.code, 1);
   assert.deepEqual(result.questions.length, 1);
-  assert.equal(
-    result.err[0],
+  // A cancellation is not a configuration problem, so it carries no hint.
+  assert.deepEqual(result.err, [
     "Setup cancelled: no Zendesk subdomain was entered.\n",
-  );
-  assert.equal(
-    result.err[1],
-    "Run npm run doctor to check the configuration.\n",
-  );
+  ]);
+  assert.ok(!result.err.join("").includes("npm run doctor"));
   assert.equal(await readFile(files.clientFile, "utf8"), "{}");
   await assert.rejects(() => readFile(files.tokenFile, "utf8"));
 });
@@ -363,20 +402,18 @@ test("names the field that was left empty when the run is cancelled", async () =
   const withoutId = await runSetup({ answers: ["acme-tools", ""] });
 
   assert.equal(withoutId.code, 1);
-  assert.equal(
-    withoutId.err[0],
+  assert.deepEqual(withoutId.err, [
     "Setup cancelled: no OAuth client id was entered.\n",
-  );
+  ]);
 
   const withoutSecret = await runSetup({
     answers: ["acme-tools", "example-client-id", ""],
   });
 
   assert.equal(withoutSecret.code, 1);
-  assert.equal(
-    withoutSecret.err[0],
+  assert.deepEqual(withoutSecret.err, [
     "Setup cancelled: no OAuth client secret was entered.\n",
-  );
+  ]);
 });
 
 test("reports a closed terminal instead of a stack trace", async () => {
@@ -398,14 +435,11 @@ test("reports a closed terminal instead of a stack trace", async () => {
 
   assert.equal(code, 1);
   assert.deepEqual(out, []);
-  assert.equal(
-    err[0],
+  // The closed prompt is a cancellation too, so it carries no hint.
+  assert.deepEqual(err, [
     "Setup cancelled: the prompt was closed before the setup finished.\n",
-  );
-  assert.equal(
-    err[1],
-    "Run npm run doctor to check the configuration.\n",
-  );
+  ]);
+  assert.ok(!err.join("").includes("npm run doctor"));
 });
 
 test("refuses an unusable callback port without prompting", async () => {
@@ -497,7 +531,7 @@ test("stores a full account URL under the baseUrl field", async () => {
   const files = await sandbox();
   const result = await runSetup({
     answers: [
-      "https://acme-tools.zendesk.com",
+      "https://acme-tools.zendesk.com/",
       "example-client-id",
       "example-client-secret",
       "y",
@@ -510,13 +544,36 @@ test("stores a full account URL under the baseUrl field", async () => {
   ) as Record<string, unknown>;
   const subdomain = client.subdomain;
   // A URL goes under "baseUrl": a reader that builds the URL from
-  // "subdomain" would double the scheme.
+  // "subdomain" would double the scheme. It is stored as its origin, so a
+  // trailing slash cannot break a consumer that uses the field verbatim.
   assert.deepEqual(client, {
     baseUrl: "https://acme-tools.zendesk.com",
     clientId: "example-client-id",
     clientSecret: "example-client-secret",
   });
   assert.equal(subdomain, undefined);
+  assert.equal(
+    result.authorizations[0].baseUrl,
+    "https://acme-tools.zendesk.com",
+  );
+});
+
+test("stores the origin of an account URL that carries a path", async () => {
+  const files = await sandbox();
+  const result = await runSetup({
+    answers: [
+      "https://acme-tools.zendesk.com/agent",
+      "example-client-id",
+      "example-client-secret",
+      "y",
+    ],
+  });
+
+  assert.equal(result.code, 0);
+  const client = JSON.parse(
+    await readFile(files.clientFile, "utf8"),
+  ) as Record<string, unknown>;
+  assert.equal(client.baseUrl, "https://acme-tools.zendesk.com");
   assert.equal(
     result.authorizations[0].baseUrl,
     "https://acme-tools.zendesk.com",
@@ -682,6 +739,53 @@ test("removes the temporary file when the client file cannot be written", async 
   await assert.rejects(() => readFile(tokenFile, "utf8"));
 });
 
+test("replaces a stale temporary file before writing the client file", async () => {
+  const files = await sandbox();
+  // The temporary name carries the process id, so the run can find it.
+  const temporary = `${files.clientFile}.${process.pid}.tmp`;
+  await writeFile(temporary, "stale contents\n", { mode: 0o600 });
+
+  const result = await runSetup({
+    answers: ["acme-tools", "example-client-id", "example-client-secret", "y"],
+  });
+
+  assert.equal(result.code, 0);
+  const client = JSON.parse(await readFile(files.clientFile, "utf8"));
+  assert.deepEqual(client, {
+    subdomain: "acme-tools",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+  });
+  // The stale entry is gone, so the client file holds the values and not
+  // the stale contents.
+  assert.deepEqual(
+    (await readdir(files.directory)).filter((name) => name.endsWith(".tmp")),
+    [],
+  );
+});
+
+test("does not write the client secret through a link at the temporary name", async () => {
+  const files = await sandbox();
+  const temporary = `${files.clientFile}.${process.pid}.tmp`;
+  const elsewhere = join(files.directory, "elsewhere.txt");
+  await writeFile(elsewhere, "untouched\n", { mode: 0o600 });
+  await symlink(elsewhere, temporary);
+
+  const result = await runSetup({
+    answers: ["acme-tools", "example-client-id", "example-client-secret", "y"],
+  });
+
+  assert.equal(result.code, 0);
+  // The secret went into the client file, not through the link.
+  assert.equal(await readFile(elsewhere, "utf8"), "untouched\n");
+  const client = JSON.parse(await readFile(files.clientFile, "utf8"));
+  assert.equal(client.clientSecret, "example-client-secret");
+  assert.deepEqual(
+    (await readdir(files.directory)).filter((name) => name.endsWith(".tmp")),
+    [],
+  );
+});
+
 /** A prompter wired to in-memory streams, with the output captured. */
 function createPrompter(): {
   prompter: Prompter;
@@ -769,4 +873,101 @@ test("close ends the prompt and refuses further questions", async () => {
   await assert.rejects(() => prompter.ask("Another question: "));
   // The interface is gone, so the input no longer reaches a question.
   input.write("example-client-secret\n");
+});
+
+test("recognises the entry point through its real path", async () => {
+  const directory = await tempDir();
+  const entry = join(directory, "oauth-setup.js");
+  const other = join(directory, "other.js");
+  await writeFile(entry, "// the entry point\n");
+
+  // The file itself is the entry point.
+  assert.equal(isMainModule(entry, entry), true);
+  // A different file is not.
+  assert.equal(isMainModule(other, entry), false);
+});
+
+test("recognises the entry point through a symlink", async () => {
+  const directory = await tempDir();
+  const entry = join(directory, "oauth-setup.js");
+  const link = join(directory, "linked-oauth-setup.js");
+  await writeFile(entry, "// the entry point\n");
+  await symlink(entry, link);
+
+  // The link names the same file, so the setup must run through it.
+  assert.equal(isMainModule(link, entry), true);
+});
+
+test("reports no entry point for a path that cannot be resolved", async () => {
+  const directory = await tempDir();
+  const entry = join(directory, "oauth-setup.js");
+  await writeFile(entry, "// the entry point\n");
+
+  // An unresolvable path falls back to comparing the URLs: it does not
+  // throw, and it is not the entry point.
+  const missing = join(directory, "missing-oauth-setup.js");
+  assert.equal(isMainModule(missing, entry), false);
+  // No path at all is not the entry point either.
+  assert.equal(isMainModule("", entry), false);
+});
+
+interface EntryResult {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** Runs the built setup entry point with the given environment. */
+function runEntry(
+  entry: string,
+  env: NodeJS.ProcessEnv,
+): Promise<EntryResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [entry], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.once("error", reject);
+    child.once("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+/**
+ * The environment a spawned setup runs with: no account configuration, and a
+ * client file that is not there.
+ */
+function entryEnv(directory: string): NodeJS.ProcessEnv {
+  return cleanEnv({
+    ZENDESK_OAUTH_CLIENT_FILE: join(directory, "missing-client.json"),
+  });
+}
+
+test("runs the setup through a symlinked entry point", async () => {
+  const directory = await tempDir();
+  const entry = fileURLToPath(new URL("./oauth-setup.js", import.meta.url));
+  const link = join(directory, "linked-oauth-setup.js");
+  await symlink(entry, link);
+
+  const result = await runEntry(link, entryEnv(directory));
+
+  // The guard fires through the symlinked spelling: the run reports the
+  // missing values instead of exiting silently.
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Zendesk OAuth setup needs/);
+  assert.deepEqual(result.stdout, "");
+});
+
+test("runs the setup through the real entry point", async () => {
+  const directory = await tempDir();
+  const entry = fileURLToPath(new URL("./oauth-setup.js", import.meta.url));
+
+  const result = await runEntry(entry, entryEnv(directory));
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Zendesk OAuth setup needs/);
+  assert.deepEqual(result.stdout, "");
 });

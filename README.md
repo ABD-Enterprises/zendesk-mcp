@@ -269,11 +269,6 @@ same settings in `~/.config/codex-zendesk/client.json`:
 Restrict the file to the current user with `chmod 600`. Environment variables
 override values from this file.
 
-If you skip the exports, `npm run oauth:setup` asks for the values you have not
-set (subdomain, client id, client secret) and offers to save them to
-`~/.config/codex-zendesk/client.json` with owner-only permissions, so it runs
-without a separate manual write.
-
 Run the one-time browser authorization flow:
 
 ```sh

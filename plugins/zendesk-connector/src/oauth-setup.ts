@@ -1,11 +1,11 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createInterface, type Interface } from "node:readline/promises";
 import { dirname } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   CALLBACK_PORT_ERROR,
   OAUTH_MODES,
@@ -48,6 +48,18 @@ const CLIENT_SECRET_CANCELLED_MESSAGE =
 /** The message printed when the prompt closed before the setup finished. */
 const PROMPT_CLOSED_MESSAGE =
   "Setup cancelled: the prompt was closed before the setup finished.";
+/**
+ * The message printed when a mode other than authorization_code was asked
+ * for. The setup only runs the browser flow, so any other mode is refused.
+ */
+const MODE_ONLY_MESSAGE =
+  "oauth:setup is only for authorization_code mode. Remove ZENDESK_OAUTH_MODE or set it to authorization_code.";
+/**
+ * The message printed when an access token is configured without a mode.
+ * The setup writes a token file the configuration would never read.
+ */
+const ACCESS_TOKEN_ONLY_MESSAGE =
+  "oauth:setup is only for authorization_code mode. Remove ZENDESK_OAUTH_ACCESS_TOKEN to run setup.";
 /**
  * The message printed when the account answer is neither a subdomain nor a
  * URL. It names no environment variable, because the reader is answering a
@@ -113,7 +125,8 @@ interface MissingValues {
  * A configured account runs the browser flow unchanged. A missing value is
  * asked for interactively; without a terminal the run reports what is
  * missing and how to supply it. Every failure prints one actionable line and
- * the doctor hint — never a stack trace.
+ * the doctor hint — never a stack trace. A cancellation prints only its own
+ * line: it is not a configuration problem.
  */
 export async function runOAuthSetup(
   options: OAuthSetupOptions = {},
@@ -131,6 +144,12 @@ export async function runOAuthSetup(
   const fail = (message: string): number => {
     writeError(`${message}\n`);
     writeError(`${DOCTOR_HINT}\n`);
+    return 1;
+  };
+  // A cancellation is not a configuration problem, so it carries the one
+  // message line and no doctor hint.
+  const cancel = (message: string): number => {
+    writeError(`${message}\n`);
     return 1;
   };
 
@@ -159,10 +178,16 @@ export async function runOAuthSetup(
       "ZENDESK_OAUTH_MODE must be authorization_code, client_credentials, or access_token.",
     );
   }
-  if (requestedMode === "client_credentials") {
-    return fail(
-      "oauth:setup is only for authorization_code mode. Remove ZENDESK_OAUTH_MODE or set it to authorization_code.",
-    );
+  // Only the browser flow belongs to the setup, so every other mode is
+  // refused before anything is asked.
+  if (requestedMode !== undefined && requestedMode !== "authorization_code") {
+    return fail(MODE_ONLY_MESSAGE);
+  }
+  // Without a requested mode an access token decides the mode, and it wins
+  // over the client credentials: the setup would write a token file the
+  // configuration never reads.
+  if (requestedMode === undefined && env("ZENDESK_OAUTH_ACCESS_TOKEN")) {
+    return fail(ACCESS_TOKEN_ONLY_MESSAGE);
   }
 
   // The environment wins over the client file, the same precedence
@@ -209,21 +234,23 @@ export async function runOAuthSetup(
 
     if (missing.account) {
       const account = await askForAccount(ask, writeError);
-      if (account === undefined) return fail(ACCOUNT_CANCELLED_MESSAGE);
+      if (account === undefined) return cancel(ACCOUNT_CANCELLED_MESSAGE);
       // A full URL is stored under "baseUrl" and a bare subdomain under
       // "subdomain": the operations console builds the URL from "subdomain"
-      // itself, so a URL in that field would be doubled.
+      // itself, so a URL in that field would be doubled. The URL is stored
+      // as its origin, so a trailing slash or a path cannot break a
+      // consumer that uses the field verbatim.
       if (isBaseUrl(account)) entered.baseUrl = account;
       else entered.subdomain = account;
     }
     if (missing.clientId) {
       const clientId = await ask(CLIENT_ID_QUESTION);
-      if (!clientId) return fail(CLIENT_ID_CANCELLED_MESSAGE);
+      if (!clientId) return cancel(CLIENT_ID_CANCELLED_MESSAGE);
       entered.clientId = clientId;
     }
     if (missing.clientSecret) {
       const clientSecret = await ask(CLIENT_SECRET_QUESTION, { mask: true });
-      if (!clientSecret) return fail(CLIENT_SECRET_CANCELLED_MESSAGE);
+      if (!clientSecret) return cancel(CLIENT_SECRET_CANCELLED_MESSAGE);
       entered.clientSecret = clientSecret;
     }
 
@@ -249,9 +276,8 @@ export async function runOAuthSetup(
   } catch (error) {
     // A prompt that fails — the user closed the terminal, for instance —
     // must not end the run with a stack trace.
-    return fail(
-      isPromptAbort(error) ? PROMPT_CLOSED_MESSAGE : errorMessage(error),
-    );
+    if (isPromptAbort(error)) return cancel(PROMPT_CLOSED_MESSAGE);
+    return fail(errorMessage(error));
   } finally {
     prompter?.close();
   }
@@ -270,6 +296,11 @@ function isPromptAbort(error: unknown): boolean {
 /**
  * Asks for the account and validates the answer, asking again while it is
  * not a usable subdomain or base URL.
+ *
+ * A URL answer is returned as its origin, so the value that is stored is
+ * the one every consumer expects: a trailing slash or a path would break a
+ * consumer that uses the stored URL verbatim. A bare subdomain is returned
+ * unchanged.
  */
 async function askForAccount(
   ask: (question: string, options?: { mask?: boolean }) => Promise<string>,
@@ -281,9 +312,10 @@ async function askForAccount(
     try {
       // The answer is validated the way it will be stored, so a URL is
       // checked as a URL and a bare name as a subdomain.
-      resolveBaseUrl(
-        isBaseUrl(answer) ? { baseUrl: answer } : { subdomain: answer },
-      );
+      if (isBaseUrl(answer)) {
+        return resolveBaseUrl({ baseUrl: answer }) ?? answer;
+      }
+      resolveBaseUrl({ subdomain: answer });
       return answer;
     } catch {
       // The answer is unusable, so it is reported and asked again. The
@@ -581,10 +613,9 @@ function defaultSaveClientFile(
     const merged: OAuthClientFile = { ...saved, ...values };
     await mkdir(dirname(clientFile), { recursive: true, mode: 0o700 });
     const temporary = `${clientFile}.${process.pid}.tmp`;
+    const body = `${JSON.stringify(merged, null, 2)}\n`;
     try {
-      await writeFile(temporary, `${JSON.stringify(merged, null, 2)}\n`, {
-        mode: 0o600,
-      });
+      await writeTemporaryFile(temporary, body);
       await rename(temporary, clientFile);
       await chmod(clientFile, 0o600);
     } catch (error) {
@@ -595,6 +626,38 @@ function defaultSaveClientFile(
     }
     return clientFile;
   };
+}
+
+/**
+ * Writes the temporary file, refusing to write through a name that is
+ * already taken.
+ *
+ * The name is predictable, so a link may already sit there. The write uses
+ * the exclusive flag, so it fails instead of following the link; the stale
+ * entry is removed and the write is retried once. The directory is
+ * owner-only, so the entry can only be a stale temporary file or a link.
+ */
+async function writeTemporaryFile(
+  temporary: string,
+  body: string,
+): Promise<void> {
+  try {
+    await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
+  } catch (error) {
+    if (!isAlreadyExists(error)) throw error;
+    await rm(temporary, { force: true });
+    await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
+  }
+}
+
+/** True when a failed write found the name already taken. */
+function isAlreadyExists(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "EEXIST"
+  );
 }
 
 /** Asks a question on the terminal; the secret is not echoed. */
@@ -729,6 +792,28 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+/**
+ * True when this module is the program the process was started with.
+ *
+ * The path as it was invoked is compared with the path of the loaded
+ * module, and both are resolved to their real path first: a symlinked
+ * entry file, or a path spelled differently from the real one, names the
+ * same file and must still run the setup. A path that cannot be resolved
+ * falls back to comparing the two URLs, so an unresolvable path reports
+ * "not the entry point" instead of throwing.
+ */
+export function isMainModule(
+  argvPath: string | undefined = process.argv[1],
+  modulePath: string = fileURLToPath(import.meta.url),
+): boolean {
+  if (!argvPath) return false;
+  try {
+    return realpathSync(argvPath) === realpathSync(modulePath);
+  } catch {
+    return pathToFileURL(argvPath).href === pathToFileURL(modulePath).href;
+  }
+}
+
+if (isMainModule()) {
   process.exitCode = await runOAuthSetup();
 }
