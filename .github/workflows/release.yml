@@ -161,6 +161,9 @@ jobs:
       id-token: write # npm trusted publishing (OIDC) — no token secret
     uses: ./.github/workflows/npm-publish.yml
     with:
-      node-version: "22"
+      # node-version is intentionally not set here: the reusable workflow's
+      # default (Node 24) is the floor npm OIDC trusted publishing requires.
+      # Node 22 bundles npm 10.9.9 and cannot authenticate, so pinning it here
+      # would silently disable the publish.
       package-dir: plugins/zendesk-connector
       entry: dist/index.js

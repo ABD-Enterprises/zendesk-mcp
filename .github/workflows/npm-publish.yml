@@ -23,15 +23,18 @@ on:
   workflow_call:
     inputs:
       node-version:
-        description: Node version used to build and publish.
+        description: >-
+          Node version used to build and publish. Must bundle npm >= 11.5.1,
+          which OIDC trusted publishing requires; Node 24 bundles npm 11.x,
+          Node 22 bundles npm 10.9.9 and cannot authenticate.
         type: string
-        default: "22"
+        default: "24"
       package-dir:
         description: Directory (relative to repo root) holding the package.
         type: string
         default: plugins/zendesk-connector
       entry:
-        description: Built entry point, relative to package-dir, run as the smoke test.
+        description: Built entry point, relative to package-dir, checked by the smoke test.
         type: string
         default: dist/index.js
 
@@ -44,30 +47,27 @@ permissions:
 jobs:
   publish-npm:
     name: publish to npm (OIDC provenance)
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    # npm OIDC trusted publishing only works on GitHub-hosted runners (the
+    # OIDC token request is refused on self-hosted), so this job never uses the
+    # self-hosted fallback that the other jobs carry. For a public repository
+    # the pull-request jobs already run on ubuntu-latest via LINUX_RUNNER_LABELS;
+    # a release tag always resolves here to a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
       run:
         working-directory: ${{ inputs.package-dir }}
     steps:
-      - name: Start with fresh Git metadata on self-hosted runners
-        working-directory: ${{ runner.temp }}
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          set -euo pipefail
-          workspace="${GITHUB_WORKSPACE:?}"
-          test "$workspace" != /
-          rm -rf -- "$workspace/.git"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # No npm cache here on purpose: a release build should not reuse a cache
+      # that a pull-request build populated, and npm's own trusted-publishing
+      # guidance is to never cache a release build.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ inputs.node-version }}
           registry-url: https://registry.npmjs.org/
-          cache: npm
-          cache-dependency-path: ${{ inputs.package-dir }}/package-lock.json
       # --ignore-scripts: the package's build would otherwise run during
       # install; the next step builds explicitly, so this keeps it to one
       # build.
@@ -89,13 +89,20 @@ jobs:
         env:
           NPM_TRUSTED_PUBLISHING: ${{ vars.NPM_TRUSTED_PUBLISHING }}
       # The tag (the workflow ref) must equal the package version. On a tag
-      # push GITHUB_REF_NAME is the tag; the `v` prefix is stripped before
-      # comparison. A mismatch means package.json was not bumped before the
-      # tag was cut, which is a release error.
+      # push GITHUB_REF_TYPE is `tag` and GITHUB_REF_NAME is the tag; the `v`
+      # prefix is stripped before comparison. A mismatch means package.json was
+      # not bumped before the tag was cut, which is a release error. Requiring
+      # ref_type==tag stops a branch that happens to be named `v0.6.1` from
+      # satisfying the check and publishing outside a release.
       - name: tag/package version match
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
+            echo "Refusing to publish: ref '${GITHUB_REF_NAME:-}' is not a tag (ref_type='${GITHUB_REF_TYPE:-}')." >&2
+            echo "Publishing only runs from a v* release tag." >&2
+            exit 1
+          fi
           ref_name="${GITHUB_REF_NAME:?}"
           tag="${ref_name#v}"
           pkg="$(node -p "require('./package.json').version")"
@@ -155,20 +162,56 @@ jobs:
           NODE
         env:
           ENTRY: ${{ inputs.entry }}
-      # The entry point must actually run. `--help` is the lightest way to
-      # prove the binary loads without contacting any network service.
-      - name: executable smoke test
+      # The built entry point must be loadable by Node — a syntax error, a bad
+      # import, or a missing dependency in the tarball fails here. This runs
+      # the module in a child process and requires it to survive evaluation
+      # without a throw. The connector's entry always reaches for Zendesk
+      # configuration once evaluated (there is no --help mode), so this proves
+      # the shipped bytes are structurally sound without needing credentials
+      # or opening a network connection; the packed-contents check above
+      # already proved the runtime imports are inside the tarball.
+      - name: entry-point smoke test
         shell: bash
         run: |
           set -euo pipefail
-          node "$ENTRY" --help >/dev/null
+          ENTRY="$ENTRY" node <<'NODE'
+          const { spawnSync } = require('node:child_process');
+          const entry = process.env.ENTRY;
+          if (!entry) { console.error('ENTRY is not set'); process.exit(1); }
+          // Evaluate the entry with an empty environment and stdin closed. A
+          // clean exit (0) is ideal; a controlled configuration error (the
+          // connector is not configured) also proves the module loaded and
+          // ran. Only a failure to even load — a syntax error, an unresolved
+          // import, a missing file — is a smoke-test failure.
+          const result = spawnSync(process.execPath, ['-e', `import(${JSON.stringify('./' + entry)})`], {
+            env: { PATH: process.env.PATH },
+            stdio: ['ignore', 'pipe', 'pipe'],
+            encoding: 'utf8',
+          });
+          const diagnostics = `${result.stdout || ''}${result.stderr || ''}`;
+          const loaded = result.status === 0 || /not configured|is only for/.test(diagnostics);
+          if (result.error || !loaded) {
+            console.error('The built entry point did not load:');
+            if (result.error) console.error(result.error.message);
+            console.error(diagnostics);
+            process.exit(1);
+          }
+          console.log(`Loaded the built entry point (${entry}) without a load error.`);
+          NODE
         env:
           ENTRY: ${{ inputs.entry }}
       # Provenance is generated inside CI, so the dry-run exercises the same
       # path the real publish takes before anything is published.
+      # --ignore-scripts: the package declares a `prepack` that runs the build
+      # again; the explicit build above already produced the bytes the
+      # packed-contents and smoke checks validated, and re-running prepack
+      # would discard and rebuild them, so the validated bytes and the
+      # published bytes would no longer be the same. --ignore-scripts keeps
+      # them identical. --access public is required for a first publish of a
+      # scoped package.
       - name: publish (dry run, with provenance)
         shell: bash
-        run: npm publish --dry-run --provenance --access public
+        run: npm publish --dry-run --provenance --access public --ignore-scripts
       - name: publish
         shell: bash
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --ignore-scripts

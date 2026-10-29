@@ -17,10 +17,12 @@
 The container image is published automatically. Pushing a signed, annotated
 version tag `v*` starts `.github/workflows/release.yml`, which publishes
 `ghcr.io/abd-enterprises/zendesk-mcp:<version>`, where the image tag is the
-version without its leading `v`. The npm package is published separately, by
-hand. `plugins/zendesk-connector/Dockerfile` only builds an image, and the CI
-workflow builds the image without pushing it: `release.yml` is the only
-workflow that pushes.
+version without its leading `v`. The same tag also publishes the npm package
+`@abd-enterprises/zendesk-mcp` automatically, through the reusable
+`.github/workflows/npm-publish.yml` workflow, using OIDC trusted publishing —
+no npm token or password is ever stored. `plugins/zendesk-connector/Dockerfile`
+only builds an image, and the CI workflow builds the image without pushing it:
+`release.yml` is the only workflow that pushes.
 
 - [ ] Confirm that `plugins/zendesk-connector/package.json` carries the
   intended `version`, that `CHANGELOG.md` has a section for it, and that the
@@ -42,11 +44,17 @@ workflow that pushes.
   the package is still private; the workflow summary reports the published
   reference and digest as well.
 - [ ] Publish the GitHub release with changelog notes and checksums.
-- [ ] Publish the npm package by hand: run `npm publish` in
-  `plugins/zendesk-connector`, with the access level the registry scope
-  requires (`--access public` for a public scoped package) and the registry
-  one-time password if the account requires one. Confirm the result with
-  `npm view @abd-enterprises/zendesk-mcp version`.
+- [ ] Verify the npm package published with the tag: the `publish to npm`
+  job runs the same release after the image job and publishes
+  `@abd-enterprises/zendesk-mcp` with OIDC provenance — no token or
+  one-time password is ever used, and nothing is stored in the repository.
+  Publishing stays off until the operator has registered the trusted
+  publisher on npmjs.com (Settings → Trusted Publisher → GitHub Actions,
+  workflow file `release.yml`; the first publish must land within 2 days of
+  registration) and set the repo variable `NPM_TRUSTED_PUBLISHING=true`;
+  until then the job is skipped. Confirm the result with
+  `npm view @abd-enterprises/zendesk-mcp version` and the provenance on the
+  npm package page.
 - [ ] Set the GHCR package visibility to public in the package settings; a new
   package starts private. Log out of the registry before the check, because the
   verification step above logged in and Docker reuses the stored credential —
