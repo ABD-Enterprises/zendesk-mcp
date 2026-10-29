@@ -7,6 +7,46 @@ Zendesk MCP gives MCP-compatible clients a constrained set of tools to search,
 read, create, and update support tickets. It does not accept Zendesk API-token
 credentials or username/password authentication.
 
+## Quickstart
+
+The shortest path from a clean machine to a running server (requires
+[Node.js 20 or newer](#requirements)):
+
+```sh
+git clone https://github.com/ABD-Enterprises/zendesk-mcp.git
+cd zendesk-mcp/plugins/zendesk-connector
+npm ci
+npm run build
+```
+
+Then, once per account (details in
+[Configure Zendesk OAuth](#configure-zendesk-oauth)): create a confidential
+OAuth client in Zendesk Admin Center with the callback URL
+`http://127.0.0.1:3219/callback`, set `ZENDESK_SUBDOMAIN`,
+`ZENDESK_OAUTH_CLIENT_ID`, and `ZENDESK_OAUTH_CLIENT_SECRET` (or store them in
+`~/.config/codex-zendesk/client.json`, restricted to your user with
+`chmod 600`), and run:
+
+```sh
+npm run oauth:setup
+```
+
+Point your MCP client at the built server as in
+[Configure another MCP client](#configure-another-mcp-client), then verify the
+configuration without starting the server:
+
+```sh
+node dist/index.js --healthcheck
+```
+
+A healthy result means the configuration is present and well-formed — the
+first `zendesk_status` tool call is the real readiness check.
+
+If anything fails, [Troubleshooting](#troubleshooting) maps the common errors
+to their fixes. Before enabling the write tools against a production account,
+consider limiting the session to the read tools with `ZENDESK_ALLOWED_TOOLS`
+as described in the [tool contracts](docs/tool-contracts.md).
+
 ## Service Operations console
 
 The repository also includes a local back-office application for the service
@@ -290,6 +330,21 @@ server writes `server_start` and `server_shutdown` events to stderr.
 | `ZENDESK_SHUTDOWN_TIMEOUT_MS` | `5000` | Milliseconds before a hung shutdown is force-exited |
 
 Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-and-storage.md).
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `Zendesk connector is not configured. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL.` | No account identifier reached the server. Set `ZENDESK_SUBDOMAIN` (or `ZENDESK_BASE_URL`), or add `"subdomain"` (or `"baseUrl"`) to `~/.config/codex-zendesk/client.json`. Environment variables override the file. |
+| `Zendesk OAuth is not configured. Set OAuth client credentials and run npm run oauth:setup...` | The OAuth client id and secret are missing. Set `ZENDESK_OAUTH_CLIENT_ID` and `ZENDESK_OAUTH_CLIENT_SECRET`, or add them to `client.json`. |
+| `ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET are required for this OAuth mode.` | `ZENDESK_OAUTH_MODE` (in the environment or as `"mode"` in `client.json`) is set explicitly and either credential is missing. Set both values (environment or `client.json`) as in the row above. |
+| `No refresh token found in ...` or `Unable to read OAuth token file ...` | The authorization-code token store is missing, unreadable, or holds no refresh token. Run `npm run oauth:setup` again, and check `ZENDESK_OAUTH_TOKEN_FILE` if the file lives elsewhere. |
+| `OAuth client configuration ... must be readable only by its owner (chmod 600).` | The client file is accessible to group or others. Run `chmod 600 ~/.config/codex-zendesk/client.json` (or fix the file `ZENDESK_OAUTH_CLIENT_FILE` names). |
+| `npm run oauth:setup` fails to listen on port 3219 | Another process holds the port (often an earlier setup still waiting for authorization). Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
+| The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` — or the URL for your `ZENDESK_OAUTH_CALLBACK_PORT`; scheme, host, port, and path all count. Correct it in Admin Center, run setup again, then restart the server so it picks up the fresh token. Declining consent or a declined scope produces the same symptom. |
+| Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool, or the account's role lacks the underlying permission. Add the scope to `ZENDESK_OAUTH_SCOPE` (and, if the OAuth client has allowed scopes configured in Admin Center, add it there too — otherwise setup fails with `HTTP 400 invalid_scope`): authorization-code mode re-runs `npm run oauth:setup` so the larger grant replaces the stored token, client-credentials mode carries it on the next token request, and `access_token` mode cannot change it — obtain a token with the needed scope there. Then restart the server so it loads the new configuration. |
+| A desktop MCP client reports "not configured" although your shell works | Desktop applications do not inherit shell exports. Put the settings in `~/.config/codex-zendesk/client.json`, which the server reads when the environment is empty. |
+| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). Healthy means the configuration is present and well-formed — not that Zendesk is reachable or that authorization succeeded (see [Healthcheck and shutdown](#healthcheck-and-shutdown)); use `zendesk_status` for readiness. The check never contacts Zendesk and never prints credentials. |
 
 ## Development
 
