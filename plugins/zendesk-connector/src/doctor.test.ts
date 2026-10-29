@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { statSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -336,6 +337,37 @@ test("reports a token path that is the OAuth client file without probing the por
   assert.deepEqual(calls, []);
   assert.deepEqual(problems, [
     `OAuth token file ${clientFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
+  ]);
+});
+
+test("reports a token path that is a case-variant of the client file", async (ctx) => {
+  const directory = await tempDir();
+  // On a case-insensitive volume the two spellings are one file, and setup's
+  // atomic rename to the variant would replace the client credentials — the
+  // same trap the exact-path guard catches. The probe decides whether this
+  // host's volume folds case, so the assertion holds wherever the test runs.
+  const clientFile = join(directory, "client.json");
+  await writeFile(clientFile, JSON.stringify({ subdomain: "example" }), {
+    mode: 0o600,
+  });
+  const variant = join(directory, "Client.json");
+  try {
+    statSync(variant);
+  } catch {
+    ctx.skip("this volume is case-sensitive");
+    return;
+  }
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
+  const { calls, probe } = probeRecorder("free");
+
+  const problems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile: variant }),
+    probePort: probe,
+  });
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(problems, [
+    `OAuth token file ${variant} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
   ]);
 });
 

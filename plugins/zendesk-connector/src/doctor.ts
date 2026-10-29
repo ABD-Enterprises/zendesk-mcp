@@ -158,8 +158,11 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
 function inspectTokenFile(tokenFile: string): TokenFileState {
   // The same guard logout applies: if the token path is the client file,
   // re-running setup would write the token over the client credentials.
-  // The remedy is fixing the path, not setup, so no port is probed.
-  if (resolve(tokenFile) === resolve(oauthClientFilePath())) {
+  // The remedy is fixing the path, not setup, so no port is probed. Files
+  // are compared by device and inode, so a case-variant or symlinked
+  // spelling of the client file cannot slip past on a case-insensitive
+  // volume.
+  if (sameFilePath(tokenFile, oauthClientFilePath())) {
     return {
       setupNeeded: false,
       problem: `OAuth token file ${tokenFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
@@ -262,6 +265,23 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
     };
   }
   return { setupNeeded: false };
+}
+
+/**
+ * True when two paths name the same file. Existing paths are compared by
+ * device and inode — a case-variant or symlinked spelling of the client file
+ * on a case-insensitive volume is the same file — and a path that cannot be
+ * stat'd falls back to the resolved string, which is all that is left when
+ * one side does not exist yet.
+ */
+function sameFilePath(first: string, second: string): boolean {
+  try {
+    const a = statSync(first);
+    const b = statSync(second);
+    return a.dev === b.dev && a.ino === b.ino;
+  } catch {
+    return resolve(first) === resolve(second);
+  }
 }
 
 /**
