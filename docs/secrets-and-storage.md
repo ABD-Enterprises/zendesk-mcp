@@ -80,7 +80,12 @@ replaces a complete file with a partially written one.
 
 One asymmetry is worth knowing: the permission check applies to the client
 file, not to the token file. The connector does not inspect the permissions of
-a token file it reads. Keep the token file owner-only yourself.
+a token file it reads. Keep the token file owner-only yourself. The doctor
+preflight (`npm run doctor`) does inspect the token file's permissions and
+fails the run when any group or other permission bit is set, turning this
+silent gap into a reported one before the first request — except on Windows,
+where Node reports synthetic permission bits regardless of the file's ACLs, so
+the doctor skips the check there.
 
 ### Repository, logs, and the console
 

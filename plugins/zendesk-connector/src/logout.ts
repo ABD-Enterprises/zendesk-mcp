@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import {
   logOAuthLogout,
   type LogSink,
@@ -12,6 +11,7 @@ import {
   removeTokenFile,
   resolveTokenFile,
   revokeCurrentToken,
+  sameFilePath,
   type OAuthMode,
   type OAuthRequester,
   type RevocationResult,
@@ -169,7 +169,7 @@ export class ZendeskLogout {
   private async removeStoredCredentials(
     tokenFile: string,
   ): Promise<{ state: StoredCredentialsState; error?: string }> {
-    if (resolve(tokenFile) === resolve(oauthClientFilePath())) {
+    if (sameFilePath(tokenFile, oauthClientFilePath())) {
       return {
         state: "kept",
         error:

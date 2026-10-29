@@ -21,12 +21,22 @@ export interface HealthCheckOptions {
   writeError?: (line: string) => void;
 }
 
-/** Reports whether the process was asked to run a healthcheck only. */
+/** True when `argv` carries the `--healthcheck` mode flag itself. */
+export function isHealthCheckFlag(argv: string[]): boolean {
+  return argv.includes("--healthcheck");
+}
+
+/**
+ * Reports whether the process was asked to run a healthcheck only — by the
+ * explicit `--healthcheck` flag or the `ZENDESK_HEALTHCHECK` shortcut. Callers
+ * that must honor an explicit `--doctor` or `--logout` flag over the
+ * environment shortcut test with `isHealthCheckFlag` first.
+ */
 export function isHealthCheckRequested(
   argv: string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (argv.includes("--healthcheck")) return true;
+  if (isHealthCheckFlag(argv)) return true;
   const flag = env.ZENDESK_HEALTHCHECK?.trim().toLowerCase();
   return flag === "1" || flag === "true";
 }
@@ -73,7 +83,8 @@ export function runHealthCheck(options: HealthCheckOptions = {}): number {
   return 1;
 }
 
-function assertUsableConfig(config: unknown): void {
+/** Asserts that a loaded configuration carries a usable base URL and mode. */
+export function assertUsableConfig(config: unknown): void {
   if (!config || typeof config !== "object") {
     throw new Error("Zendesk OAuth configuration is missing.");
   }

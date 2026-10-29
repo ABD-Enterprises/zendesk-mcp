@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const EXPIRY_SKEW_MS = 60_000;
 const ACCESS_TOKEN_TTL_SECONDS = 3_600;
@@ -108,6 +108,60 @@ export function oauthClientFilePath(): string {
   return env("ZENDESK_OAUTH_CLIENT_FILE") ?? defaultOAuthClientFile();
 }
 
+/**
+ * True when two paths name the same file.
+ *
+ * Existing paths are compared by device and inode, so a case-variant or
+ * symlinked spelling of the client file on a case-insensitive volume is still
+ * the same file. An inode of 0 is not an identity (some FAT and network
+ * filesystems report it for every file), and a path that cannot be stat'd
+ * falls back to the resolved string — all that is left when one side does not
+ * exist yet. A non-string path (only reachable through an unchecked config
+ * value) is never a match; the caller's own read reports it.
+ */
+export function sameFilePath(first: string, second: string): boolean {
+  if (typeof first !== "string" || typeof second !== "string") return false;
+  try {
+    const a = statSync(first);
+    const b = statSync(second);
+    if (a.ino !== 0 && b.ino !== 0) {
+      return a.dev === b.dev && a.ino === b.ino;
+    }
+  } catch {
+    // One side cannot be stat'd; compare the resolved strings below.
+  }
+  return resolve(first) === resolve(second);
+}
+
+/** The default loopback port the one-time browser setup listens on. */
+const OAUTH_CALLBACK_PORT_DEFAULT = 3219;
+
+/** The message both `oauth:setup` and the doctor report for an unusable port. */
+export const CALLBACK_PORT_ERROR =
+  "ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535, written as decimal digits (for example 3219).";
+
+/** True when a raw callback-port value is a usable TCP port. */
+export function isValidCallbackPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+/**
+ * Reads the setup callback port exactly as `oauth:setup` interprets it: the
+ * environment value must be written as decimal digits (a trimmed run of
+ * `0`–`9`), with no empty-value, `${...}` placeholder, or `0x10`-style
+ * leniency — an unusable value must surface as an error in both the setup
+ * and the doctor, not be silently defaulted or reinterpreted in one of them.
+ */
+export function resolveCallbackPort(): number {
+  const raw = process.env.ZENDESK_OAUTH_CALLBACK_PORT;
+  if (raw === undefined) return OAUTH_CALLBACK_PORT_DEFAULT;
+  const digits = raw.trim();
+  // Number() alone would read "0x10" as 16 and "1e3" as 1000, values no
+  // caller wrote as a port; a non-decimal string becomes NaN, which the
+  // shared isValidCallbackPort check rejects with CALLBACK_PORT_ERROR.
+  return /^\d+$/.test(digits) ? Number(digits) : Number.NaN;
+}
+
 export function getConfig(): ZendeskConfig {
   const clientFile = oauthClientFilePath();
   const saved = readOAuthClientFile(clientFile);
@@ -183,6 +237,30 @@ function readOAuthClientFile(clientFile: string): OAuthClientFile {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw new ZendeskAuthError(
         `OAuth client configuration ${clientFile} must contain a JSON object.`,
+      );
+    }
+    // The cast below promises strings, and the consumers treat them as such
+    // (`resolveBaseUrl` trims them, fs calls throw a raw TypeError on a
+    // number), so a JSON value of the wrong type is rejected here — as the
+    // field is read, before any consumer can trip over it.
+    const account = payload as { baseUrl?: unknown; subdomain?: unknown };
+    for (const field of ["baseUrl", "subdomain"] as const) {
+      const value = account[field];
+      if (value !== undefined && typeof value !== "string") {
+        throw new ZendeskAuthError(
+          `OAuth client configuration ${clientFile} has a "${field}" value that must be a string.`,
+        );
+      }
+    }
+    // An empty tokenFile is equally unusable as a wrong-typed one: it is not
+    // a path, and it does not fall back to the default.
+    const saved = payload as { tokenFile?: unknown };
+    if (
+      saved.tokenFile !== undefined &&
+      (typeof saved.tokenFile !== "string" || saved.tokenFile.trim() === "")
+    ) {
+      throw new ZendeskAuthError(
+        `OAuth client configuration ${clientFile} has a "tokenFile" value that must be a non-empty path string.`,
       );
     }
     return payload as OAuthClientFile;
@@ -447,7 +525,44 @@ export function resolveTokenFile(): string {
   try {
     return getConfig().tokenFile;
   } catch {
-    return env("ZENDESK_OAUTH_TOKEN_FILE") ?? defaultTokenFile();
+    // The configuration is unusable, but the token file may still be named
+    // by the environment or by the client file: a logout must remove the
+    // file the connector actually wrote, not a default path that was never
+    // used. The precedence matches getConfig's — environment, then client
+    // file, then default — with each unreadable step skipped.
+    return (
+      env("ZENDESK_OAUTH_TOKEN_FILE") ?? savedTokenFile() ?? defaultTokenFile()
+    );
+  }
+}
+
+/** The client file's tokenFile field, read leniently. */
+function savedTokenFile(): string | undefined {
+  // The fallback needs only a path — not secret material, and not a
+  // validated configuration — so the file's other checks (owner-only
+  // permissions, the types of baseUrl/subdomain) are deliberately not
+  // applied here: a client file that fails one of them must still lead
+  // logout at the token file it names, not at a default path the connector
+  // never wrote. The strict reader's one structural guard is kept, though:
+  // reading a non-regular path (a FIFO, say) would block the fallback —
+  // and the whole logout — forever. Anything unusable — a non-regular
+  // path, a missing file, unparseable JSON, a wrong-typed or empty field —
+  // falls through to the default.
+  try {
+    const clientFile = oauthClientFilePath();
+    if (!statSync(clientFile).isFile()) {
+      return undefined;
+    }
+    const payload = JSON.parse(readFileSync(clientFile, "utf8")) as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return undefined;
+    }
+    const tokenFile = (payload as { tokenFile?: unknown }).tokenFile;
+    return typeof tokenFile === "string" && tokenFile.trim() !== ""
+      ? tokenFile
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 

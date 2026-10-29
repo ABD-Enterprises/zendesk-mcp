@@ -51,7 +51,9 @@ npm run oauth:setup
 The browser flow stores access and rotating refresh tokens in
 `~/.config/codex-zendesk/oauth.json` with owner-only permissions. The MCP server
 refreshes expiring tokens and updates that file automatically. Override the file
-with `ZENDESK_OAUTH_TOKEN_FILE` and scopes with `ZENDESK_OAUTH_SCOPE`.
+with `ZENDESK_OAUTH_TOKEN_FILE` and scopes with `ZENDESK_OAUTH_SCOPE`. The
+client file's `tokenFile` field also names the token file, and the environment
+variable wins over that field.
 
 Upgrading an installation whose access token predates the `brands:read` and
 `groups:read` default scopes: re-run `npm run oauth:setup`, because that token
@@ -68,6 +70,51 @@ access token in memory; no browser setup or refresh-token file is used.
 For a short-lived manually managed OAuth token, set
 `ZENDESK_OAUTH_MODE=access_token` and `ZENDESK_OAUTH_ACCESS_TOKEN`. This mode
 cannot renew expired tokens and is intended only for testing.
+
+## Doctor preflight
+
+The doctor diagnoses a setup without contacting Zendesk. Run it with:
+
+```sh
+npm run doctor
+```
+
+or directly with `node dist/index.js --doctor`. The `npm run` form is for a
+git checkout: it rebuilds first, so it needs the dev dependencies that
+`npm ci` installs. An installed package ships only `dist` (no sources or
+`tsconfig`), so there the direct form is the only one —
+`zendesk-mcp --doctor` when the package's `bin` entry is on your `PATH`.
+It performs the [healthcheck](#healthcheck-and-shutdown) validation and adds
+the checks that matter before the first request:
+
+- The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219) parses
+  as decimal digits naming an integer from 1 to 65535 and is free to bind on
+  `127.0.0.1`. This runs only in `authorization_code` mode and only when
+  re-running setup is the remedy for the token problem — the file is missing,
+  unparseable, or lacks a token field (a path or permission problem skips it),
+  and setup needs the port.
+- The stored token file in `authorization_code` mode: its path is not the
+  OAuth client file (setup's atomic write would replace the client
+  credentials with the token), it exists (a missing
+  file means "run `npm run oauth:setup`"; a stat failure other than a missing
+  path is reported with its own advice instead), is a regular file, parses
+  as JSON, and contains both an `access_token` and a `refresh_token` (renewal
+  fails without one once the access token expires). It must also be readable
+  only by its owner. The permission check is doctor-only; the server reads the
+  file without inspecting its permissions, and the doctor skips the check on
+  Windows, where Node reports synthetic permission bits regardless of the
+  file's ACLs.
+
+A clean run prints one all-clear line on stdout and exits 0 — `npm run
+--silent doctor` suppresses npm's own script banners, so exactly one line
+reaches the shell. Each failing check is one actionable line on stderr and
+the exit code is 1. The
+configuration messages and the token file's missing, unparseable, and
+incomplete messages are the server's own error strings; the port and the token
+file-state messages (an unreadable path, not a regular file, loose
+permissions) are the doctor's, and nothing printed carries credential values.
+An explicit `--doctor` or `--logout` flag wins over the `ZENDESK_HEALTHCHECK`
+environment-variable shortcut.
 
 ## Healthcheck and shutdown
 

@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import {
+  isValidCallbackPort,
+  resolveCallbackPort,
+  sameFilePath,
   ZendeskAuthError,
   ZendeskOAuth,
   getConfig,
   removeTokenFile,
+  resolveTokenFile,
   revokeCurrentToken,
   writeTokenFile,
   type ZendeskConfig,
@@ -86,6 +91,104 @@ test("getConfig rejects an OAuth client file readable by other users", async () 
   };
 
   assert.throws(() => getConfig(), /chmod 600/);
+});
+
+test("getConfig rejects a client file whose baseUrl or subdomain is not a string", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
+  // resolveBaseUrl trims these values with String methods, so a JSON value of
+  // the wrong type must be rejected where the file is read — as an
+  // actionable configuration error, not a raw TypeError at startup.
+  for (const [field, value] of [
+    ["baseUrl", 123],
+    ["subdomain", { name: "example" }],
+  ] as const) {
+    const clientFile = join(directory, `client-${field}.json`);
+    await writeFile(clientFile, JSON.stringify({ [field]: value }), {
+      mode: 0o600,
+    });
+    process.env = { ...originalEnv, ZENDESK_OAUTH_CLIENT_FILE: clientFile };
+    delete process.env.ZENDESK_BASE_URL;
+    delete process.env.ZENDESK_SUBDOMAIN;
+
+    assert.throws(
+      () => getConfig(),
+      new RegExp(`has a "${field}" value that must be a string\\.`),
+      `a wrong-typed ${field} must be reported by name`,
+    );
+  }
+});
+
+test("resolveTokenFile falls back to the client file's tokenFile field", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
+  const clientFile = join(directory, "client.json");
+  const tokenFile = join(directory, "custom-oauth.json");
+  // The configuration is unusable (no subdomain), so getConfig throws — but
+  // the client file still names the token file, and a logout must clear that
+  // path rather than the never-used default.
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      mode: "authorization_code",
+      tokenFile,
+    }),
+    { mode: 0o600 },
+  );
+  process.env = { ...originalEnv, ZENDESK_OAUTH_CLIENT_FILE: clientFile };
+  delete process.env.ZENDESK_SUBDOMAIN;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_OAUTH_TOKEN_FILE;
+
+  assert.equal(resolveTokenFile(), tokenFile);
+});
+
+test("resolveTokenFile skips a client path that is not a regular file", async (ctx) => {
+  // A FIFO at the client path would block a bare readFileSync forever — and
+  // a blocked synchronous call wedges its process, so no timer inside it
+  // could turn the regression into a failure. The fallback therefore runs
+  // in a child process with a timeout: removing the guard kills the child
+  // and fails this test in seconds instead of hanging the whole run.
+  // mkfifo is POSIX-only; without it this host cannot build the case.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-fifo-test-"));
+  const clientFile = join(directory, "client.json");
+  try {
+    execFileSync("mkfifo", [clientFile]);
+  } catch (error) {
+    // Only "no mkfifo on this host" may skip; any other failure is the host
+    // acting up and must surface, not silently shrink coverage.
+    if ((error as { code?: string }).code === "ENOENT") {
+      ctx.skip("mkfifo is unavailable on this host");
+      return;
+    }
+    throw error;
+  }
+  const home = join(directory, "home");
+  const childEnv: NodeJS.ProcessEnv = {
+    ...originalEnv,
+    HOME: home,
+    USERPROFILE: home,
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+  };
+  delete childEnv.ZENDESK_OAUTH_TOKEN_FILE;
+  delete childEnv.ZENDESK_SUBDOMAIN;
+  delete childEnv.ZENDESK_BASE_URL;
+
+  const script =
+    `import { resolveTokenFile } from ${JSON.stringify(
+      new URL("./auth.js", import.meta.url).href,
+    )};` + "process.stdout.write(resolveTokenFile());";
+  const output = execFileSync(
+    process.execPath,
+    ["--input-type=module", "-e", script],
+    { encoding: "utf8", env: childEnv, timeout: 15_000 },
+  );
+
+  // The fallback lands at the default path under the child's HOME — the
+  // real home is never named, let alone touched. (Computed from `home`
+  // directly: an earlier test replaces process.env with a plain object, so
+  // the parent's defaultTokenFile() no longer reflects the child's HOME.)
+  assert.equal(output, join(home, ".config", "codex-zendesk", "oauth.json"));
 });
 
 test("access-token mode returns the configured bearer token", async () => {
@@ -217,6 +320,64 @@ test("removeTokenFile removes the stored token and tolerates a missing file", as
 
   assert.equal(await removeTokenFile(tokenFile), true);
   assert.equal(await removeTokenFile(tokenFile), false);
+});
+
+test("resolveCallbackPort reads only trimmed decimal digits", () => {
+  // The parser is shared by oauth:setup and the doctor, so every spelling
+  // must bind the same port — or the same error — in both.
+  delete process.env.ZENDESK_OAUTH_CALLBACK_PORT;
+  assert.equal(resolveCallbackPort(), 3219);
+
+  const cases: ReadonlyArray<readonly [string, number, boolean]> = [
+    // value, resolveCallbackPort(), isValidCallbackPort() of that result
+    ["3219", 3219, true],
+    [" 3219 ", 3219, true],
+    ["1", 1, true],
+    ["65535", 65535, true],
+    ["0", 0, false],
+    ["65536", 65536, false],
+    ["0x10", Number.NaN, false],
+    ["1e3", Number.NaN, false],
+    ["+3219", Number.NaN, false],
+    ["3219.0", Number.NaN, false],
+    ["", Number.NaN, false],
+    ["${PORT}", Number.NaN, false],
+  ];
+  for (const [value, expectedPort, expectedValid] of cases) {
+    process.env.ZENDESK_OAUTH_CALLBACK_PORT = value;
+    const port = resolveCallbackPort();
+    if (Number.isNaN(expectedPort)) {
+      assert.ok(Number.isNaN(port), `value ${JSON.stringify(value)} must not parse`);
+    } else {
+      assert.equal(port, expectedPort, `value ${JSON.stringify(value)}`);
+    }
+    // The pair must agree: a spelling the parser rejects fails the shared
+    // validity check, so both consumers report CALLBACK_PORT_ERROR instead
+    // of binding a port nobody registered as the callback URL.
+    assert.equal(
+      isValidCallbackPort(port),
+      expectedValid,
+      `value ${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test("isValidCallbackPort accepts only integers within the TCP range", () => {
+  assert.equal(isValidCallbackPort(1), true);
+  assert.equal(isValidCallbackPort(65535), true);
+  assert.equal(isValidCallbackPort(0), false);
+  assert.equal(isValidCallbackPort(65536), false);
+  assert.equal(isValidCallbackPort(3219.5), false);
+  assert.equal(isValidCallbackPort(Number.NaN), false);
+});
+
+test("sameFilePath treats a non-string path as no match instead of throwing", () => {
+  // The client file may hold any JSON value for tokenFile, and the guard runs
+  // before the caller's own read reports it — a wrong-typed value must come
+  // back as "not the same file", never as a raw TypeError.
+  assert.equal(sameFilePath(123 as unknown as string, "example-client.json"), false);
+  assert.equal(sameFilePath("example-token.json", {} as unknown as string), false);
+  assert.equal(sameFilePath(undefined as unknown as string, "example-token.json"), false);
 });
 
 interface RecordedRequest {

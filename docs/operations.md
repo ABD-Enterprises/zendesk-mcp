@@ -340,7 +340,10 @@ anything.
 2. Restore the environment configuration: the `ZENDESK_*` variables for the
    connector and the `ZENDESK_CONSOLE_*` variables for the console.
 3. Validate the connector configuration without contacting Zendesk:
-   `node plugins/zendesk-connector/dist/index.js --healthcheck`.
+   `node plugins/zendesk-connector/dist/index.js --healthcheck`, then
+   `npm run doctor` from `plugins/zendesk-connector` — the health check never
+   reads the token file, while the doctor reports a restored token file's
+   state and permissions.
 4. Start the console and read `GET /api/status`. The body must report
    `configured` as `true` with an empty `missing` list.
 5. Confirm the account itself with the `zendesk_status` tool — the health
