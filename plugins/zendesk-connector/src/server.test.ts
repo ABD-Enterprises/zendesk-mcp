@@ -42,9 +42,13 @@ test("publishes only tools enabled by the deployment allowlist", async () => {
   }
 });
 
-test("read-only mode withholds the write tools over MCP", async () => {
+test("read-only mode withholds the write tools over MCP", async (t) => {
   const original = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_READ_ONLY = "1";
+  t.after(() => {
+    if (original === undefined) delete process.env.ZENDESK_READ_ONLY;
+    else process.env.ZENDESK_READ_ONLY = original;
+  });
   const server = createZendeskServer(
     new ZendeskClient(
       {
@@ -66,20 +70,23 @@ test("read-only mode withholds the write tools over MCP", async () => {
 
   try {
     const tools = await client.listTools();
-    const names = tools.tools.map((tool) => tool.name);
-    assert.equal(names.length, 9);
-    for (const writeTool of [
-      "zendesk_create_ticket",
-      "zendesk_update_ticket",
-      "zendesk_add_ticket_comment",
-    ]) {
-      assert.ok(!names.includes(writeTool), `${writeTool} must not be published`);
-    }
+    assert.deepEqual(
+      tools.tools.map((tool) => tool.name).sort(),
+      [
+        "zendesk_get_ticket",
+        "zendesk_list_brands",
+        "zendesk_list_groups",
+        "zendesk_list_organizations",
+        "zendesk_list_ticket_fields",
+        "zendesk_list_ticket_forms",
+        "zendesk_list_users",
+        "zendesk_search_tickets",
+        "zendesk_status",
+      ],
+    );
   } finally {
     await client.close();
     await server.close();
-    if (original === undefined) delete process.env.ZENDESK_READ_ONLY;
-    else process.env.ZENDESK_READ_ONLY = original;
   }
 });
 

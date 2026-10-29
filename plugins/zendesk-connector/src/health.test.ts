@@ -135,6 +135,17 @@ test("rejects an OAuth client file readable by other users", async () => {
   }
 });
 
+test("rejects an invalid read-only flag even when the OAuth config is valid", () => {
+  process.env.ZENDESK_READ_ONLY = "yes";
+
+  const result = checkHealth(() => config());
+
+  assert.equal(result.healthcheck, "fail");
+  if (result.healthcheck === "fail") {
+    assert.match(result.error, /ZENDESK_READ_ONLY must be 1, true, 0, or false/);
+  }
+});
+
 test("detects the healthcheck flag and environment variable", () => {
   assert.equal(isHealthCheckRequested(["--healthcheck"], {}), true);
   assert.equal(isHealthCheckRequested([], { ZENDESK_HEALTHCHECK: "1" }), true);

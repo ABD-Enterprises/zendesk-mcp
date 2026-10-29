@@ -39,13 +39,10 @@ const WRITE_TOOL_NAMES = [
 
 test("read-only mode keeps the nine read tools and drops the three write tools", () => {
   delete process.env.ZENDESK_ALLOWED_TOOLS;
+  const readToolNames = toolNames().filter((tool) => !WRITE_TOOL_NAMES.includes(tool));
   for (const value of ["1", "true", "TRUE", " True "]) {
     process.env.ZENDESK_READ_ONLY = value;
-    const tools = [...configuredTools()];
-    assert.equal(tools.length, toolNames().length - WRITE_TOOL_NAMES.length);
-    for (const writeTool of WRITE_TOOL_NAMES) {
-      assert.ok(!tools.includes(writeTool), `${writeTool} must be dropped`);
-    }
+    assert.deepEqual([...configuredTools()], [...readToolNames]);
   }
 });
 

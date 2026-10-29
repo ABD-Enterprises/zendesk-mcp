@@ -64,7 +64,8 @@ Neither component exposes an endpoint that proves the account works, so the
 checks are commands run on the host:
 
 ```sh
-# Connector: validates the OAuth configuration, contacts nothing, exits.
+# Connector: validates the OAuth configuration and tool policy, contacts
+# nothing, exits.
 node plugins/zendesk-connector/dist/index.js --healthcheck
 
 # Console: liveness and configuration status; never calls Zendesk.

@@ -84,7 +84,8 @@ Response steps, in order:
 1. Detect and triage: confirm what happened, which data and tools were
    involved, and when it started.
 2. Contain: revoke the OAuth tokens in Zendesk, stop the server, narrow
-   `ZENDESK_ALLOWED_TOOLS` to the read-only tools only, and rotate the
+   `ZENDESK_ALLOWED_TOOLS` to the read-only tools only (or set
+   `ZENDESK_READ_ONLY=1`), and rotate the
    OAuth client secret. An empty or unset value enables every compiled
    tool, including the write tools, so never rely on it to deny access.
 3. Assess: determine which read tools could have exposed which data; use

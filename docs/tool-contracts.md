@@ -158,9 +158,9 @@ Errors that map from the client layer:
 - The `zendesk_update_ticket` no-fields rejection is a client-side error with
   a message and no status.
 
-Startup problems — missing OAuth configuration, an unreadable client file, or
-an invalid `ZENDESK_ALLOWED_TOOLS` value — prevent the server from starting
-rather than returning a tool error.
+Startup problems — missing OAuth configuration, an unreadable client file, an
+invalid `ZENDESK_ALLOWED_TOOLS` value, or an invalid `ZENDESK_READ_ONLY`
+value — prevent the server from starting rather than returning a tool error.
 
 What the error payload never contains: OAuth credentials, access or refresh
 tokens, or token-file contents. The payload is passed through a redaction step
@@ -194,7 +194,8 @@ scopes are.
 
 `ZENDESK_ALLOWED_TOOLS` narrows the deployed tool surface to a named subset:
 
-- Unset or empty, all twelve tools are available.
+- Unset or empty, the allowlist itself restricts nothing, and all twelve
+  tools are available (subject to `ZENDESK_READ_ONLY`, below).
 - Set to a comma-separated list of tool names, only those tools are
   registered. A filtered tool does not appear in `tools/list`, and calls to it
   are refused. Each handler also re-checks the policy at call time, so a tool
@@ -217,7 +218,8 @@ zendesk_list_ticket_fields,zendesk_list_ticket_forms"
 - Set to `1` or `true`, the surface is the nine read tools; the three write
   tools are not registered and their calls are refused.
 - An explicit `ZENDESK_ALLOWED_TOOLS` still wins when it names only read
-  tools, so a deployment can combine both without changing the outcome.
+  tools, so a deployment can combine both: the allowlist's subset — which
+  can be narrower than the nine read tools — is what is served.
 - When read-only mode is on and the allowlist names a write tool, the server
   refuses to start and names the conflicting tools. Read-only mode never
   silently re-enables a write tool, and disabling it (`0`, `false`, or unset)

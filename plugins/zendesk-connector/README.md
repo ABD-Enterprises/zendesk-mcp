@@ -71,7 +71,8 @@ cannot renew expired tokens and is intended only for testing.
 
 ## Healthcheck and shutdown
 
-Validate the configuration without contacting Zendesk and without serving:
+Validate the OAuth configuration and tool policy without contacting Zendesk
+and without serving:
 
 ```sh
 node dist/index.js --healthcheck

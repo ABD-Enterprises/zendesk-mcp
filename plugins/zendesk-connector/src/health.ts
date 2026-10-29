@@ -1,4 +1,5 @@
 import { getConfig, OAUTH_MODES } from "./auth.js";
+import { configuredTools } from "./policy.js";
 
 export interface HealthCheckOk {
   healthcheck: "ok";
@@ -31,15 +32,16 @@ export function isHealthCheckRequested(
 }
 
 /**
- * Validates the OAuth configuration without contacting Zendesk. The failure
- * reason comes from the thrown error message, which never carries credential
- * material.
+ * Validates the OAuth configuration and the tool policy without contacting
+ * Zendesk. The failure reason comes from the thrown error message, which never
+ * carries credential material.
  */
 export function checkHealth(
   loadConfig: () => unknown = getConfig,
 ): HealthCheckResult {
   try {
     assertUsableConfig(loadConfig());
+    configuredTools();
     return { healthcheck: "ok" };
   } catch (error) {
     return {
