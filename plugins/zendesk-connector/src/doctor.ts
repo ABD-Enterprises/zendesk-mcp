@@ -13,11 +13,23 @@ import { configuredTools } from "./policy.js";
 /** The configuration fields the doctor inspects beyond startup validation. */
 type DoctorConfig = Pick<ZendeskConfig, "baseUrl" | "mode" | "tokenFile">;
 
+/** What the loopback port probe found when it tried to bind. */
+export type PortProbeResult =
+  /** The port binds right now. */
+  | "free"
+  /** Another process already holds the port. */
+  | "in-use"
+  /** The port cannot be bound at all (for example a privileged port). */
+  | "unavailable";
+
 export interface DoctorOptions {
   /** Loads the OAuth configuration. Defaults to `getConfig`. */
   loadConfig?: () => DoctorConfig;
-  /** Reports whether the loopback callback port can be bound. Defaults to a real bind. */
-  probePort?: (port: number) => Promise<boolean>;
+  /**
+   * Reports whether the loopback callback port can be bound, and why not.
+   * Defaults to a real bind.
+   */
+  probePort?: (port: number) => Promise<PortProbeResult>;
   /** Writes the all-clear line to stdout. */
   writeOut?: (line: string) => void;
   /** Writes one line per failing check to stderr. */
@@ -28,9 +40,11 @@ interface TokenFileState {
   /**
    * True when the stored token cannot be used and the remedy is to run
    * `npm run oauth:setup` again — the one problem whose fix needs the
-   * callback port, so the port check runs for these states too. File-state
-   * problems (missing parent path, not a regular file, loose permissions)
-   * set it to false: re-running setup does not obviously fix them.
+   * callback port, so the port check runs for these states too. A missing
+   * file or parent directory is ENOENT, so it stays true: setup creates the
+   * parent when it stores the token. Other file-state problems (a directory
+   * where the file belongs, loose permissions) set it to false: re-running
+   * setup does not obviously fix them.
    */
   setupNeeded: boolean;
   /** Why the token file is not usable as stored, undefined when it is fine. */
@@ -203,26 +217,35 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
 /**
  * Validates `ZENDESK_OAUTH_CALLBACK_PORT` exactly as `oauth:setup` reads it,
  * then asks whether the loopback port is free. The default probe only binds
- * `127.0.0.1` briefly; no traffic leaves the machine.
+ * `127.0.0.1` briefly; no traffic leaves the machine. A port that cannot be
+ * bound gets its own advice: only a port another process holds is evidence of
+ * an earlier setup still waiting for authorization.
  */
 async function checkCallbackPort(
-  probe: (port: number) => Promise<boolean> = probePortFree,
+  probe: (port: number) => Promise<PortProbeResult> = probePortFree,
 ): Promise<string | undefined> {
   const port = resolveCallbackPort();
   if (!isValidCallbackPort(port)) {
     return CALLBACK_PORT_ERROR;
   }
-  if (await probe(port)) return undefined;
-  return `npm run oauth:setup cannot listen on port ${port}: another process holds the port (often an earlier setup still waiting for authorization). Set ZENDESK_OAUTH_CALLBACK_PORT to a free port and register that exact callback URL on the OAuth client in Zendesk.`;
+  const state = await probe(port);
+  if (state === "free") return undefined;
+  const cause =
+    state === "in-use"
+      ? "another process holds the port (often an earlier setup still waiting for authorization)"
+      : "this user cannot bind the port (a port below 1024 needs elevated privileges)";
+  return `npm run oauth:setup cannot listen on port ${port}: ${cause}. Set ZENDESK_OAUTH_CALLBACK_PORT to a free port and register that exact callback URL on the OAuth client in Zendesk.`;
 }
 
-/** True when the loopback port can be bound right now. */
-function probePortFree(port: number): Promise<boolean> {
+/** What the loopback bind attempt found; only `EADDRINUSE` means "held". */
+function probePortFree(port: number): Promise<PortProbeResult> {
   return new Promise((resolve) => {
     const probe = createServer();
-    probe.once("error", () => resolve(false));
+    probe.once("error", (error: NodeJS.ErrnoException) =>
+      resolve(error.code === "EADDRINUSE" ? "in-use" : "unavailable"),
+    );
     probe.listen(port, "127.0.0.1", () => {
-      probe.close(() => resolve(true));
+      probe.close(() => resolve("free"));
     });
   });
 }

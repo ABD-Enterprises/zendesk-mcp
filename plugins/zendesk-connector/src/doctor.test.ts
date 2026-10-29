@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, test } from "node:test";
 import type { ZendeskConfig } from "./auth.js";
 import { checkDoctor, isDoctorRequested, runDoctor } from "./doctor.js";
+import type { PortProbeResult } from "./doctor.js";
 
 const originalEnv = { ...process.env };
 // Temporary fixture directories are tracked so each test removes its own.
@@ -76,7 +77,7 @@ test("reports configuration and tool-policy problems together", async () => {
   const configMessage =
     "Zendesk connector is not configured. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL.";
   process.env.ZENDESK_READ_ONLY = "yes";
-  const { calls, probe } = probeRecorder(true);
+  const { calls, probe } = probeRecorder("free");
   const out: string[] = [];
   const err: string[] = [];
 
@@ -110,7 +111,7 @@ test("reports an invalid read-only flag on its own", async () => {
 
 test("asks for oauth:setup when the token file is missing and the port is free", async () => {
   const directory = await tempDir();
-  const { calls, probe } = probeRecorder(true);
+  const { calls, probe } = probeRecorder("free");
 
   const problems = await checkDoctor({
     loadConfig: () =>
@@ -126,7 +127,7 @@ test("asks for oauth:setup when the token file is missing and the port is free",
 
 test("reports a busy callback port before the missing token file", async () => {
   const directory = await tempDir();
-  const { calls, probe } = probeRecorder(false);
+  const { calls, probe } = probeRecorder("in-use");
 
   const problems = await checkDoctor({
     loadConfig: () =>
@@ -137,13 +138,35 @@ test("reports a busy callback port before the missing token file", async () => {
   assert.deepEqual(calls, [3219]);
   assert.equal(problems.length, 2);
   assert.match(problems[0], /cannot listen on port 3219/);
+  assert.match(problems[0], /another process holds the port/);
+  assert.match(problems[1], /Run npm run oauth:setup/);
+});
+
+test("reports a port this user cannot bind with its own advice", async () => {
+  const directory = await tempDir();
+  const { calls, probe } = probeRecorder("unavailable");
+
+  const problems = await checkDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+    probePort: probe,
+  });
+
+  // A bind refusal is not evidence of an earlier setup still waiting: only a
+  // port another process holds gets the "earlier setup" advice, while a port
+  // this user cannot bind points at the port's own privileges instead.
+  assert.deepEqual(calls, [3219]);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /cannot listen on port 3219: this user cannot bind the port/);
+  assert.match(problems[0], /elevated privileges/);
+  assert.ok(!problems[0].includes("earlier setup"));
   assert.match(problems[1], /Run npm run oauth:setup/);
 });
 
 test("reports an unusable callback port without probing it", async () => {
   const directory = await tempDir();
   process.env.ZENDESK_OAUTH_CALLBACK_PORT = "not-a-port";
-  const { calls, probe } = probeRecorder(true);
+  const { calls, probe } = probeRecorder("free");
 
   const problems = await checkDoctor({
     loadConfig: () =>
@@ -165,7 +188,7 @@ test("reports a token file readable by other users without probing the port", as
     }),
   );
   await chmod(tokenFile, 0o644);
-  const { calls, probe } = probeRecorder(true);
+  const { calls, probe } = probeRecorder("free");
 
   const problems = await checkDoctor({
     loadConfig: () => config({ mode: "authorization_code", tokenFile }),
@@ -194,7 +217,7 @@ test("reports a token path that cannot be stat'd without probing the port", asyn
   const blocker = join(directory, "not-a-directory");
   await writeFile(blocker, "invented-content");
   const tokenFile = join(blocker, "oauth.json");
-  const { calls, probe } = probeRecorder(true);
+  const { calls, probe } = probeRecorder("free");
 
   const problems = await checkDoctor({
     loadConfig: () => config({ mode: "authorization_code", tokenFile }),
@@ -206,12 +229,30 @@ test("reports a token path that cannot be stat'd without probing the port", asyn
   assert.match(problems[0], /Unable to read OAuth token file .*oauth\.json\. Check that the path exists and this user can access it\./);
 });
 
+test("reports a token path that is not a regular file without probing the port", async () => {
+  const directory = await tempDir();
+  // stat succeeds but reports a directory: re-running oauth:setup would not
+  // replace it with a file, so the message names the file state itself and
+  // the port a setup re-run would need is not probed.
+  const tokenFile = join(directory, "oauth.json");
+  await mkdir(tokenFile);
+  const { calls, probe } = probeRecorder("free");
+
+  const problems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile }),
+    probePort: probe,
+  });
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(problems, [`OAuth token file ${tokenFile} is not a regular file.`]);
+});
+
 test("reports a token file that does not parse", async () => {
   const tokenFile = await tempTokenFile("{not json");
 
   const problems = await checkDoctor({
     loadConfig: () => config({ mode: "authorization_code", tokenFile }),
-    probePort: probeRecorder(true).probe,
+    probePort: probeRecorder("free").probe,
   });
 
   assert.equal(problems.length, 1);
@@ -225,7 +266,7 @@ test("reports a token file without an access token", async () => {
 
   const problems = await checkDoctor({
     loadConfig: () => config({ mode: "authorization_code", tokenFile }),
-    probePort: probeRecorder(true).probe,
+    probePort: probeRecorder("free").probe,
   });
 
   assert.equal(problems.length, 1);
@@ -236,7 +277,7 @@ test("reports a token file without a refresh token", async () => {
   const tokenFile = await tempTokenFile(
     JSON.stringify({ access_token: "invented-access-token" }),
   );
-  const { calls, probe } = probeRecorder(true);
+  const { calls, probe } = probeRecorder("free");
 
   const problems = await checkDoctor({
     loadConfig: () => config({ mode: "authorization_code", tokenFile }),
@@ -252,7 +293,7 @@ test("reports a token file without a refresh token", async () => {
 
 test("probes the port when the stored token is unusable", async () => {
   const tokenFile = await tempTokenFile("{not json");
-  const { calls, probe } = probeRecorder(false);
+  const { calls, probe } = probeRecorder("in-use");
 
   const problems = await checkDoctor({
     loadConfig: () => config({ mode: "authorization_code", tokenFile }),
@@ -384,7 +425,7 @@ test("the default probe reports a free port as free", async () => {
 });
 
 test("skips the token and port checks outside authorization_code mode", async () => {
-  const { calls, probe } = probeRecorder(true);
+  const { calls, probe } = probeRecorder("free");
 
   const problems = await checkDoctor({
     loadConfig: () =>
@@ -419,6 +460,37 @@ test("the default probe reports a port that is genuinely in use", async () => {
   }
 });
 
+test(
+  "the default probe reports a port this user cannot bind",
+  {
+    // A privileged port bind succeeds for root, so the refusal it is meant to
+    // exercise could not be observed there; Windows uses a different model.
+    skip:
+      process.platform === "win32" ||
+      typeof process.getuid !== "function" ||
+      process.getuid() === 0
+        ? "needs an unprivileged user on a POSIX host"
+        : false,
+  },
+  async () => {
+    const directory = await tempDir();
+    process.env.ZENDESK_OAUTH_CALLBACK_PORT = "1";
+
+    // No probePort: the real bind must distinguish a refusal that is not
+    // EADDRINUSE — the OS rejects a privileged port for an ordinary user —
+    // instead of blaming another process for it.
+    const problems = await checkDoctor({
+      loadConfig: () =>
+        config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+    });
+
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /cannot listen on port 1: this user cannot bind the port/);
+    assert.ok(!problems[0].includes("another process holds"));
+    assert.match(problems[1], /Run npm run oauth:setup/);
+  },
+);
+
 test("passes against a real authorization-code configuration", async () => {
   const files = await writeAuthFiles();
   process.env = cleanEnv({
@@ -439,15 +511,28 @@ test("passes against a real authorization-code configuration", async () => {
 });
 
 test("never prints configuration values", async () => {
+  const directory = await tempDir();
   const out: string[] = [];
   const err: string[] = [];
 
+  // A failing run, not a passing one: the problem lines are the only output
+  // that could carry a value, so the configuration holds invented secrets
+  // while the token file the report is about is missing.
   await runDoctor({
-    loadConfig: () => config(),
+    loadConfig: () =>
+      config({
+        mode: "authorization_code",
+        tokenFile: join(directory, "oauth.json"),
+      }),
+    probePort: probeRecorder("free").probe,
     writeOut: (line) => out.push(line),
     writeError: (line) => err.push(line),
   });
 
+  // Prove a problem line was actually printed; otherwise the leak assertions
+  // below would hold vacuously.
+  assert.equal(err.length, 1);
+  assert.match(err[0], /Run npm run oauth:setup/);
   const printed = [...out, ...err].join("");
   assert.ok(!printed.includes("invented-access-token"));
   assert.ok(!printed.includes("invented-client-secret"));
@@ -467,9 +552,9 @@ function config(overrides: Partial<ZendeskConfig> = {}): ZendeskConfig {
   };
 }
 
-function probeRecorder(result: boolean): {
+function probeRecorder(result: PortProbeResult): {
   calls: number[];
-  probe: (port: number) => Promise<boolean>;
+  probe: (port: number) => Promise<PortProbeResult>;
 } {
   const calls: number[] = [];
   return {

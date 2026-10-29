@@ -87,11 +87,11 @@ matter before the first request:
   or unusable — the states whose remedy is re-running setup, which needs the
   port.
 - The stored token file in `authorization_code` mode: it exists (a missing
-  file means "run `npm run oauth:setup`"; a path that cannot be stat'd at all
-  is reported with its own advice instead), is a regular file, parses as JSON,
-  and contains both an `access_token` and a `refresh_token` (renewal fails
-  without one once the access token expires). It must also be readable only by
-  its owner. The permission check is doctor-only; the server reads the token
+  file means "run `npm run oauth:setup`"; a stat failure other than a missing
+  path is reported with its own advice instead), is a regular file, parses
+  as JSON, and contains both an `access_token` and a `refresh_token` (renewal
+  fails without one once the access token expires). It must also be readable
+  only by its owner. The permission check is doctor-only; the server reads the
   file without inspecting its permissions, and the doctor skips the check on
   Windows, where Node reports synthetic permission bits regardless of the
   file's ACLs.
