@@ -366,9 +366,14 @@ test("reports a token path that is a case-variant of the client file", async (ct
   const variant = join(directory, "Client.json");
   try {
     statSync(variant);
-  } catch {
-    ctx.skip("this volume is case-sensitive");
-    return;
+  } catch (error) {
+    // Only "no such file" means this volume folds case; anything else is
+    // the host acting up and must surface, not silently shrink coverage.
+    if ((error as { code?: string }).code === "ENOENT") {
+      ctx.skip("this volume is case-sensitive");
+      return;
+    }
+    throw error;
   }
   process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
   const { calls, probe } = probeRecorder("free");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
 import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,18 @@ import { ZendeskLogout, isLogoutRequested, runLogout } from "./logout.js";
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
+
+// os.homedir() reads the C environment, and the plain-object `process.env =`
+// replacements the tests below make never reach it — so on a regression that
+// falls through to defaultTokenFile(), the real ~/.config/codex-zendesk would
+// be a deletion candidate. A direct assignment (unlike a replacement) does
+// reach the C environment: for the life of this process every default path
+// the logout fallback computes lands in this sandbox, and the real store is
+// never touched. Each test file runs in its own process, so this stays
+// scoped to this file.
+const sandboxHome = mkdtempSync(join(tmpdir(), "zendesk-logout-home-"));
+process.env.HOME = sandboxHome;
+process.env.USERPROFILE = sandboxHome;
 
 afterEach(() => {
   process.env = { ...originalEnv };
@@ -222,9 +235,14 @@ test("never removes the OAuth client file spelled with different case", async (c
   const variant = join(directory, "Client.json");
   try {
     await stat(variant);
-  } catch {
-    ctx.skip("this volume is case-sensitive");
-    return;
+  } catch (error) {
+    // Only "no such file" means this volume folds case; anything else is
+    // the host acting up and must surface, not silently shrink coverage.
+    if ((error as { code?: string }).code === "ENOENT") {
+      ctx.skip("this volume is case-sensitive");
+      return;
+    }
+    throw error;
   }
   process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
 
@@ -303,8 +321,9 @@ test("clears the token file the client file names when the configuration is inco
   });
   // The client file names the token file, but the configuration is otherwise
   // incomplete (no subdomain), so getConfig throws and the fallback decides
-  // which file is cleared. HOME points into the fixture, so the default path
-  // a regression would pick is inside the fixture too — never the real one.
+  // which file is cleared. The module-level sandbox HOME contains the
+  // default path a deeper regression would pick, so the real store is never
+  // a deletion candidate.
   await writeFile(
     clientFile,
     JSON.stringify({
