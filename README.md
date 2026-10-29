@@ -9,7 +9,8 @@ credentials or username/password authentication.
 
 ## Quickstart
 
-The shortest path from a clean machine to a running server:
+The shortest path from a clean machine to a running server (requires
+[Node.js 20 or newer](#requirements)):
 
 ```sh
 git clone https://github.com/ABD-Enterprises/zendesk-mcp.git
@@ -23,7 +24,8 @@ Then, once per account (details in
 OAuth client in Zendesk Admin Center with the callback URL
 `http://127.0.0.1:3219/callback`, set `ZENDESK_SUBDOMAIN`,
 `ZENDESK_OAUTH_CLIENT_ID`, and `ZENDESK_OAUTH_CLIENT_SECRET` (or store them in
-`~/.config/codex-zendesk/client.json`), and run:
+`~/.config/codex-zendesk/client.json`, restricted to your user with
+`chmod 600`), and run:
 
 ```sh
 npm run oauth:setup
@@ -333,11 +335,12 @@ Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-a
 | `Zendesk connector is not configured. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL.` | No account identifier reached the server. Set `ZENDESK_SUBDOMAIN`, or add `"subdomain"` to `~/.config/codex-zendesk/client.json`. Environment variables override the file. |
 | `Zendesk OAuth is not configured. Set OAuth client credentials and run npm run oauth:setup...` | The OAuth client id and secret are missing. Set `ZENDESK_OAUTH_CLIENT_ID` and `ZENDESK_OAUTH_CLIENT_SECRET`, or add them to `client.json`. |
 | `No refresh token found in ...` or `Unable to read OAuth token file ...` | The authorization-code token store is missing or unreadable. Run `npm run oauth:setup` again, and check `ZENDESK_OAUTH_TOKEN_FILE` if the file lives elsewhere. |
+| `OAuth client configuration ... must be readable only by its owner (chmod 600).` | The client file is readable by group or others. Run `chmod 600 ~/.config/codex-zendesk/client.json` (or fix the file `ZENDESK_OAUTH_CLIENT_FILE` names). |
 | `npm run oauth:setup` fails to listen on port 3219 | Another process holds the port (often an earlier setup still waiting for authorization). Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
-| The browser opens but Zendesk reports an authorization error | The OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` (scheme, host, port, and path all count). Correct it in Admin Center and run setup again. |
-| Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool. Add the scope to `ZENDESK_OAUTH_SCOPE` and re-run `npm run oauth:setup` so the larger grant replaces the stored token. |
+| The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` (scheme, host, port, and path all count); correct it in Admin Center and run setup again. Declining consent or a declined scope produces the same symptom. |
+| Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool. Add the scope to `ZENDESK_OAUTH_SCOPE`; in authorization-code mode re-run `npm run oauth:setup` so the larger grant replaces the stored token (client-credentials mode requests the new scope on its next token request), then restart the server so it loads the new configuration. |
 | A desktop MCP client reports "not configured" although your shell works | Desktop applications do not inherit shell exports. Put the settings in `~/.config/codex-zendesk/client.json`, which the server reads when the environment is empty. |
-| You want to check the configuration without serving | Run `node dist/index.js --healthcheck`. It validates configuration and exits; it never contacts Zendesk and never prints credentials. |
+| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). It validates configuration and exits; it never contacts Zendesk and never prints credentials. |
 
 ## Development
 
