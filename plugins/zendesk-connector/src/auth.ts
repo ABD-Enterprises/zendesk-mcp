@@ -244,7 +244,9 @@ export function readOAuthClientFile(clientFile: string): OAuthClientFile {
         `OAuth client configuration ${clientFile} is not a regular file.`,
       );
     }
-    if ((stats.mode & 0o077) !== 0) {
+    // Node reports synthetic permission bits on Windows (group and other always
+    // look set), so the check is skipped there instead of failing every run.
+    if (process.platform !== "win32" && (stats.mode & 0o077) !== 0) {
       throw new ZendeskAuthError(
         `OAuth client configuration ${clientFile} must be readable only by its owner (chmod 600).`,
       );

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   chmod,
   mkdir,
@@ -20,6 +21,7 @@ import type { OAuthClientFile, StoredToken, ZendeskConfig } from "./auth.js";
 import {
   createReadlinePrompter,
   isMainModule,
+  openBrowser,
   runOAuthSetup,
   type OAuthSetupOptions,
   type Prompter,
@@ -264,7 +266,7 @@ test("reports the missing values when the run cannot prompt", async () => {
   assert.equal(result.err.length, 2);
   assert.equal(
     result.err[0],
-    `Zendesk OAuth setup needs the Zendesk subdomain, the OAuth client id and secret. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL, ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain", "clientId" and "clientSecret" to ${files.clientFile}.\n`,
+    `Zendesk OAuth setup needs the Zendesk subdomain, the OAuth client id and the OAuth client secret. Set ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL), ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain", "clientId" and "clientSecret" to ${files.clientFile}.\n`,
   );
   assert.equal(
     result.err[1],
@@ -276,6 +278,24 @@ test("reports the missing values when the run cannot prompt", async () => {
     assert.ok(!/\s+\n/.test(line), "each failure line is a single line");
     assert.doesNotMatch(line, / at .*\(.*:\d+:\d+\)/);
   }
+});
+
+test("names the two missing values when the account and the secret are missing", async () => {
+  const files = await sandbox({ ZENDESK_OAUTH_CLIENT_ID: "example-client-id" });
+  const result = await runSetup({ interactive: false, answers: [] });
+
+  assert.equal(result.code, 1);
+  assert.equal(result.err.length, 2);
+  // The two values are listed the same way the three values are: the list
+  // reads as one sentence.
+  assert.equal(
+    result.err[0],
+    `Zendesk OAuth setup needs the Zendesk subdomain and the OAuth client secret. Set ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL) and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain" and "clientSecret" to ${files.clientFile}.\n`,
+  );
+  assert.equal(
+    result.err[1],
+    "Run npm run doctor to check the configuration.\n",
+  );
 });
 
 test("refuses client_credentials mode without prompting", async () => {
@@ -458,7 +478,14 @@ test("refuses an unusable callback port without prompting", async () => {
   );
 });
 
-test("refuses a client file that other users can read", async () => {
+test("refuses a client file that other users can read", async (ctx) => {
+  // Node reports synthetic permission bits on Windows (group and other always
+  // look set), so the check is skipped there: this host cannot show the
+  // refusal.
+  if (process.platform === "win32") {
+    ctx.skip("file mode bits are not reported the same way on Windows");
+    return;
+  }
   const files = await sandbox();
   await writeFile(
     files.clientFile,
@@ -609,12 +636,15 @@ test("loads the configuration when the run is fully configured", async () => {
     ZENDESK_OAUTH_CLIENT_ID: "example-client-id",
     ZENDESK_OAUTH_CLIENT_SECRET: "example-client-secret",
   });
+  // The injected configuration differs from what the environment could
+  // produce, so the run cannot pass with a configuration it built itself.
+  const injectedTokenFile = join(files.directory, "injected-oauth.json");
   const config: ZendeskConfig = {
-    baseUrl: "https://acme-tools.zendesk.com",
+    baseUrl: "https://beta-tools.zendesk.com",
     mode: "authorization_code",
     clientId: "example-client-id",
     clientSecret: "example-client-secret",
-    tokenFile: files.tokenFile,
+    tokenFile: injectedTokenFile,
     scope: "tickets:read",
   };
 
@@ -622,10 +652,23 @@ test("loads the configuration when the run is fully configured", async () => {
 
   assert.equal(result.code, 0);
   assert.equal(result.authorizations.length, 1);
+  // The authorization ran against the account the loaded configuration
+  // names, not the one the environment names.
+  assert.equal(
+    result.authorizations[0].baseUrl,
+    "https://beta-tools.zendesk.com",
+  );
   assert.equal(
     result.authorizations[0].redirectUri,
     "http://127.0.0.1:3219/callback",
   );
+  // The token went to the file the loaded configuration names, not to the one
+  // the environment names.
+  assert.deepEqual(
+    JSON.parse(await readFile(injectedTokenFile, "utf8")),
+    fakeToken,
+  );
+  await assert.rejects(() => readFile(files.tokenFile, "utf8"));
 });
 
 test("asks again when the save answer is not understood", async () => {
@@ -873,6 +916,111 @@ test("close ends the prompt and refuses further questions", async () => {
   await assert.rejects(() => prompter.ask("Another question: "));
   // The interface is gone, so the input no longer reaches a question.
   input.write("example-client-secret\n");
+});
+
+/**
+ * Asserts that a control character ends the pending question.
+ *
+ * The terminal closes the interface when the reader presses Ctrl+C or Ctrl+D,
+ * and the pending question must fail instead of waiting for an answer that
+ * never comes. The wait is raced against a short timer, so a regression fails
+ * the test in seconds instead of hanging the run.
+ */
+async function assertControlEndsQuestion(control: string): Promise<void> {
+  const { prompter, input } = createPrompter();
+
+  const pending = prompter
+    .ask("Zendesk subdomain (for example acme-tools): ")
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+  input.write(control);
+
+  const failure = await Promise.race([
+    pending,
+    new Promise<undefined>((resolve) => {
+      const late = setTimeout(() => resolve(undefined), 500);
+      late.unref();
+    }),
+  ]);
+
+  assert.ok(failure instanceof Error, "the pending question must fail");
+  assert.equal((failure as Error & { code?: string }).code, "ABORT_ERR");
+
+  // The prompt is closed, so a later question fails with the same abort error
+  // instead of hanging on a dead interface.
+  await assert.rejects(
+    () => prompter.ask("Another question: "),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as Error & { code?: string }).code, "ABORT_ERR");
+      return true;
+    },
+  );
+}
+
+test("a closed terminal ends the pending question", async () => {
+  // Ctrl+D ends the terminal.
+  await assertControlEndsQuestion("\x04");
+});
+
+test("an interrupted terminal ends the pending question", async () => {
+  // Ctrl+C interrupts the terminal, and readline closes the interface for
+  // it, the same way it does for Ctrl+D.
+  await assertControlEndsQuestion("\x03");
+});
+
+test("reports a browser that could not be opened on its own line", async () => {
+  const child = new EventEmitter() as EventEmitter & { unref: () => void };
+  let unrefed = false;
+  child.unref = () => {
+    unrefed = true;
+  };
+  const commands: { command: string; args: string[] }[] = [];
+  const lines: string[] = [];
+  const url = "https://example-tools.zendesk.com/oauth/authorizations/new";
+
+  openBrowser(
+    url,
+    (line) => lines.push(line),
+    (command, args) => {
+      commands.push({ command, args });
+      return child;
+    },
+  );
+
+  assert.equal(commands.length, 1);
+  assert.ok(commands[0].args.includes(url));
+  // The parent walks away from the browser it started.
+  assert.equal(unrefed, true);
+
+  child.emit("error", new Error("spawn xdg-open ENOENT"));
+
+  // The message is one line of its own: it carries the newline it needs.
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].endsWith("\n"));
+  assert.match(lines[0], /Could not open a browser automatically/);
+});
+
+test("lets the parent walk away from a browser it started", () => {
+  const child = new EventEmitter() as EventEmitter & { unref: () => void };
+  let unrefed = false;
+  child.unref = () => {
+    unrefed = true;
+  };
+  const lines: string[] = [];
+
+  openBrowser(
+    "https://example-tools.zendesk.com/oauth/authorizations/new",
+    (line) => lines.push(line),
+    () => child,
+  );
+
+  assert.equal(unrefed, true);
+  // A browser that started says nothing.
+  assert.deepEqual(lines, []);
 });
 
 test("recognises the entry point through its real path", async () => {

@@ -348,6 +348,9 @@ async function askToSave(
 
 /**
  * Reports the missing values and how to supply each of them.
+ *
+ * Every list is spelled the same way — "a", "a and b" or "a, b and c" — so
+ * the sentence reads as one list rather than as spliced fragments.
  */
 function missingValuesMessage(
   missing: MissingValues,
@@ -359,27 +362,22 @@ function missingValuesMessage(
   if (missing.account) {
     needs.push("the Zendesk subdomain");
     // Either variable names the account: one carries a subdomain, the other a
-    // full URL.
-    variables.push("ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL");
+    // full URL. The alternative sits in parentheses so it reads as a choice
+    // for this variable alone.
+    variables.push("ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL)");
     fields.push('"subdomain"');
   }
-  if (missing.clientId && missing.clientSecret) {
-    needs.push("the OAuth client id and secret");
-    variables.push("ZENDESK_OAUTH_CLIENT_ID", "ZENDESK_OAUTH_CLIENT_SECRET");
-    fields.push('"clientId"', '"clientSecret"');
-  } else {
-    if (missing.clientId) {
-      needs.push("the OAuth client id");
-      variables.push("ZENDESK_OAUTH_CLIENT_ID");
-      fields.push('"clientId"');
-    }
-    if (missing.clientSecret) {
-      needs.push("the OAuth client secret");
-      variables.push("ZENDESK_OAUTH_CLIENT_SECRET");
-      fields.push('"clientSecret"');
-    }
+  if (missing.clientId) {
+    needs.push("the OAuth client id");
+    variables.push("ZENDESK_OAUTH_CLIENT_ID");
+    fields.push('"clientId"');
   }
-  return `Zendesk OAuth setup needs ${needs.join(", ")}. Set ${formatList(
+  if (missing.clientSecret) {
+    needs.push("the OAuth client secret");
+    variables.push("ZENDESK_OAUTH_CLIENT_SECRET");
+    fields.push('"clientSecret"');
+  }
+  return `Zendesk OAuth setup needs ${formatList(needs)}. Set ${formatList(
     variables,
   )}, or add ${formatList(fields)} to ${clientFile}.`;
 }
@@ -554,12 +552,37 @@ async function exchangeCode(
   };
 }
 
-/** Opens the authorization URL in the user's browser. */
-function openBrowser(
+/**
+ * The part of a child process the browser launcher uses: it reports a failed
+ * start and lets the parent walk away from it.
+ */
+export interface BrowserChild {
+  /** Reports that the browser could not be started. */
+  on(event: "error", listener: (error: Error) => void): void;
+  /** Lets the parent process exit without waiting for the browser. */
+  unref(): void;
+}
+
+/** Starts the browser. A test replaces it, so no browser is ever launched. */
+export type BrowserSpawn = (
+  command: string,
+  args: string[],
+  options: { detached: boolean; stdio: "ignore" },
+) => BrowserChild;
+
+/**
+ * Opens the authorization URL in the user's browser.
+ *
+ * The default writes the line as it is, because the message carries its own
+ * newline: a browser that could not be opened must not glue its line to the
+ * next one.
+ */
+export function openBrowser(
   url: string,
   writeOut: (line: string) => void = (line) => {
-    console.log(line);
+    process.stdout.write(line);
   },
+  spawnImpl: BrowserSpawn = spawn,
 ): void {
   const command =
     process.platform === "darwin"
@@ -567,13 +590,13 @@ function openBrowser(
       : process.platform === "win32"
         ? ["cmd", ["/c", "start", "", url]]
         : ["xdg-open", [url]];
-  const child = spawn(command[0] as string, command[1] as string[], {
+  const child = spawnImpl(command[0] as string, command[1] as string[], {
     detached: true,
     stdio: "ignore",
   });
   child.on("error", () => {
     writeOut(
-      "Could not open a browser automatically. Open the URL above manually.",
+      "Could not open a browser automatically. Open the URL above manually.\n",
     );
   });
   child.unref();
@@ -705,6 +728,14 @@ export function createReadlinePrompter(streams: PrompterStreams = {}): Prompter 
         terminal: streams.terminal,
         // No history: a typed secret must not be recalled into the output.
         historySize: streams.historySize ?? 0,
+      });
+      // Readline closes the interface itself when the terminal sends Ctrl+C
+      // or Ctrl+D. The Node versions that reject the pending question settle
+      // the wait below on their own; the versions that do not would leave it
+      // pending forever, so the close settles it here.
+      rl.on("close", () => {
+        closed = true;
+        cancelPending?.(promptClosedError());
       });
     }
     return rl;
