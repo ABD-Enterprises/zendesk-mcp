@@ -18,7 +18,7 @@ export ZENDESK_OAUTH_CLIENT_SECRET="your-oauth-client-secret"
 ```
 
 For deployments that should be read-only, set `ZENDESK_READ_ONLY=1`. To
-narrow further or name an explicit subset, use a tool allowlist instead:
+narrow the surface further or name an explicit subset, add a tool allowlist:
 
 ```sh
 export ZENDESK_READ_ONLY=1

@@ -44,10 +44,15 @@ test("publishes only tools enabled by the deployment allowlist", async () => {
 
 test("read-only mode withholds the write tools over MCP", async (t) => {
   const original = process.env.ZENDESK_READ_ONLY;
+  const originalTools = process.env.ZENDESK_ALLOWED_TOOLS;
   process.env.ZENDESK_READ_ONLY = "1";
+  // An ambient allowlist would make the expected surface depend on the host.
+  delete process.env.ZENDESK_ALLOWED_TOOLS;
   t.after(() => {
     if (original === undefined) delete process.env.ZENDESK_READ_ONLY;
     else process.env.ZENDESK_READ_ONLY = original;
+    if (originalTools === undefined) delete process.env.ZENDESK_ALLOWED_TOOLS;
+    else process.env.ZENDESK_ALLOWED_TOOLS = originalTools;
   });
   const server = createZendeskServer(
     new ZendeskClient(

@@ -48,7 +48,7 @@ test("read-only mode keeps the nine read tools and drops the three write tools",
 
 test("read-only mode accepts disabled values and an unset variable", () => {
   delete process.env.ZENDESK_ALLOWED_TOOLS;
-  for (const value of ["0", "false", "FALSE", ""]) {
+  for (const value of ["0", "false", "FALSE", "", "   "]) {
     process.env.ZENDESK_READ_ONLY = value;
     assert.deepEqual([...configuredTools()], toolNames());
   }

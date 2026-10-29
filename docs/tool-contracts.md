@@ -225,8 +225,10 @@ zendesk_list_ticket_fields,zendesk_list_ticket_forms"
   silently re-enables a write tool, and disabling it (`0`, `false`, or unset)
   restores the allowlist's usual meaning.
 - Any other non-empty value is rejected at startup with `ZENDESK_READ_ONLY
-  must be 1, true, 0, or false.` (an empty or whitespace-only value counts as
-  unset, per the trim rule).
+  must be 1, true, 0, or false.` An empty or whitespace-only value counts as
+  unset per the trim rule, and so does a value that is exactly an
+  unsubstituted `${...}` placeholder — read-only then stays off with no
+  startup error.
 
 The allowlist is a deployment control. It bounds what the server will offer;
 OAuth scopes and the account's own role permissions bound what Zendesk will
