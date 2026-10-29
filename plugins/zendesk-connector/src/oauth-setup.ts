@@ -376,7 +376,9 @@ function missingValuesMessage(
     // full URL. The alternative sits in parentheses so it reads as a choice
     // for this variable alone.
     variables.push("ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL)");
-    fields.push('"subdomain"');
+    // The file takes either field for the same reason; the field hint says
+    // so in the same shape, or a reader would put in only half the choice.
+    fields.push('"subdomain" (or "baseUrl")');
   }
   if (missing.clientId) {
     needs.push("the OAuth client id");

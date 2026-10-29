@@ -12,7 +12,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, get } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -290,7 +290,7 @@ test("reports the missing values when the run cannot prompt", async () => {
   assert.equal(result.err.length, 2);
   assert.equal(
     result.err[0],
-    `Zendesk OAuth setup needs the Zendesk subdomain, the OAuth client id and the OAuth client secret. Set ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL), ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain", "clientId" and "clientSecret" to ${files.clientFile}.\n`,
+    `Zendesk OAuth setup needs the Zendesk subdomain, the OAuth client id and the OAuth client secret. Set ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL), ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain" (or "baseUrl"), "clientId" and "clientSecret" to ${files.clientFile}.\n`,
   );
   assert.equal(
     result.err[1],
@@ -314,7 +314,7 @@ test("names the two missing values when the account and the secret are missing",
   // reads as one sentence.
   assert.equal(
     result.err[0],
-    `Zendesk OAuth setup needs the Zendesk subdomain and the OAuth client secret. Set ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL) and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain" and "clientSecret" to ${files.clientFile}.\n`,
+    `Zendesk OAuth setup needs the Zendesk subdomain and the OAuth client secret. Set ZENDESK_SUBDOMAIN (or ZENDESK_BASE_URL) and ZENDESK_OAUTH_CLIENT_SECRET, or add "subdomain" (or "baseUrl") and "clientSecret" to ${files.clientFile}.\n`,
   );
   assert.equal(
     result.err[1],
@@ -562,15 +562,16 @@ async function probeBind(port: number): Promise<string | null> {
 }
 
 /**
- * A browser launcher that records the call and starts nothing. A test of
- * the callback server asserts the run never reaches it, so a regression
- * opens no real browser.
+ * A browser launcher that records the arguments it is called with and
+ * starts nothing: a test of the callback server can assert the run never
+ * reaches it (so a regression opens no real browser), or assert what the
+ * launcher was actually handed on the path that must reach it.
  */
 function recordingSpawn(opened: string[]): BrowserSpawn {
-  return () => {
+  return (_command, args) => {
     const child = new EventEmitter() as EventEmitter & { unref: () => void };
     child.unref = () => {};
-    opened.push("spawn");
+    opened.push(...args);
     return child;
   };
 }
@@ -657,6 +658,111 @@ test("refuses a redirect URI whose port the listener cannot hold", async () => {
   );
   assert.deepEqual(out, []);
   assert.deepEqual(opened, []);
+});
+
+/**
+ * Binds an ephemeral loopback port and releases it, returning the number.
+ * The positive-path test below needs a port this host has just agreed to
+ * bind, which is the closest thing to a guarantee that it can bind it
+ * again a moment later.
+ */
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  return new Promise<number>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      const port =
+        typeof address === "object" && address !== null ? address.port : 0;
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+test("opens the authorization URL through the injected launcher", async () => {
+  // The positive path: the redirect URI names a port this host can bind, the
+  // listener holds it, and the run reaches the launcher — which has to be
+  // the injected stub, so nothing is ever opened. (Were the injection to
+  // regress, the real launcher would run instead: harmless on CI's headless
+  // Linux, where the command does not exist, and the test still fails,
+  // because only the stub records anything.) The callback then arrives with
+  // the wrong state on purpose: the run fails on the state check before the
+  // token exchange, so there is no network call and no five-minute wait.
+  const files = await sandbox();
+  const config: ZendeskConfig = {
+    baseUrl: "https://acme-tools.zendesk.com",
+    mode: "authorization_code",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+    tokenFile: files.tokenFile,
+    scope: "read",
+  };
+  const port = await freePort();
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+  const out: string[] = [];
+  const opened: string[] = [];
+  // The handler is attached at once: a listener that never comes up leaves
+  // its error in the outcome instead of an unhandled rejection.
+  const outcome = authorizeWithBrowser(
+    config,
+    redirectUri,
+    (line) => out.push(line),
+    recordingSpawn(opened),
+  ).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+
+  // The launcher runs from the listen callback, so waiting for it doubles as
+  // waiting for the listener — bounded, so a regression fails at the
+  // deadline instead of hanging.
+  const deadline = Date.now() + 5_000;
+  while (opened.length === 0) {
+    if (Date.now() > deadline) {
+      throw new Error("the injected launcher was never called");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  // The launcher was handed the authorization URL, and its redirect_uri is
+  // the port the listener actually holds — the same URI the browser would
+  // be sent back to.
+  const authorizeUrl = opened.find((arg) => arg.startsWith("http"));
+  assert.ok(authorizeUrl !== undefined);
+  assert.equal(
+    new URL(authorizeUrl).searchParams.get("redirect_uri"),
+    redirectUri,
+  );
+  assert.equal(
+    opened.filter((arg) => arg.startsWith("http")).length,
+    1,
+  );
+
+  // A callback with the wrong state: the server refuses it with 400 and
+  // fails the run. The connection is one-off (no keep-alive), so the suite
+  // can exit without waiting for an idle socket.
+  const status = await new Promise<number>((resolve, reject) => {
+    const request = get(
+      `http://127.0.0.1:${port}/callback?code=example-code&state=not-the-state`,
+      { agent: false },
+      (response) => {
+        response.resume();
+        response.once("end", () => resolve(response.statusCode ?? 0));
+      },
+    );
+    request.once("error", reject);
+  });
+  assert.equal(status, 400);
+
+  const error = await outcome;
+  assert.ok(error instanceof Error);
+  assert.match(error.message, /missing a valid code or state/);
+  // The authorization URL was printed exactly once — after the port check
+  // passed and before the launcher ran.
+  assert.equal(
+    out.filter((line) => line.startsWith("Opening Zendesk authorization:"))
+      .length,
+    1,
+  );
 });
 
 test("refuses a client file that other users can read", async (ctx) => {
