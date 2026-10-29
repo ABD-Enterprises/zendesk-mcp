@@ -414,6 +414,27 @@ test("reports a client file whose tokenFile is not a path string", async () => {
   assert.ok(!result.stderr.includes("cannot listen on port"));
 });
 
+test("reports a client file whose baseUrl is not a string", async () => {
+  const directory = await tempDir();
+  // The same fail-safe as a wrong-typed tokenFile: one actionable line and
+  // exit 1 instead of a raw TypeError from the base-URL validation.
+  const clientFile = join(directory, "client.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({ baseUrl: 123 }),
+    { mode: 0o600 },
+  );
+
+  const result = await runEntry(["--doctor"], {
+    ...cleanEnv({ ZENDESK_OAUTH_CLIENT_FILE: clientFile }),
+  });
+
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /OAuth client configuration .*client\.json has a "baseUrl" value that must be a string\./);
+  assert.ok(!result.stderr.includes("TypeError"));
+});
+
 test("reports a token file that does not parse", async () => {
   const tokenFile = await tempTokenFile("{not json");
 

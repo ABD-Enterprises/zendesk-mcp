@@ -239,11 +239,21 @@ function readOAuthClientFile(clientFile: string): OAuthClientFile {
         `OAuth client configuration ${clientFile} must contain a JSON object.`,
       );
     }
-    // The cast below promises a string path, and every consumer treats it as
-    // one (an fs call on a number throws a raw TypeError), so a JSON value of
-    // the wrong type is rejected here — as the field is read, before any
-    // consumer can trip over it. An empty string is equally unusable: it is
-    // not a path, and it does not fall back to the default.
+    // The cast below promises strings, and the consumers treat them as such
+    // (`resolveBaseUrl` trims them, fs calls throw a raw TypeError on a
+    // number), so a JSON value of the wrong type is rejected here — as the
+    // field is read, before any consumer can trip over it.
+    const account = payload as { baseUrl?: unknown; subdomain?: unknown };
+    for (const field of ["baseUrl", "subdomain"] as const) {
+      const value = account[field];
+      if (value !== undefined && typeof value !== "string") {
+        throw new ZendeskAuthError(
+          `OAuth client configuration ${clientFile} has a "${field}" value that must be a string.`,
+        );
+      }
+    }
+    // An empty tokenFile is equally unusable as a wrong-typed one: it is not
+    // a path, and it does not fall back to the default.
     const saved = payload as { tokenFile?: unknown };
     if (
       saved.tokenFile !== undefined &&
@@ -515,7 +525,24 @@ export function resolveTokenFile(): string {
   try {
     return getConfig().tokenFile;
   } catch {
-    return env("ZENDESK_OAUTH_TOKEN_FILE") ?? defaultTokenFile();
+    // The configuration is unusable, but the token file may still be named
+    // by the environment or by the client file: a logout must remove the
+    // file the connector actually wrote, not a default path that was never
+    // used. The precedence matches getConfig's — environment, then client
+    // file, then default — with each unreadable step skipped.
+    return (
+      env("ZENDESK_OAUTH_TOKEN_FILE") ?? savedTokenFile() ?? defaultTokenFile()
+    );
+  }
+}
+
+/** The client file's tokenFile field, when it can be read as a path. */
+function savedTokenFile(): string | undefined {
+  try {
+    const tokenFile = readOAuthClientFile(oauthClientFilePath()).tokenFile;
+    return tokenFile && tokenFile.trim() !== "" ? tokenFile : undefined;
+  } catch {
+    return undefined;
   }
 }
 

@@ -51,7 +51,9 @@ npm run oauth:setup
 The browser flow stores access and rotating refresh tokens in
 `~/.config/codex-zendesk/oauth.json` with owner-only permissions. The MCP server
 refreshes expiring tokens and updates that file automatically. Override the file
-with `ZENDESK_OAUTH_TOKEN_FILE` and scopes with `ZENDESK_OAUTH_SCOPE`.
+with `ZENDESK_OAUTH_TOKEN_FILE` and scopes with `ZENDESK_OAUTH_SCOPE`. The
+client file's `tokenFile` field also names the token file, and the environment
+variable wins over that field.
 
 Upgrading an installation whose access token predates the `brands:read` and
 `groups:read` default scopes: re-run `npm run oauth:setup`, because that token

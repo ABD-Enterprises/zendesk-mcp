@@ -11,6 +11,7 @@ import {
   ZendeskOAuth,
   getConfig,
   removeTokenFile,
+  resolveTokenFile,
   revokeCurrentToken,
   writeTokenFile,
   type ZendeskConfig,
@@ -89,6 +90,56 @@ test("getConfig rejects an OAuth client file readable by other users", async () 
   };
 
   assert.throws(() => getConfig(), /chmod 600/);
+});
+
+test("getConfig rejects a client file whose baseUrl or subdomain is not a string", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
+  // resolveBaseUrl trims these values with String methods, so a JSON value of
+  // the wrong type must be rejected where the file is read — as an
+  // actionable configuration error, not a raw TypeError at startup.
+  for (const [field, value] of [
+    ["baseUrl", 123],
+    ["subdomain", { name: "example" }],
+  ] as const) {
+    const clientFile = join(directory, `client-${field}.json`);
+    await writeFile(clientFile, JSON.stringify({ [field]: value }), {
+      mode: 0o600,
+    });
+    process.env = { ...originalEnv, ZENDESK_OAUTH_CLIENT_FILE: clientFile };
+    delete process.env.ZENDESK_BASE_URL;
+    delete process.env.ZENDESK_SUBDOMAIN;
+
+    assert.throws(
+      () => getConfig(),
+      new RegExp(`has a "${field}" value that must be a string\\.`),
+      `a wrong-typed ${field} must be reported by name`,
+    );
+  }
+});
+
+test("resolveTokenFile falls back to the client file's tokenFile field", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
+  const clientFile = join(directory, "client.json");
+  const tokenFile = join(directory, "custom-oauth.json");
+  // The configuration is unusable (no subdomain), so getConfig throws — but
+  // the client file still names the token file, and a logout must clear that
+  // path rather than the never-used default.
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      mode: "authorization_code",
+      tokenFile,
+    }),
+    { mode: 0o600 },
+  );
+  process.env = { ...originalEnv, ZENDESK_OAUTH_CLIENT_FILE: clientFile };
+  delete process.env.ZENDESK_SUBDOMAIN;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_OAUTH_TOKEN_FILE;
+
+  assert.equal(resolveTokenFile(), tokenFile);
 });
 
 test("access-token mode returns the configured bearer token", async () => {

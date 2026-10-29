@@ -289,6 +289,61 @@ test("clears the stored credentials when the configuration is incomplete", async
   assert.equal(event.storedCredentials, "removed");
 });
 
+test("clears the token file the client file names when the configuration is incomplete", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-logout-test-"));
+  const home = join(directory, "home");
+  const tokenFile = join(directory, "named-oauth.json");
+  const clientFile = join(directory, "client.json");
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+  // The client file names the token file, but the configuration is otherwise
+  // incomplete (no subdomain), so getConfig throws and the fallback decides
+  // which file is cleared. HOME points into the fixture, so the default path
+  // a regression would pick is inside the fixture too — never the real one.
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      mode: "authorization_code",
+      tokenFile,
+    }),
+    { mode: 0o600 },
+  );
+
+  process.env = {
+    ...originalEnv,
+    HOME: home,
+    USERPROFILE: home,
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+  };
+  delete process.env.ZENDESK_OAUTH_TOKEN_FILE;
+  delete process.env.ZENDESK_SUBDOMAIN;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_OAUTH_CLIENT_ID;
+  delete process.env.ZENDESK_OAUTH_CLIENT_SECRET;
+  delete process.env.ZENDESK_OAUTH_ACCESS_TOKEN;
+  delete process.env.ZENDESK_OAUTH_MODE;
+  globalThis.fetch = recordingFetcher([], () => {
+    throw new Error("the tests never reach the network");
+  });
+
+  const lines: string[] = [];
+  const result = await new ZendeskLogout({
+    sink: (line) => lines.push(line),
+  }).run();
+
+  // The file the configuration names is cleared — not the default path,
+  // which the connector never wrote to.
+  assert.equal(result.revoked, false);
+  assert.equal(result.storedCredentials, "removed");
+  assert.match(result.error ?? "", /configuration is unavailable/);
+  await assert.rejects(() => readFile(tokenFile, "utf8"), /ENOENT/);
+
+  assert.equal(lines.length, 1);
+  const event = JSON.parse(lines[0]);
+  assert.equal(event.storedCredentials, "removed");
+});
+
 test("clears the local credentials when the client file holds a non-string tokenFile", async () => {
   const directory = await mkdtemp(join(tmpdir(), "zendesk-logout-test-"));
   const tokenFile = join(directory, "oauth.json");

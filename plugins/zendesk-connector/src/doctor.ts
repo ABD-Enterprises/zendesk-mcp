@@ -293,7 +293,11 @@ async function checkCallbackPort(
     const detail = state.errno === undefined ? "" : `, errno ${state.errno}`;
     cause =
       port < 1024
-        ? `this user cannot bind the port (a port below 1024 needs elevated privileges${detail})`
+        ? // Elevation would fix a privilege refusal (EACCES), but not every
+          // errno a low-port bind can report — EMFILE or ENFILE is
+          // descriptor exhaustion — so the errno still rides along and
+          // names the cause when privileges are not it.
+          `this user cannot bind the port (a port below 1024 needs elevated privileges${detail})`
         : // Above 1024 the port needs no privileges, so privileges are not
           // the explanation; a sandbox, a firewall, an address policy, or
           // descriptor exhaustion (EMFILE, ENFILE) can refuse the bind, and
