@@ -17,12 +17,15 @@ export ZENDESK_OAUTH_CLIENT_ID="your-oauth-client-identifier"
 export ZENDESK_OAUTH_CLIENT_SECRET="your-oauth-client-secret"
 ```
 
-For deployments that should be read-only, configure an explicit tool allowlist:
+For deployments that should be read-only, set `ZENDESK_READ_ONLY=1`. To
+narrow the surface further or name an explicit subset, add a tool allowlist:
 
 ```sh
-export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
-zendesk_list_brands,zendesk_list_groups,zendesk_list_users,\
-zendesk_list_organizations,zendesk_list_ticket_fields,zendesk_list_ticket_forms"
+export ZENDESK_READ_ONLY=1
+# Or, instead, name the read tools explicitly:
+# export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
+# zendesk_list_brands,zendesk_list_groups,zendesk_list_users,\
+# zendesk_list_organizations,zendesk_list_ticket_fields,zendesk_list_ticket_forms"
 ```
 
 Every tool call emits a structured audit event to stderr without ticket
@@ -68,7 +71,8 @@ cannot renew expired tokens and is intended only for testing.
 
 ## Healthcheck and shutdown
 
-Validate the configuration without contacting Zendesk and without serving:
+Validate the OAuth configuration and tool policy without contacting Zendesk
+and without serving:
 
 ```sh
 node dist/index.js --healthcheck
@@ -110,10 +114,11 @@ files rather than placing secrets in the image.
 
 The image healthcheck runs `node dist/index.js --healthcheck`, so the container
 reports unhealthy until the OAuth configuration is present. Healthy means the
-base URL, OAuth mode, and credentials (or, in access-token mode, the token) are
-set and well-formed — not that they are correct, that the authorization-code
-token file is readable, or that Zendesk is reachable, so use the
-`zendesk_status` tool for readiness.
+base URL, OAuth mode, and credentials (or, in access-token mode, the token)
+are set and well-formed and the tool policy is valid — an unset policy is
+valid, the defaults apply — not that any of it is correct, that the
+authorization-code token file is readable, or that Zendesk is reachable, so use
+the `zendesk_status` tool for readiness.
 
 ## End-to-end tests
 

@@ -81,8 +81,8 @@ per-deployment.
   keeps tokens in memory only; `access_token` takes a fixed token from the
   environment and cannot renew it.
 - The tool allowlist. `configuredTools()` reads `ZENDESK_ALLOWED_TOOLS`
-  once and returns one set; tools outside it are not registered, and each
-  handler calls `assertToolAllowed` before acting
+  (and `ZENDESK_READ_ONLY`) once and returns one set; tools outside it are
+  not registered, and each handler calls `assertToolAllowed` before acting
   ([policy.ts](../plugins/zendesk-connector/src/policy.ts)).
 - The audit sink. Every handled call emits exactly one JSON line on stderr
   ([audit.ts](../plugins/zendesk-connector/src/audit.ts),

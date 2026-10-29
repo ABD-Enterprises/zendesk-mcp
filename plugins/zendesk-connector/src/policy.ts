@@ -1,4 +1,4 @@
-import { ZendeskAuthError } from "./auth.js";
+import { env, ZendeskAuthError } from "./auth.js";
 
 const ALL_TOOLS = [
   "zendesk_status",
@@ -17,9 +17,29 @@ const ALL_TOOLS = [
 
 export type ZendeskToolName = (typeof ALL_TOOLS)[number];
 
+const WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "zendesk_create_ticket",
+  "zendesk_update_ticket",
+  "zendesk_add_ticket_comment",
+]);
+
+/** True when `ZENDESK_READ_ONLY` is set to an enabled value; rejects others. */
+function readOnlyEnabled(): boolean {
+  const raw = env("ZENDESK_READ_ONLY")?.toLowerCase();
+  if (raw === undefined) return false;
+  if (raw === "1" || raw === "true") return true;
+  if (raw === "0" || raw === "false") return false;
+  throw new ZendeskAuthError("ZENDESK_READ_ONLY must be 1, true, 0, or false.");
+}
+
 export function configuredTools(): ReadonlySet<string> {
-  const configured = process.env.ZENDESK_ALLOWED_TOOLS?.trim();
-  if (!configured) return new Set(ALL_TOOLS);
+  const readOnly = readOnlyEnabled();
+  const configured = env("ZENDESK_ALLOWED_TOOLS");
+  if (!configured) {
+    if (!readOnly) return new Set(ALL_TOOLS);
+    const readTools = ALL_TOOLS.filter((tool) => !WRITE_TOOLS.has(tool));
+    return new Set(readTools);
+  }
   const requested = configured.split(",").map((tool) => tool.trim()).filter(Boolean);
   if (requested.length === 0) {
     throw new ZendeskAuthError("ZENDESK_ALLOWED_TOOLS must name at least one tool.");
@@ -32,6 +52,14 @@ export function configuredTools(): ReadonlySet<string> {
     throw new ZendeskAuthError(
       `ZENDESK_ALLOWED_TOOLS contains unsupported tools: ${unknown.join(", ")}.`,
     );
+  }
+  if (readOnly) {
+    const writes = requested.filter((tool) => WRITE_TOOLS.has(tool));
+    if (writes.length > 0) {
+      throw new ZendeskAuthError(
+        `ZENDESK_READ_ONLY conflicts with write tools in ZENDESK_ALLOWED_TOOLS: ${writes.join(", ")}.`,
+      );
+    }
   }
   return new Set(requested);
 }

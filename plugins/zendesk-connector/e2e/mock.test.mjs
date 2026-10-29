@@ -187,9 +187,11 @@ function runHarness({ extraEnv = {}, removeNames = [] } = {}) {
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
     for (const name of removeNames) delete env[name];
-    // An ambient allowlist would hide tools nondeterministically; the suite
-    // exercises the default full read surface.
+    // An ambient allowlist or read-only flag would hide tools
+    // nondeterministically; the suite exercises the default full read
+    // surface.
     delete env.ZENDESK_ALLOWED_TOOLS;
+    delete env.ZENDESK_READ_ONLY;
     Object.assign(env, extraEnv);
 
     const child = spawn(process.execPath, [harnessPath], { env });

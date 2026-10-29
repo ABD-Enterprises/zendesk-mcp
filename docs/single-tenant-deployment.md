@@ -64,7 +64,8 @@ Neither component exposes an endpoint that proves the account works, so the
 checks are commands run on the host:
 
 ```sh
-# Connector: validates the OAuth configuration, contacts nothing, exits.
+# Connector: validates the OAuth configuration and tool policy, contacts
+# nothing, exits.
 node plugins/zendesk-connector/dist/index.js --healthcheck
 
 # Console: liveness and configuration status; never calls Zendesk.
@@ -144,6 +145,12 @@ zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_list_organizations,\
 zendesk_list_ticket_fields,zendesk_list_ticket_forms"
 ```
+
+The same deployment can set `ZENDESK_READ_ONLY=1` instead, which serves only
+the nine read tools without naming them. The two can be combined only when
+the allowlist names read tools alone; a write tool in the allowlist under
+read-only mode is rejected at startup. The contract is in
+[tool-contracts.md](tool-contracts.md#allowlist-contract).
 
 The allowlist is a deployment control. Combine it with the OAuth scopes and
 the account's own role permissions rather than relying on any one layer.

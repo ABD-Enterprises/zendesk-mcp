@@ -25,8 +25,8 @@ The variables that carry secret material are `ZENDESK_OAUTH_CLIENT_ID`,
 and OAuth variables carry no secret: `ZENDESK_SUBDOMAIN`, `ZENDESK_BASE_URL`,
 `ZENDESK_OAUTH_MODE`, `ZENDESK_OAUTH_SCOPE`, `ZENDESK_OAUTH_CLIENT_FILE`, and
 `ZENDESK_OAUTH_TOKEN_FILE`. The rest are operational rather than credential
-settings: the callback port, the retry limits, the healthcheck flag, and the
-shutdown timeout. The root
+settings: the callback port, the retry limits, the healthcheck flag, the tool
+allowlist and read-only flag, and the shutdown timeout. The root
 [configuration table](../README.md#configuration) lists the deployment
 variables and their defaults.
 
@@ -213,8 +213,8 @@ Four constraints apply:
   container environment variable is part of the container configuration and is
   readable through the runtime's inspection API; a mounted file is not.
 - Never bake a secret into an image layer. The image entrypoint is the STDIO
-  MCP server, and the healthcheck reports unhealthy until the OAuth
-  configuration is present.
+  MCP server, and the healthcheck reports unhealthy until the configuration
+  and tool policy are valid.
 
 ### Keeping a manager-seeded token file in sync
 

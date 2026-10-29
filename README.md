@@ -44,8 +44,9 @@ first `zendesk_status` tool call is the real readiness check.
 
 If anything fails, [Troubleshooting](#troubleshooting) maps the common errors
 to their fixes. Before enabling the write tools against a production account,
-consider limiting the session to the read tools with `ZENDESK_ALLOWED_TOOLS`
-as described in the [tool contracts](docs/tool-contracts.md).
+consider starting with `ZENDESK_READ_ONLY=1`, or narrow the session further
+with `ZENDESK_ALLOWED_TOOLS`, as described in the
+[tool contracts](docs/tool-contracts.md).
 
 ## Service Operations console
 
@@ -192,9 +193,10 @@ mounted token file.
 
 The image healthcheck runs `node dist/index.js --healthcheck`, so the
 container reports unhealthy until the OAuth configuration is present. Healthy
-means the base URL, OAuth mode, and credentials are set and well-formed, not
-that they are correct or that Zendesk is reachable, so use the
-`zendesk_status` tool for readiness.
+means the base URL, OAuth mode, and credentials are set and well-formed and
+the tool policy (`ZENDESK_ALLOWED_TOOLS` / `ZENDESK_READ_ONLY`) is valid — an
+unset policy is valid, the defaults apply — not that any of it is correct or
+that Zendesk is reachable, so use the `zendesk_status` tool for readiness.
 
 For authorization-code deployments, mount the owner-only OAuth client and
 token files instead of placing secrets in the image:
@@ -293,8 +295,9 @@ This remains OAuth authentication, but the server cannot renew the token.
 
 ### Healthcheck and shutdown
 
-The server validates its OAuth configuration and exits without serving when it
-is started with `--healthcheck`, or with `ZENDESK_HEALTHCHECK=1` (or `true`):
+The server validates its OAuth configuration and tool policy and exits
+without serving when it is started with `--healthcheck`, or with
+`ZENDESK_HEALTHCHECK=1` (or `true`):
 
 ```sh
 node plugins/zendesk-connector/dist/index.js --healthcheck
@@ -327,6 +330,8 @@ server writes `server_start` and `server_shutdown` events to stderr.
 | `ZENDESK_MAX_RETRIES` | `2` | Automatic `429` retries, from 0 to 5 |
 | `ZENDESK_MAX_RETRY_DELAY_MS` | `10000` | Maximum automatic rate-limit wait |
 | `ZENDESK_HEALTHCHECK` | | Set to `1` or `true` to validate the configuration and exit instead of serving |
+| `ZENDESK_ALLOWED_TOOLS` | All compiled tools | Comma-separated subset of tool names to serve |
+| `ZENDESK_READ_ONLY` | | Set to `1` or `true` to serve only the nine read tools; a `ZENDESK_ALLOWED_TOOLS` value naming a write tool is then rejected at startup |
 | `ZENDESK_SHUTDOWN_TIMEOUT_MS` | `5000` | Milliseconds before a hung shutdown is force-exited |
 
 Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-and-storage.md).
@@ -340,11 +345,13 @@ Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-a
 | `ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET are required for this OAuth mode.` | `ZENDESK_OAUTH_MODE` (in the environment or as `"mode"` in `client.json`) is set explicitly and either credential is missing. Set both values (environment or `client.json`) as in the row above. |
 | `No refresh token found in ...` or `Unable to read OAuth token file ...` | The authorization-code token store is missing, unreadable, or holds no refresh token. Run `npm run oauth:setup` again, and check `ZENDESK_OAUTH_TOKEN_FILE` if the file lives elsewhere. |
 | `OAuth client configuration ... must be readable only by its owner (chmod 600).` | The client file is accessible to group or others. Run `chmod 600 ~/.config/codex-zendesk/client.json` (or fix the file `ZENDESK_OAUTH_CLIENT_FILE` names). |
+| `ZENDESK_READ_ONLY must be 1, true, 0, or false.` | The read-only flag holds an unrecognized value. Set it to `1` (or `true`) to enable, `0` (or `false`) to disable, or unset it. |
+| `ZENDESK_READ_ONLY conflicts with write tools in ZENDESK_ALLOWED_TOOLS: ...` | Read-only mode is on but the allowlist names write tools. Remove those names from `ZENDESK_ALLOWED_TOOLS`, or unset `ZENDESK_READ_ONLY` if writes are intended. |
 | `npm run oauth:setup` fails to listen on port 3219 | Another process holds the port (often an earlier setup still waiting for authorization). Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
 | The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` — or the URL for your `ZENDESK_OAUTH_CALLBACK_PORT`; scheme, host, port, and path all count. Correct it in Admin Center, run setup again, then restart the server so it picks up the fresh token. Declining consent or a declined scope produces the same symptom. |
 | Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool, or the account's role lacks the underlying permission. Add the scope to `ZENDESK_OAUTH_SCOPE` (and, if the OAuth client has allowed scopes configured in Admin Center, add it there too — otherwise setup fails with `HTTP 400 invalid_scope`): authorization-code mode re-runs `npm run oauth:setup` so the larger grant replaces the stored token, client-credentials mode carries it on the next token request, and `access_token` mode cannot change it — obtain a token with the needed scope there. Then restart the server so it loads the new configuration. |
 | A desktop MCP client reports "not configured" although your shell works | Desktop applications do not inherit shell exports. Put the settings in `~/.config/codex-zendesk/client.json`, which the server reads when the environment is empty. |
-| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). Healthy means the configuration is present and well-formed — not that Zendesk is reachable or that authorization succeeded (see [Healthcheck and shutdown](#healthcheck-and-shutdown)); use `zendesk_status` for readiness. The check never contacts Zendesk and never prints credentials. |
+| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). Healthy means the configuration is present and well-formed and the tool policy is valid (an unset policy applies the defaults) — not that Zendesk is reachable or that authorization succeeded (see [Healthcheck and shutdown](#healthcheck-and-shutdown)); use `zendesk_status` for readiness. The check never contacts Zendesk and never prints credentials. |
 
 ## Development
 

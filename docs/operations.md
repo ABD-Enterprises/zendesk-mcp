@@ -246,7 +246,8 @@ must be empty. When configuration is missing, `missing` names the variables
 that are absent.
 
 The endpoint is the health check for the console only. The connector's
-health check is a command that validates the OAuth configuration and exits;
+health check is a command that validates the OAuth configuration and tool
+policy and exits;
 it prints one JSON line, contacts nothing, and has no URL to point a proxy
 at:
 
