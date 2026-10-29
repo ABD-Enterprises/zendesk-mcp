@@ -546,3 +546,73 @@ test("a credential parked in a field name is masked in the summary", async () =>
     },
   );
 });
+
+test("a field name outside the token response vocabulary is masked", async () => {
+  for (const name of ["sk_live_abc12", "abcdefghijklmnopqrstuvwx"]) {
+    const oauth = new ZendeskOAuth(
+      config({ mode: "client_credentials" }),
+      async () =>
+        new Response(JSON.stringify({ [name]: "value" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    await assert.rejects(
+      () => oauth.getAccessToken(true),
+      (error: unknown) => {
+        assert.ok(error instanceof ZendeskAuthError);
+        const details = error.details as Record<string, unknown>;
+        assert.deepEqual(details.keys, ["[REDACTED]"]);
+        assert.ok(!JSON.stringify(details).includes(name));
+        return true;
+      },
+    );
+  }
+});
+
+test("an error code outside the OAuth vocabulary is dropped", async () => {
+  for (const code of ["sk_live_abc123", "abcdefghijklmnopqrstuvwx", "SomeVendorError"]) {
+    const oauth = new ZendeskOAuth(
+      config({ mode: "client_credentials" }),
+      async () =>
+        new Response(JSON.stringify({ error: code }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    await assert.rejects(
+      () => oauth.getAccessToken(true),
+      (error: unknown) => {
+        assert.ok(error instanceof ZendeskAuthError);
+        const details = error.details as Record<string, unknown>;
+        // The code is not a registered OAuth error, so it is not carried.
+        assert.equal(details.error, undefined);
+        assert.ok(!JSON.stringify(details).includes(code));
+        return true;
+      },
+    );
+  }
+});
+
+test("a registered OAuth error code is kept", async () => {
+  const oauth = new ZendeskOAuth(
+    config({ mode: "client_credentials" }),
+    async () =>
+      new Response(JSON.stringify({ error: "invalid_scope" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+  );
+
+  await assert.rejects(
+    () => oauth.getAccessToken(true),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskAuthError);
+      const details = error.details as Record<string, unknown>;
+      assert.equal(details.error, "invalid_scope");
+      return true;
+    },
+  );
+});

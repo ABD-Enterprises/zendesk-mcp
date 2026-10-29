@@ -637,6 +637,43 @@ function safeJson(text: string): unknown {
 }
 
 /**
+ * The OAuth 2.0 error codes a token endpoint may return (RFC 6749 section
+ * 5.2, plus the OpenID Connect `access_denied`). The code is kept only when
+ * it is one of these, so a credential parked in the `error` field cannot
+ * reach the agent.
+ */
+const OAUTH_ERROR_CODES = new Set([
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "invalid_scope",
+  "access_denied",
+]);
+
+/**
+ * The field names a token endpoint may legitimately return: the token
+ * response fields (RFC 6749 section 5.1), the error response fields (section
+ * 5.2), the OpenID Connect id token, and the two names an authorization code
+ * exchange mentions. Any other name is masked, so an endpoint that parks a
+ * credential in the name position cannot reach the agent.
+ */
+const TOKEN_RESPONSE_FIELDS = new Set([
+  "access_token",
+  "token_type",
+  "expires_in",
+  "refresh_token",
+  "scope",
+  "id_token",
+  "error",
+  "error_description",
+  "error_uri",
+  "code",
+  "client_id",
+]);
+
+/**
  * Describes a token endpoint response without carrying any of its values.
  *
  * The details of an auth error travel with the failure to the MCP client, so
@@ -658,10 +695,11 @@ function summarizeTokenResponse(
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
     const record = payload as Record<string, unknown>;
     summary.keys = Object.keys(record).slice(0, 32).map(safeFieldName);
-    // The OAuth error code is a fixed, lowercase vocabulary, so it is safe to
-    // keep and it is what tells an agent why the exchange was refused.
+    // The OAuth error code is what tells an agent why the exchange was
+    // refused. It is kept only when it is one of the registered codes, so an
+    // endpoint that parks a credential in this field cannot reach the agent.
     const code = record.error;
-    if (typeof code === "string" && /^[a-z][a-z0-9_]{0,31}$/.test(code)) {
+    if (typeof code === "string" && OAUTH_ERROR_CODES.has(code)) {
       summary.error = code;
     }
   }
@@ -669,13 +707,11 @@ function summarizeTokenResponse(
 }
 
 /**
- * Keeps a JSON field name and masks anything that looks like an opaque
- * credential a server parked in the name position.
+ * Keeps a field name that a token endpoint may legitimately return and masks
+ * every other name.
  */
 function safeFieldName(name: string): string {
-  return /^[a-z][a-z0-9_]{0,63}$/.test(name) && !/\d{3,}/.test(name)
-    ? name
-    : "[REDACTED]";
+  return TOKEN_RESPONSE_FIELDS.has(name) ? name : "[REDACTED]";
 }
 
 /** Narrows a Content-Type to its bare `type/subtype`, without parameters. */
