@@ -145,8 +145,11 @@ jobs:
   # Activation gate (operator-only): publishing stays disabled until the
   # operator registers the trusted publisher on npmjs.com for
   # @abd-enterprises/zendesk-mcp (GitHub Actions -> ABD-Enterprises/zendesk-mcp
-  # -> release.yml, one-time; the first publish must land within 2 days of
-  # registration) and sets the repo variable NPM_TRUSTED_PUBLISHING=true.
+  # -> release.yml, one-time; npm only allows a trusted publisher to be
+  # configured for a package that already exists on the registry, so a
+  # manual bootstrap publish comes first — see docs/release-checklist.md —
+  # and the first workflow publish must land within 2 days of registration)
+  # and sets the repo variable NPM_TRUSTED_PUBLISHING=true.
   # No token secret exists — the job authenticates with GitHub's OIDC
   # id-token and publishes with provenance.
   #

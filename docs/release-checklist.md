@@ -11,6 +11,21 @@
 - [ ] Review OAuth scopes and enabled tool policy for the release.
 - [ ] Review dependency and GitHub Actions security alerts.
 - [ ] Have a second reviewer inspect authentication, policy, logging, and writes.
+- [ ] One-time, only while `npm view @abd-enterprises/zendesk-mcp version`
+  fails with `E404` — the package has never been published: npm cannot
+  configure a trusted publisher for a package that does not exist yet (the
+  trusted-publisher settings live with the package), and a first OIDC
+  publish will not create it, so the package needs a manual bootstrap
+  publish first. From a clean checkout of the release commit, in
+  `plugins/zendesk-connector`, set a placeholder version without committing
+  it (`npm version 0.0.0 --no-git-tag-version`), run
+  `npm ci --ignore-scripts`, `npm run build`, then publish it interactively
+  under a non-release dist-tag so `latest` stays free for the first
+  workflow publish: `npm login`, then
+  `npm publish --access public --tag bootstrap`. Restore the version files
+  afterwards (`git checkout -- package.json package-lock.json`). This
+  placeholder carries no provenance and is the only version ever published
+  by hand — the registration below and every release after it use OIDC.
 - [ ] Confirm npm trusted publishing is armed (one-time per package, plus a
   per-release variable check): on npmjs.com, for
   `@abd-enterprises/zendesk-mcp`, Settings → Trusted Publisher → GitHub
@@ -63,13 +78,17 @@ only builds an image, and the CI workflow builds the image without pushing it:
 - [ ] Verify the npm package published with the tag: the `publish to npm`
   job runs in the same release after the image job and publishes
   `@abd-enterprises/zendesk-mcp` with OIDC provenance — no token or
-  one-time password is ever used, and nothing is stored in the repository.
-  If the job was skipped, `NPM_TRUSTED_PUBLISHING` is not set to `true`
-  (see Before release). If it failed with ENEEDAUTH, either the trusted
-  publisher is not registered or lacks **Allow npm publish**, or npm
-  matched a different workflow filename — in the last case add
+  one-time password is ever used by the workflow, and nothing is stored in
+  the repository. (The one-time bootstrap publish under Before release is
+  the single exception, and it runs by hand, not in CI.) If the job was
+  skipped, `NPM_TRUSTED_PUBLISHING` is not set to `true`
+  (see Before release). If it failed with ENEEDAUTH ("Unable to
+  authenticate"), the trusted publisher is not registered or npm matched a
+  different workflow filename — in the latter case add
   `npm-publish.yml` as a second trusted publisher (npm does not validate
-  the filename when saving). Confirm the result with
+  the filename when saving). A publisher that is registered but was saved
+  without **Allow npm publish** authenticates and is then refused at the
+  registry with a permission error, not ENEEDAUTH. Confirm the result with
   `npm view @abd-enterprises/zendesk-mcp version` and the provenance on the
   npm package page.
 - [ ] Set the GHCR package visibility to public in the package settings; a new
@@ -115,8 +134,9 @@ published artifacts. See [Leaked credential](#leaked-credential).
   remove the other published versions.
 - Move the `latest` tag back to the last good version:
   `npm dist-tag add @abd-enterprises/zendesk-mcp@<good-version> latest`.
-  (No version is published yet as of 0.6.1, so both rollback commands above
-  only apply once a first version exists on the registry.)
+  (Both rollback commands above apply only to versions that are actually on
+  the registry; until the first release publish lands, the only version
+  there is the `bootstrap` placeholder from Before release.)
 - Ship a fixed version instead: bump the `package.json` version to a new one,
   tag it (the workflow refuses to reuse a published version), and push the
   tag. The release workflow publishes both artifacts for that tag — the
