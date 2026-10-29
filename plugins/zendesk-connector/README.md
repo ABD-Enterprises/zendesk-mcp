@@ -77,14 +77,17 @@ The doctor diagnoses a setup without contacting Zendesk. Run it with:
 npm run doctor
 ```
 
-or directly with `node dist/index.js --doctor`. It performs the
+or directly with `node dist/index.js --doctor`. The `npm run` form rebuilds
+first, so it needs the dev dependencies that `npm ci` installs; an install
+pruned of them runs the direct command instead. It performs the
 [healthcheck](#healthcheck-and-shutdown) validation and adds the checks that
 matter before the first request:
 
 - The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219) parses
   as an integer from 1 to 65535 and is free to bind on `127.0.0.1`. This runs
-  only in `authorization_code` mode and only when the stored token is missing
-  or unusable — the states whose remedy is re-running setup, which needs the
+  only in `authorization_code` mode and only when re-running setup is the
+  remedy for the token problem — the file is missing, unparseable, or lacks a
+  token field (a path or permission problem skips it), and setup needs the
   port.
 - The stored token file in `authorization_code` mode: it exists (a missing
   file means "run `npm run oauth:setup`"; a stat failure other than a missing

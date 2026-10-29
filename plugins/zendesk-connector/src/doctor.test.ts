@@ -153,19 +153,41 @@ test("reports a port this user cannot bind with its own advice", async () => {
   });
 
   // A bind refusal is not evidence of an earlier setup still waiting: only a
-  // port another process holds gets the "earlier setup" advice, while a port
-  // this user cannot bind points at the port's own privileges instead.
+  // port another process holds gets the "earlier setup" advice. On this
+  // high default port privileges are irrelevant, so the report must not
+  // blame them either — that advice belongs only to ports below 1024.
   assert.deepEqual(calls, [3219]);
   assert.equal(problems.length, 2);
   assert.match(problems[0], /cannot listen on port 3219: this user cannot bind the port/);
-  assert.match(problems[0], /elevated privileges/);
+  assert.match(problems[0], /the OS refused it to this user/);
   assert.ok(!problems[0].includes("earlier setup"));
+  assert.ok(!problems[0].includes("elevated privileges"));
   assert.match(problems[1], /Run npm run oauth:setup/);
 });
 
 test("reports an unusable callback port without probing it", async () => {
   const directory = await tempDir();
   process.env.ZENDESK_OAUTH_CALLBACK_PORT = "not-a-port";
+  const { calls, probe } = probeRecorder("free");
+
+  const problems = await checkDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+    probePort: probe,
+  });
+
+  assert.deepEqual(calls, []);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535/);
+  assert.match(problems[1], /Run npm run oauth:setup/);
+});
+
+test("reports a non-decimal callback port without probing it", async () => {
+  const directory = await tempDir();
+  // Number("0x10") would silently become 16: the port must be written the
+  // way the error message describes it, or setup and the doctor would bind
+  // a port nobody registered as the callback URL.
+  process.env.ZENDESK_OAUTH_CALLBACK_PORT = "0x10";
   const { calls, probe } = probeRecorder("free");
 
   const problems = await checkDoctor({
@@ -289,6 +311,37 @@ test("reports a token file without a refresh token", async () => {
   assert.deepEqual(calls, [3219]);
   assert.equal(problems.length, 1);
   assert.match(problems[0], /No refresh token found in .* Run npm run oauth:setup/);
+});
+
+test("reports token fields that are not strings as missing", async () => {
+  // A JSON true would satisfy a truthiness check and then be sent as a
+  // credential, so both fields must be reported with the messages the
+  // server's own validation uses.
+  const withBooleanAccess = await tempTokenFile(
+    JSON.stringify({ access_token: true, refresh_token: true }),
+  );
+  const { calls, probe } = probeRecorder("free");
+
+  const accessProblems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile: withBooleanAccess }),
+    probePort: probe,
+  });
+
+  assert.deepEqual(calls, [3219]);
+  assert.equal(accessProblems.length, 1);
+  assert.match(accessProblems[0], /does not contain an access_token/);
+
+  const withNumberRefresh = await tempTokenFile(
+    JSON.stringify({ access_token: "invented-access-token", refresh_token: 5 }),
+  );
+
+  const refreshProblems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile: withNumberRefresh }),
+    probePort: probe,
+  });
+
+  assert.equal(refreshProblems.length, 1);
+  assert.match(refreshProblems[0], /No refresh token found in .* Run npm run oauth:setup/);
 });
 
 test("probes the port when the stored token is unusable", async () => {
@@ -460,36 +513,33 @@ test("the default probe reports a port that is genuinely in use", async () => {
   }
 });
 
-test(
-  "the default probe reports a port this user cannot bind",
-  {
-    // A privileged port bind succeeds for root, so the refusal it is meant to
-    // exercise could not be observed there; Windows uses a different model.
-    skip:
-      process.platform === "win32" ||
-      typeof process.getuid !== "function" ||
-      process.getuid() === 0
-        ? "needs an unprivileged user on a POSIX host"
-        : false,
-  },
-  async () => {
-    const directory = await tempDir();
-    process.env.ZENDESK_OAUTH_CALLBACK_PORT = "1";
+test("the default probe reports a port this user cannot bind", async (ctx) => {
+  // Observe port 1 first: some kernels let an ordinary user bind privileged
+  // ports, and a port another process already holds would report a different
+  // cause. Proceed only when the host genuinely refuses the bind, so this
+  // assertion holds wherever the test runs.
+  const observed = await bindAttempt(1);
+  if (observed !== "unavailable") {
+    ctx.skip(`port 1 is ${observed} on this host, not refused`);
+    return;
+  }
+  const directory = await tempDir();
+  process.env.ZENDESK_OAUTH_CALLBACK_PORT = "1";
 
-    // No probePort: the real bind must distinguish a refusal that is not
-    // EADDRINUSE — the OS rejects a privileged port for an ordinary user —
-    // instead of blaming another process for it.
-    const problems = await checkDoctor({
-      loadConfig: () =>
-        config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
-    });
+  // No probePort: the real bind must distinguish a refusal that is not
+  // EADDRINUSE — the OS rejects a privileged port for an ordinary user —
+  // instead of blaming another process for it.
+  const problems = await checkDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+  });
 
-    assert.equal(problems.length, 2);
-    assert.match(problems[0], /cannot listen on port 1: this user cannot bind the port/);
-    assert.ok(!problems[0].includes("another process holds"));
-    assert.match(problems[1], /Run npm run oauth:setup/);
-  },
-);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /cannot listen on port 1: this user cannot bind the port/);
+  assert.match(problems[0], /elevated privileges/);
+  assert.ok(!problems[0].includes("another process holds"));
+  assert.match(problems[1], /Run npm run oauth:setup/);
+});
 
 test("passes against a real authorization-code configuration", async () => {
   const files = await writeAuthFiles();
@@ -564,6 +614,24 @@ function probeRecorder(result: PortProbeResult): {
       return result;
     },
   };
+}
+
+/**
+ * Binds `port` briefly and reports what happened — the observation a test
+ * uses to decide whether a host-level refusal is even present to assert on.
+ */
+function bindAttempt(port: number): Promise<PortProbeResult> {
+  return new Promise((resolve) => {
+    const attempt = createServer();
+    attempt.once("error", (error: NodeJS.ErrnoException) =>
+      resolve(error.code === "EADDRINUSE" ? "in-use" : "unavailable"),
+    );
+    attempt.listen(port, "127.0.0.1", () => {
+      attempt.closeAllConnections();
+      attempt.close();
+      resolve("free");
+    });
+  });
 }
 
 interface EntryResult {

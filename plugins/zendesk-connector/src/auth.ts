@@ -121,15 +121,20 @@ export function isValidCallbackPort(port: number): boolean {
 }
 
 /**
- * Reads the setup callback port exactly as `oauth:setup` interprets it: a raw
- * number, with no empty-value or `${...}` placeholder leniency — an unusable
- * value must surface as an error in both the setup and the doctor, not be
- * silently defaulted in one of them.
+ * Reads the setup callback port exactly as `oauth:setup` interprets it: the
+ * environment value must be written as decimal digits (a trimmed run of
+ * `0`–`9`), with no empty-value, `${...}` placeholder, or `0x10`-style
+ * leniency — an unusable value must surface as an error in both the setup
+ * and the doctor, not be silently defaulted or reinterpreted in one of them.
  */
 export function resolveCallbackPort(): number {
-  return Number(
-    process.env.ZENDESK_OAUTH_CALLBACK_PORT ?? OAUTH_CALLBACK_PORT_DEFAULT,
-  );
+  const raw = process.env.ZENDESK_OAUTH_CALLBACK_PORT;
+  if (raw === undefined) return OAUTH_CALLBACK_PORT_DEFAULT;
+  const digits = raw.trim();
+  // Number() alone would read "0x10" as 16 and "1e3" as 1000, values no
+  // caller wrote as a port; a non-decimal string becomes NaN, which the
+  // shared isValidCallbackPort check rejects with CALLBACK_PORT_ERROR.
+  return /^\d+$/.test(digits) ? Number(digits) : Number.NaN;
 }
 
 export function getConfig(): ZendeskConfig {

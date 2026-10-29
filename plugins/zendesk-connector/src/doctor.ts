@@ -66,10 +66,11 @@ export function isDoctorRequested(
  * performs, including the client file's permission requirement), the tool
  * policy, the setup callback port, and the authorization-code token file. The
  * port and token-file checks run only in `authorization_code` mode, and the
- * port is checked only when the stored token is missing or unusable — those
- * are exactly the states where the remedy is running `npm run oauth:setup`,
- * which needs the port. A failing configuration skips the two dependent
- * checks, so a single run never repeats the same problem.
+ * port is checked only when re-running `npm run oauth:setup` is the token's
+ * remedy — the file is missing, unparseable, or lacks a token field (a path
+ * or permission problem skips it), and setup needs the port. A failing
+ * configuration skips the two dependent checks, so a single run never repeats
+ * the same problem.
  */
 export async function checkDoctor(
   options: DoctorOptions = {},
@@ -197,13 +198,18 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
     access_token?: unknown;
     refresh_token?: unknown;
   };
-  if (!token.access_token) {
+  // A stored token must be a non-empty string: a boolean or number would
+  // pass a truthiness check here and then be sent as an unusable credential,
+  // so the doctor reports it as the missing token it effectively is.
+  const usable = (value: unknown): value is string =>
+    typeof value === "string" && value.length > 0;
+  if (!usable(token.access_token)) {
     return {
       setupNeeded: true,
       problem: `OAuth token file ${tokenFile} does not contain an access_token.`,
     };
   }
-  if (!token.refresh_token) {
+  if (!usable(token.refresh_token)) {
     // Renewal throws this exact message once the access token expires, so a
     // token file without a refresh token is an hour away from failing.
     return {
@@ -230,10 +236,17 @@ async function checkCallbackPort(
   }
   const state = await probe(port);
   if (state === "free") return undefined;
-  const cause =
-    state === "in-use"
-      ? "another process holds the port (often an earlier setup still waiting for authorization)"
-      : "this user cannot bind the port (a port below 1024 needs elevated privileges)";
+  let cause: string;
+  if (state === "in-use") {
+    cause =
+      "another process holds the port (often an earlier setup still waiting for authorization)";
+  } else if (port < 1024) {
+    cause = "this user cannot bind the port (a port below 1024 needs elevated privileges)";
+  } else {
+    // Above 1024 the port needs no privileges, so privileges are not the
+    // explanation; a sandbox, a firewall, or an address policy can refuse it.
+    cause = "this user cannot bind the port (the OS refused it to this user)";
+  }
   return `npm run oauth:setup cannot listen on port ${port}: ${cause}. Set ZENDESK_OAUTH_CALLBACK_PORT to a free port and register that exact callback URL on the OAuth client in Zendesk.`;
 }
 
@@ -245,7 +258,12 @@ function probePortFree(port: number): Promise<PortProbeResult> {
       resolve(error.code === "EADDRINUSE" ? "in-use" : "unavailable"),
     );
     probe.listen(port, "127.0.0.1", () => {
-      probe.close(() => resolve("free"));
+      // Both calls run in this one callback, so no connection can slip in
+      // between them: without destroy-then-close, a socket accepted in the
+      // probe window would stall close(), and with it the doctor's output.
+      probe.closeAllConnections();
+      probe.close();
+      resolve("free");
     });
   });
 }
