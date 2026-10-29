@@ -6,6 +6,7 @@ import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createInterface, type Interface } from "node:readline/promises";
 import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { redact } from "./audit.js";
 import {
   CALLBACK_PORT_ERROR,
   INVALID_MODE_MESSAGE,
@@ -27,6 +28,10 @@ import {
 
 const CALLBACK_PATH = "/callback";
 const TIMEOUT_MS = 5 * 60 * 1000;
+/** The most of a redacted body the error message echoes, in code points. */
+const MAX_ECHO_CHARACTERS = 512;
+/** The longest media type the error message echoes. */
+const MAX_MEDIA_TYPE = 40;
 /** The hint every failure line carries, so the reader knows where to look. */
 const DOCTOR_HINT = "Run npm run doctor to check the configuration.";
 /** The prompt that asks for the account, with the two accepted spellings. */
@@ -595,8 +600,104 @@ async function exchangeCode(
   const text = await response.text();
   const payload = text ? safeJson(text) : undefined;
   if (!response.ok || !isTokenResponse(payload)) {
+    // A rejected body can still carry a real token: a 200 that fails the
+    // shape check (a missing refresh_token, say) would otherwise print the
+    // access token into the thrown error, which a caller may log or show.
+    // The audit sink's redact() is the house filter, so it strips the keys
+    // the filter knows — token, secret, password, authorization, cookie —
+    // and the message keeps the rest of the response's diagnosable shape.
+    // The filter matches key names, so it cannot see a token a middlebox
+    // parked in the value of some innocuous key, nor one used as a key
+    // itself — neither filter inspects what a name contains; that limit
+    // belongs to the filters and is shared with every audit line, so the
+    // call site keeps their contract rather than growing a second
+    // redactor. Two keys they deliberately leave alone are dropped here
+    // instead: a field named code in this body is the one-time
+    // authorization code, and its client_id is the identifier that pairs
+    // with it. The shared regex may not match either name — audit.test.ts
+    // pins a code of 401 — so the strip lives at the call site, and the
+    // status line and the remaining fields carry the diagnosis.
+    //
+    // A body that never parsed into a JSON object (a proxy's HTML error
+    // page, say) has no keys at all to filter, so it is described by its
+    // media type and size instead of echoed: a page that echoed the
+    // request would carry the client secret and the one-time code. A
+    // top-level array reaches the same note even though it did parse: the
+    // shape check rejects an array either way, so the guard below is
+    // deliberate rather than an oversight. A nested array is not guarded —
+    // it is echoed, and its unkeyed values are the documented value-channel
+    // limit of the filters rather than a separate defect. The media type is
+    // narrowed to a short, plain type/subtype first — a header is free
+    // text, so nothing stops a middlebox from stuffing a token-shaped
+    // subtype into one; the length bound below keeps that echo small, and
+    // it is a bound on the echo, not a filter on the header.
+    const mediaType = response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      .trim()
+      .toLowerCase();
+    const described =
+      mediaType !== undefined &&
+      mediaType.length <= MAX_MEDIA_TYPE &&
+      /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mediaType)
+        ? ` ${mediaType}`
+        : "";
+    // The size is the utf-8 length of the decoded text, which is what the
+    // message has in hand; a count of the raw wire bytes is not.
+    const size = Buffer.byteLength(text, "utf8");
+    const count = `${size} ${size === 1 ? "byte" : "bytes"}`;
+    const objectShaped =
+      payload !== null && typeof payload === "object" && !Array.isArray(payload);
+    // Both filters recurse, and they run before the single JSON.stringify
+    // this message used to do — so a body nested past the filter's depth
+    // overflows here, and on versions where the old stringify also
+    // overflowed it overflows slightly earlier. Either way nothing leaks:
+    // the throw below still fires, and its note names the body as
+    // unprintable rather than echoing any of it. A body that parsed from
+    // JSON can never be circular, so what this catch sees is depth — and,
+    // for a body whose escaped echo would exceed the engine's maximum
+    // string length, size.
+    let echo: string | undefined;
+    if (objectShaped) {
+      try {
+        echo = JSON.stringify(dropExchangeEcho(redact(payload)));
+      } catch {
+        echo = undefined;
+      }
+    }
+    // The echo is bounded too: a multi-megabyte body would otherwise be
+    // embedded whole, and past the bound the size says everything the
+    // reader needs. The cut counts code points, not UTF-16 units — the
+    // string iterator yields whole code points, so it cannot land between
+    // the halves of a surrogate pair and leave a lone one behind — it
+    // stops one point past the bound to learn whether a cut is needed at
+    // all, and it runs after both filters, so a cut cannot resurrect what
+    // they removed. The cut itself holds at most the bound's points; the
+    // echo string above is materialized whole, so what the cut bounds is
+    // the message, not the memory a large body costs on the way there.
+    const points: string[] = [];
+    let truncated = false;
+    if (echo !== undefined) {
+      for (const point of echo) {
+        points.push(point);
+        if (points.length > MAX_ECHO_CHARACTERS) {
+          truncated = true;
+          break;
+        }
+      }
+    }
+    const shown =
+      echo === undefined
+        ? objectShaped
+          ? `(unprintable object body of ${count})`
+          : text
+            ? `(non-object${described} body of ${count})`
+            : "(empty body)"
+        : truncated
+          ? `${points.slice(0, MAX_ECHO_CHARACTERS).join("")}… (body of ${count})`
+          : echo;
     throw new Error(
-      `Zendesk token exchange failed: HTTP ${response.status} ${JSON.stringify(payload)}`,
+      `Zendesk token exchange failed: HTTP ${response.status} ${shown}`,
     );
   }
 
@@ -669,6 +770,23 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+/**
+ * Drops the two fields the exchange request itself carries — code and
+ * client_id — from a rejected body before it is echoed. A field named code
+ * here is the one-time authorization code, and the shared audit filter may
+ * not match that name — audit.test.ts pins a code of 401 — so the strip
+ * lives at this call site rather than in the filter.
+ */
+function dropExchangeEcho(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(dropExchangeEcho);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !/^(code|client_id)$/i.test(key))
+      .map(([key, child]) => [key, dropExchangeEcho(child)]),
+  );
 }
 
 /** True when a token response carries both tokens the connector stores. */

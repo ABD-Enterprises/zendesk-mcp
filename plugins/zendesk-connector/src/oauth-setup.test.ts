@@ -796,6 +796,459 @@ test("opens the authorization URL through the injected launcher", async () => {
   );
 });
 
+/**
+ * Drives the browser-authorization flow as far as the token exchange and
+ * returns the run's rejection. The fetch stub answers the exchange with the
+ * given body and refuses every other URL, so a flow that grows another call
+ * fails the test instead of reaching the real network. The launcher is
+ * injected, so nothing is ever opened.
+ */
+async function exchangeFailure(
+  body: string,
+  contentType: string,
+  responseStatus = 200,
+): Promise<{
+  error: Error;
+  out: string[];
+  requests: string[];
+}> {
+  const files = await sandbox();
+  const config: ZendeskConfig = {
+    baseUrl: "https://acme-tools.zendesk.com",
+    mode: "authorization_code",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+    tokenFile: files.tokenFile,
+    scope: "read",
+  };
+  const port = await freePort();
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+  const out: string[] = [];
+  const opened: string[] = [];
+  const requests: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    requests.push(url);
+    // Fail closed: the exchange is the only call this flow makes today, so
+    // any other URL is a change this test has not agreed to — and answering
+    // it would put a real request on the wire to a plausible real host.
+    assert.ok(
+      url.endsWith("/oauth/tokens"),
+      `unexpected network call from the flow: ${url}`,
+    );
+    // The body is encoded to bytes the way a network response arrives: a
+    // string body would make the Response constructor append its own
+    // text/plain content type, which would make an absent content-type
+    // header impossible to craft — and an empty one means just that.
+    const headers = new Headers();
+    if (contentType) headers.set("Content-Type", contentType);
+    return new Response(new TextEncoder().encode(body), {
+      status: responseStatus,
+      headers,
+    });
+  }) as typeof fetch;
+
+  // The scaffolding mirrors the positive-path test above: the launcher is
+  // injected so nothing is opened, and the wait is bounded below the poll
+  // deadline so a run that reaches no launcher ends with its own reason
+  // instead of holding the suite open.
+  let ended = false;
+  const outcome = authorizeWithBrowser(
+    config,
+    redirectUri,
+    (line) => out.push(line),
+    recordingSpawn(opened),
+    4_000,
+  ).then(
+    () => {
+      ended = true;
+      return undefined;
+    },
+    (error: unknown) => {
+      ended = true;
+      return error;
+    },
+  );
+
+  try {
+    const deadline = Date.now() + 5_000;
+    while (opened.length === 0 && !ended) {
+      if (Date.now() > deadline) {
+        throw new Error("the injected launcher was never called");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (opened.length === 0) {
+      // The loop only leaves with the launcher recorded or the run ended:
+      // here the run ended before any launcher call, so its own error says
+      // why. A wait that ran out means the launcher was never reached.
+      const failure = await outcome;
+      assert.ok(failure instanceof Error);
+      if (!failure.message.includes("Timed out")) throw failure;
+      throw new Error("the injected launcher was never called");
+    }
+    const authorizeUrl = opened.find((arg) => arg.startsWith("http"));
+    assert.ok(authorizeUrl !== undefined);
+    // The state the run generated, echoed back the way the browser would:
+    // with it correct, the server accepts the code and proceeds to the
+    // exchange the stub above is waiting to answer.
+    const state = new URL(authorizeUrl).searchParams.get("state");
+    assert.ok(state !== null);
+    const status = await new Promise<number>((resolve, reject) => {
+      const request = get(
+        `http://127.0.0.1:${port}/callback?code=example-code&state=${encodeURIComponent(state)}`,
+        { agent: false },
+        (response) => {
+          response.resume();
+          response.once("end", () => resolve(response.statusCode ?? 0));
+        },
+      );
+      request.once("error", reject);
+    });
+    // The server answers 200 the moment it has the code, before the exchange
+    // runs — so the exchange's rejection is the run's own error, awaited by
+    // the caller, not a status on this response.
+    assert.equal(status, 200);
+
+    const error = await outcome;
+    assert.ok(error instanceof Error);
+    return { error, out, requests };
+  } finally {
+    globalThis.fetch = originalFetch;
+    // An assertion that throws before the callback is sent would otherwise
+    // leave the flow's listener bound until its own four-second timeout,
+    // holding a port open past the test's end. outcome never rejects — its
+    // rejection is converted to a value above — so awaiting it here always
+    // settles the run and closes the listener, bounded by that timeout.
+    await outcome;
+  }
+}
+
+test("never prints a token from a rejected token-exchange body", async () => {
+  // The exchange can fail *after* Zendesk has already handed back a real
+  // token: a 200 whose body is missing a refresh_token fails the shape
+  // check, and stringifying that body as-is would put the access token into
+  // the thrown error — where a caller may log or show it. This crafts
+  // exactly that body, so the assertion pins what the filter does promise:
+  // the keys it knows never reach the message. The client secret is
+  // in the body too, the way a middlebox echoing the *request* would put it
+  // there — so the assertion below binds to redact() rather than passing
+  // because the secret was never present to begin with.
+  const leakedToken = "example-access-token-must-not-be-printed";
+  const { error, out, requests } = await exchangeFailure(
+    JSON.stringify({
+      access_token: leakedToken,
+      client_secret: "example-client-secret",
+      token_type: "bearer",
+    }),
+    "application/json",
+  );
+
+  assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
+  // The message keeps the diagnosable shape but replaces the credential
+  // material: the token and the client secret are both gone.
+  assert.match(error.message, /\[REDACTED\]/);
+  assert.ok(!error.message.includes(leakedToken));
+  assert.ok(!error.message.includes("example-client-secret"));
+  // Exactly the one expected call went out, and it was the exchange.
+  assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+  // The run reported the authorization URL exactly once, as in the flow
+  // test above: the fix narrows what the error carries, not what the run
+  // prints before it.
+  assert.equal(
+    out.filter((line) => line.startsWith("Opening Zendesk authorization:"))
+      .length,
+    1,
+  );
+});
+
+test("describes a non-object exchange body by media type and size", async () => {
+  // redact() works on object keys, so a body that never parsed into a JSON
+  // object cannot be filtered by it — and a page that echoed the request
+  // would carry the client secret and the one-time code. Such a body is
+  // therefore named by its media type and size and nothing more.
+  const leakedToken = "example-plaintext-token-must-not-be-printed";
+  const body = `access_token=${leakedToken}`;
+  const { error, requests } = await exchangeFailure(body, "text/plain");
+
+  assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
+  assert.ok(!error.message.includes(leakedToken));
+  assert.ok(
+    error.message.includes(
+      `(non-object text/plain body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    ),
+  );
+  assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+});
+
+test("never echoes an unfiltered rejected exchange body", async () => {
+  // The branches the two tests above do not reach, each pinned against the
+  // same expectation: whatever the rejected body's shape, the thrown error
+  // carries its size, its media type, or the filters' output — nothing
+  // that bypasses them. The filter reads key names only, so a secret that
+  // is only a value or a key name is beyond it, as the call site's comment
+  // says; the cases pin that no branch returns the body without going
+  // through the filters or a descriptive note. The cases share one helper,
+  // so each still travels the real browser flow.
+  const leakedToken = "example-nested-token-must-not-be-printed";
+  const cases: Array<{
+    name: string;
+    body: string;
+    contentType: string;
+    status?: number;
+    shown: (body: string) => string;
+    /** Values the message must not carry at all, beyond the shared leak. */
+    absent?: string[];
+  }> = [
+    {
+      // An empty body never reaches safeJson: the call site branches on
+      // truthy text first, so the payload stays undefined and the note is
+      // its own, with no size at all.
+      name: "an empty body",
+      body: "",
+      contentType: "application/json",
+      shown: () => "(empty body)",
+    },
+    {
+      // A single byte, to pin the singular. The body is a bare character
+      // that is not JSON, so safeJson falls back to the raw text and the
+      // size note applies.
+      name: "a one-byte body",
+      body: "x",
+      contentType: "text/plain",
+      shown: () => "(non-object text/plain body of 1 byte)",
+    },
+    {
+      // A non-ASCII body, with the count written out rather than
+      // recomputed the way the implementation computes it: "é" is one
+      // UTF-16 code unit and two utf-8 bytes, so a regression from
+      // byteLength back to text.length would report 1 and fail here.
+      name: "a non-ASCII body",
+      body: "é",
+      contentType: "text/plain",
+      shown: () => "(non-object text/plain body of 2 bytes)",
+    },
+    {
+      // A content type carrying parameters: only the media type is shown,
+      // so a token a middlebox parked in the charset parameter cannot ride
+      // along into the message.
+      name: "a content type with parameters",
+      body: "blocked by a proxy",
+      contentType: "text/html; charset=utf-8",
+      shown: () => "(non-object text/html body of 18 bytes)",
+    },
+    {
+      // A content type past the length bound: nothing of it is shown. The
+      // bound only keeps the echo small — a shorter token-shaped subtype
+      // would still ride along — so past it the size is all the reader
+      // gets.
+      name: "an over-long content type",
+      body: "blocked",
+      contentType: `text/${"a".repeat(50)}`,
+      shown: () => "(non-object body of 7 bytes)",
+    },
+    {
+      // The bound's edge, held from both sides with one character of
+      // difference: forty characters is shown, forty-one is not. The
+      // subtype is all "a"s, so the count is the only thing that can
+      // separate the two.
+      name: "a content type at the length bound",
+      body: "blocked",
+      contentType: `text/${"a".repeat(35)}`,
+      shown: () => `(non-object text/${"a".repeat(35)} body of 7 bytes)`,
+    },
+    {
+      name: "a content type one past the bound",
+      body: "blocked",
+      contentType: `text/${"a".repeat(36)}`,
+      shown: () => "(non-object body of 7 bytes)",
+    },
+    {
+      // An upper-case media type: the header is lower-cased before it is
+      // matched, so TEXT/PLAIN reaches the message as text/plain and case
+      // alone cannot smuggle a differently-shaped value past the plain
+      // type/subtype check.
+      name: "an upper-case content type",
+      body: "blocked",
+      contentType: "TEXT/PLAIN; CHARSET=UTF-8",
+      shown: () => "(non-object text/plain body of 7 bytes)",
+    },
+    {
+      // redact() does recurse into arrays, so an array body would have its
+      // keyed entries redacted. It takes the size note anyway: the shape
+      // check rejects an array, and the guard at the call site keeps the
+      // message to a size rather than a redacted list whose unkeyed values
+      // redact() cannot filter.
+      name: "a top-level array",
+      body: JSON.stringify([{ access_token: leakedToken }]),
+      contentType: "application/json",
+      shown: (body) =>
+        `(non-object application/json body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    },
+    {
+      // A JSON null: an object to neither the shape check nor redact().
+      name: "a JSON null",
+      body: "null",
+      contentType: "application/json",
+      shown: (body) =>
+        `(non-object application/json body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    },
+    {
+      // The nested case the recursion in redact() exists for: the token is
+      // two levels down, under a key that names it.
+      name: "a nested token",
+      body: JSON.stringify({
+        data: { nested: { access_token: leakedToken } },
+      }),
+      contentType: "application/json",
+      shown: () =>
+        JSON.stringify({
+          data: { nested: { access_token: "[REDACTED]" } },
+        }),
+    },
+    {
+      // A body carrying only the secret, with no token in it at all: the
+      // first test's secret assertion shares a message with its token
+      // assertion, so this case is what actually pins that a key the
+      // filter knows is stripped on its own.
+      name: "a secret with no token",
+      body: JSON.stringify({
+        error: "invalid_client",
+        client_secret: "example-client-secret",
+      }),
+      contentType: "application/json",
+      shown: () =>
+        JSON.stringify({
+          error: "invalid_client",
+          client_secret: "[REDACTED]",
+        }),
+    },
+    {
+      // A rejected status with a JSON error body: the non-ok branch takes
+      // the same path, and the status reaches the message intact.
+      name: "a non-ok JSON error",
+      body: JSON.stringify({
+        error: "invalid_grant",
+        access_token: leakedToken,
+      }),
+      contentType: "application/json",
+      status: 401,
+      shown: () =>
+        JSON.stringify({ error: "invalid_grant", access_token: "[REDACTED]" }),
+    },
+    {
+      // A JSON echo of the exchange request itself: the shared filter
+      // strips the secret, and the call site drops the pair the filter may
+      // not match — the one-time code and the client id beside it. The
+      // error description the reader actually needs is left alone.
+      name: "a JSON echo of the request",
+      body: JSON.stringify({
+        error: "invalid_grant",
+        error_description: "The code expired.",
+        code: "example-one-time-code",
+        client_id: "example-client-id",
+        client_secret: "example-client-secret",
+      }),
+      contentType: "application/json",
+      shown: () =>
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "The code expired.",
+          client_secret: "[REDACTED]",
+        }),
+      // The written-out expectation already omits the pair, but an
+      // expectation only pins what it contains: a message carrying both
+      // the expected fragment and the leaked values would still pass it.
+      // These two assert the absence directly.
+      absent: ["example-one-time-code", "example-client-id"],
+    },
+    {
+      // A body whose redacted echo runs past the echo bound: the first
+      // bound-many characters of the echo, then the size. The cut is
+      // expected literally rather than recomputed from the same constants
+      // the implementation uses, so a regression that lifts the bound
+      // leaves the full echo in the message and fails here.
+      name: "an over-long JSON body",
+      body: JSON.stringify({ error: "e".repeat(600) }),
+      contentType: "application/json",
+      shown: (body) =>
+        `${JSON.stringify({ error: "e".repeat(600) }).slice(0, 512)}… (body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    },
+    {
+      // An echo that runs past the bound with a surrogate pair sitting
+      // exactly where a UTF-16 cut would fall: the emoji's high surrogate
+      // is the 512th unit, so a cut by units would end the message in a
+      // lone half. The expectation is written by code points — exactly one
+      // whole emoji survives the cut — so a regression to a unit cut
+      // fails here.
+      name: "an over-long body ending mid-emoji",
+      body: JSON.stringify({ a: "x".repeat(505) + "😀".repeat(5) }),
+      contentType: "application/json",
+      shown: (body) => {
+        const points = [...JSON.stringify({ a: "x".repeat(505) + "😀".repeat(5) })];
+        return `${points.slice(0, 512).join("")}… (body of ${Buffer.byteLength(body, "utf8")} bytes)`;
+      },
+    },
+    {
+      // A body nested past the call stack's depth: both filters recurse,
+      // so they overflow — on some Node versions the single stringify this
+      // message used to do would have overflowed too. Nothing leaks — the
+      // throw still fires either way — and the note names the body
+      // unprintable rather than echoing any of it. The depth is chosen
+      // well past the overflow point on the whole CI matrix, so the case
+      // does not depend on the exact stack size of the machine it runs
+      // on.
+      name: "a body nested past the stack's depth",
+      body: `${'{"a":'.repeat(10000)}1${"}".repeat(10000)}`,
+      contentType: "application/json",
+      shown: (body) =>
+        `(unprintable object body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    },
+    {
+      // No content-type header at all. The stub encodes the body to bytes
+      // so the Response constructor does not append its own text/plain —
+      // the way a real middlebox can answer without the header. The
+      // media-type branch has nothing to show, and the size still reaches
+      // the message.
+      name: "a missing content type",
+      body: "blocked by a proxy",
+      contentType: "",
+      shown: () => "(non-object body of 18 bytes)",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const { error, requests } = await exchangeFailure(
+      testCase.body,
+      testCase.contentType,
+      testCase.status,
+    );
+    assert.match(
+      error.message,
+      new RegExp(
+        `^Zendesk token exchange failed: HTTP ${testCase.status ?? 200} `,
+      ),
+      testCase.name,
+    );
+    assert.ok(
+      !error.message.includes(leakedToken),
+      `${testCase.name} leaked the token: ${error.message}`,
+    );
+    assert.ok(
+      error.message.includes(testCase.shown(testCase.body)),
+      `${testCase.name} did not show the expected body: ${error.message}`,
+    );
+    for (const value of testCase.absent ?? []) {
+      assert.ok(
+        !error.message.includes(value),
+        `${testCase.name} echoed ${value}: ${error.message}`,
+      );
+    }
+    assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+  }
+});
+
 test("refuses a client file that other users can read", async (ctx) => {
   // Node reports synthetic permission bits on Windows (group and other always
   // look set), so the check is skipped there: this host cannot show the
