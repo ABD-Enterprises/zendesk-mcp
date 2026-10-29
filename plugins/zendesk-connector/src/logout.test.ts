@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -294,7 +294,13 @@ test("clears the token file the client file names when the configuration is inco
   const home = join(directory, "home");
   const tokenFile = join(directory, "named-oauth.json");
   const clientFile = join(directory, "client.json");
+  const defaultTokenFile = join(home, ".config", "codex-zendesk", "oauth.json");
   await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+  // A decoy at the default path proves the fallback clears only the file the
+  // configuration names — a regression that removed both must fail here.
+  await writeTokenFile(defaultTokenFile, {
+    access_token: "invented-stale-token",
+  });
   // The client file names the token file, but the configuration is otherwise
   // incomplete (no subdomain), so getConfig throws and the fallback decides
   // which file is cleared. HOME points into the fixture, so the default path
@@ -338,10 +344,65 @@ test("clears the token file the client file names when the configuration is inco
   assert.equal(result.storedCredentials, "removed");
   assert.match(result.error ?? "", /configuration is unavailable/);
   await assert.rejects(() => readFile(tokenFile, "utf8"), /ENOENT/);
+  assert.ok((await stat(defaultTokenFile)).isFile());
+  assert.equal(
+    JSON.parse(await readFile(defaultTokenFile, "utf8")).access_token,
+    "invented-stale-token",
+  );
 
   assert.equal(lines.length, 1);
   const event = JSON.parse(lines[0]);
   assert.equal(event.storedCredentials, "removed");
+});
+
+test("clears the token file a loose-permission client file names", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-logout-test-"));
+  const home = join(directory, "home");
+  const tokenFile = join(directory, "named-oauth.json");
+  const clientFile = join(directory, "client.json");
+  const defaultTokenFile = join(home, ".config", "codex-zendesk", "oauth.json");
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+  await writeTokenFile(defaultTokenFile, {
+    access_token: "invented-stale-token",
+  });
+  // The client file fails getConfig's permission check, so the configuration
+  // is unusable — but its tokenFile field is just a path, not secret
+  // material, and the lenient fallback still reads it: logout must remove
+  // that file, not the default the connector never wrote.
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      mode: "authorization_code",
+      tokenFile,
+    }),
+  );
+  await chmod(clientFile, 0o644);
+
+  process.env = {
+    ...originalEnv,
+    HOME: home,
+    USERPROFILE: home,
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+  };
+  delete process.env.ZENDESK_OAUTH_TOKEN_FILE;
+  delete process.env.ZENDESK_SUBDOMAIN;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_OAUTH_CLIENT_ID;
+  delete process.env.ZENDESK_OAUTH_CLIENT_SECRET;
+  delete process.env.ZENDESK_OAUTH_ACCESS_TOKEN;
+  delete process.env.ZENDESK_OAUTH_MODE;
+  globalThis.fetch = recordingFetcher([], () => {
+    throw new Error("the tests never reach the network");
+  });
+
+  const result = await new ZendeskLogout({ sink: () => {} }).run();
+
+  assert.equal(result.storedCredentials, "removed");
+  assert.match(result.error ?? "", /chmod 600/);
+  await assert.rejects(() => readFile(tokenFile, "utf8"), /ENOENT/);
+  assert.ok((await stat(defaultTokenFile)).isFile());
 });
 
 test("clears the local credentials when the client file holds a non-string tokenFile", async () => {

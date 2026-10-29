@@ -536,11 +536,26 @@ export function resolveTokenFile(): string {
   }
 }
 
-/** The client file's tokenFile field, when it can be read as a path. */
+/** The client file's tokenFile field, read leniently. */
 function savedTokenFile(): string | undefined {
+  // The fallback needs only a path — not secret material, and not a
+  // validated configuration — so the file's other checks (owner-only
+  // permissions, the types of baseUrl/subdomain) are deliberately not
+  // applied here: a client file that fails one of them must still lead
+  // logout at the token file it names, not at a default path the connector
+  // never wrote. Anything unreadable — missing file, unparseable JSON, a
+  // wrong-typed or empty field — falls through to the default.
   try {
-    const tokenFile = readOAuthClientFile(oauthClientFilePath()).tokenFile;
-    return tokenFile && tokenFile.trim() !== "" ? tokenFile : undefined;
+    const payload = JSON.parse(
+      readFileSync(oauthClientFilePath(), "utf8"),
+    ) as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return undefined;
+    }
+    const tokenFile = (payload as { tokenFile?: unknown }).tokenFile;
+    return typeof tokenFile === "string" && tokenFile.trim() !== ""
+      ? tokenFile
+      : undefined;
   } catch {
     return undefined;
   }
