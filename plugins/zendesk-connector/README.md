@@ -17,9 +17,12 @@ export ZENDESK_OAUTH_CLIENT_ID="your-oauth-client-identifier"
 export ZENDESK_OAUTH_CLIENT_SECRET="your-oauth-client-secret"
 ```
 
-For deployments that should be read-only, configure an explicit tool allowlist:
+For deployments that should be read-only, set `ZENDESK_READ_ONLY=1`. To
+narrow further or name an explicit subset, use a tool allowlist:
 
 ```sh
+export ZENDESK_READ_ONLY=1
+# Or name the read tools explicitly:
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
 zendesk_list_brands,zendesk_list_groups,zendesk_list_users,\
 zendesk_list_organizations,zendesk_list_ticket_fields,zendesk_list_ticket_forms"

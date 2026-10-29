@@ -42,6 +42,47 @@ test("publishes only tools enabled by the deployment allowlist", async () => {
   }
 });
 
+test("read-only mode withholds the write tools over MCP", async () => {
+  const original = process.env.ZENDESK_READ_ONLY;
+  process.env.ZENDESK_READ_ONLY = "1";
+  const server = createZendeskServer(
+    new ZendeskClient(
+      {
+        baseUrl: "https://example.zendesk.com",
+        mode: "access_token",
+        accessToken: "oauth-access-token",
+        tokenFile: "/unused/oauth.json",
+        scope: "tickets:read",
+      },
+      async () => Response.json({ user: { id: 42 } }),
+    ),
+  );
+  const client = new Client({ name: "policy-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+
+  try {
+    const tools = await client.listTools();
+    const names = tools.tools.map((tool) => tool.name);
+    assert.equal(names.length, 9);
+    for (const writeTool of [
+      "zendesk_create_ticket",
+      "zendesk_update_ticket",
+      "zendesk_add_ticket_comment",
+    ]) {
+      assert.ok(!names.includes(writeTool), `${writeTool} must not be published`);
+    }
+  } finally {
+    await client.close();
+    await server.close();
+    if (original === undefined) delete process.env.ZENDESK_READ_ONLY;
+    else process.env.ZENDESK_READ_ONLY = original;
+  }
+});
+
 test("publishes twelve annotated tools and serves status over MCP", async () => {
   const fetcher: typeof fetch = async (_input, init) => {
     assert.equal(

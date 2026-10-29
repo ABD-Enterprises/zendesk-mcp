@@ -212,6 +212,19 @@ zendesk_list_users,zendesk_list_organizations,\
 zendesk_list_ticket_fields,zendesk_list_ticket_forms"
 ```
 
+`ZENDESK_READ_ONLY` expresses the same intent in one variable:
+
+- Set to `1` or `true`, the surface is the nine read tools; the three write
+  tools are not registered and their calls are refused.
+- An explicit `ZENDESK_ALLOWED_TOOLS` still wins when it names only read
+  tools, so a deployment can combine both without changing the outcome.
+- When read-only mode is on and the allowlist names a write tool, the server
+  refuses to start and names the conflicting tools. Read-only mode never
+  silently re-enables a write tool, and disabling it (`0`, `false`, or unset)
+  restores the allowlist's usual meaning.
+- Any other value is rejected at startup with `ZENDESK_READ_ONLY must be 1,
+  true, 0, or false.`
+
 The allowlist is a deployment control. It bounds what the server will offer;
 OAuth scopes and the account's own role permissions bound what Zendesk will
 allow. It complements those layers and does not replace them — for instance,
@@ -262,8 +275,8 @@ its MCP server version. The stability promise covers this surface:
 - Error behavior: failed calls return `isError` results whose JSON carries
   `error`, plus `status` and `details` when applicable, without credentials.
 - Audit events: the `zendesk_tool_call` name and the fields listed above.
-- Allowlist behavior: valid tool names, startup validation, and filtering
-  semantics.
+- Allowlist behavior: valid tool names, startup validation, filtering
+  semantics, and `ZENDESK_READ_ONLY` semantics as documented above.
 
 It does not cover:
 
