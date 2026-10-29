@@ -622,15 +622,15 @@ async function exchangeCode(
     // page, say) has no keys at all to filter, so it is described by its
     // media type and size instead of echoed: a page that echoed the
     // request would carry the client secret and the one-time code. A
-    // top-level array reaches the same note even though it did parse and
-    // its entries do carry filterable keys: the shape check rejects an
-    // array either way, and an array of unkeyed values is what the filter
-    // cannot see into, so the guard below is deliberate rather than an
-    // oversight. The media type is narrowed to a short, plain type/subtype
-    // first — a header is free text, so nothing stops a middlebox from
-    // stuffing a token-shaped subtype into one; the length bound below
-    // keeps that echo small, and it is a bound on the echo, not a filter
-    // on the header.
+    // top-level array reaches the same note even though it did parse: the
+    // shape check rejects an array either way, so the guard below is
+    // deliberate rather than an oversight. A nested array is not guarded —
+    // it is echoed, and its unkeyed values are the documented value-channel
+    // limit of the filters rather than a separate defect. The media type is
+    // narrowed to a short, plain type/subtype first — a header is free
+    // text, so nothing stops a middlebox from stuffing a token-shaped
+    // subtype into one; the length bound below keeps that echo small, and
+    // it is a bound on the echo, not a filter on the header.
     const mediaType = response.headers
       .get("content-type")
       ?.split(";")[0]
@@ -649,11 +649,14 @@ async function exchangeCode(
     const objectShaped =
       payload !== null && typeof payload === "object" && !Array.isArray(payload);
     // Both filters recurse, and they run before the single JSON.stringify
-    // this message used to do — so a body nested past the call stack's
-    // depth overflows here where the old code did not. Nothing leaks: the
-    // throw below still fires, and its note names the body as unprintable
-    // rather than echoing any of it. A body that parsed from JSON can
-    // never be circular, so depth is the only thing this catch sees.
+    // this message used to do — so a body nested past the filter's depth
+    // overflows here, and on versions where the old stringify also
+    // overflowed it overflows slightly earlier. Either way nothing leaks:
+    // the throw below still fires, and its note names the body as
+    // unprintable rather than echoing any of it. A body that parsed from
+    // JSON can never be circular, so what this catch sees is depth — and,
+    // for a body whose escaped echo would exceed the engine's maximum
+    // string length, size.
     let echo: string | undefined;
     if (objectShaped) {
       try {
