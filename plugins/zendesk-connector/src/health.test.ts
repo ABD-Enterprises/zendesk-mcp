@@ -7,9 +7,19 @@ import { getConfig, type ZendeskConfig } from "./auth.js";
 import { checkHealth, isHealthCheckRequested, runHealthCheck } from "./health.js";
 
 const originalEnv = { ...process.env };
+// The healthcheck validates the tool policy; an ambient read-only flag or
+// allowlist would make these tests depend on the host environment.
+function hostEnv(): NodeJS.ProcessEnv {
+  const env = { ...originalEnv };
+  delete env.ZENDESK_ALLOWED_TOOLS;
+  delete env.ZENDESK_READ_ONLY;
+  return env;
+}
+delete process.env.ZENDESK_ALLOWED_TOOLS;
+delete process.env.ZENDESK_READ_ONLY;
 
 afterEach(() => {
-  process.env = { ...originalEnv };
+  process.env = { ...hostEnv() };
 });
 
 test("reports a missing configuration as a failure", () => {
@@ -103,7 +113,7 @@ test("validates the configured OAuth environment", async () => {
     mode: 0o600,
   });
   process.env = {
-    ...originalEnv,
+    ...hostEnv(),
     ZENDESK_OAUTH_CLIENT_FILE: clientFile,
     ZENDESK_SUBDOMAIN: "example",
     ZENDESK_OAUTH_ACCESS_TOKEN: "invented-access-token",
@@ -123,7 +133,7 @@ test("rejects an OAuth client file readable by other users", async () => {
   // writeFile's mode is masked by umask, so set the permission explicitly.
   await chmod(clientFile, 0o644);
   process.env = {
-    ...originalEnv,
+    ...hostEnv(),
     ZENDESK_OAUTH_CLIENT_FILE: clientFile,
   };
 

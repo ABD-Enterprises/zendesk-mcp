@@ -214,7 +214,7 @@ Four constraints apply:
   readable through the runtime's inspection API; a mounted file is not.
 - Never bake a secret into an image layer. The image entrypoint is the STDIO
   MCP server, and the healthcheck reports unhealthy until the configuration
-  and tool policy are present.
+  and tool policy are valid.
 
 ### Keeping a manager-seeded token file in sync
 
