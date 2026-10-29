@@ -827,7 +827,7 @@ async function exchangeFailure(
   const opened: string[] = [];
   const requests: string[] = [];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = (async (input) => {
     const url = String(input);
     requests.push(url);
     // Fail closed: the exchange is the only call this flow makes today, so
@@ -837,9 +837,15 @@ async function exchangeFailure(
       url.endsWith("/oauth/tokens"),
       `unexpected network call from the flow: ${url}`,
     );
-    return new Response(body, {
+    // The body is encoded to bytes the way a network response arrives: a
+    // string body would make the Response constructor append its own
+    // text/plain content type, which would make an absent content-type
+    // header impossible to craft — and an empty one means just that.
+    const headers = new Headers();
+    if (contentType) headers.set("Content-Type", contentType);
+    return new Response(new TextEncoder().encode(body), {
       status: responseStatus,
-      headers: { "Content-Type": contentType },
+      headers,
     });
   }) as typeof fetch;
 
@@ -1158,6 +1164,31 @@ test("never echoes the raw content of a rejected exchange body", async () => {
       contentType: "application/json",
       shown: (body) =>
         `${JSON.stringify({ error: "e".repeat(600) }).slice(0, 512)}… (body of ${Buffer.byteLength(body, "utf8")} bytes)`,
+    },
+    {
+      // An echo that runs past the bound with a surrogate pair sitting
+      // exactly where a UTF-16 cut would fall: the emoji's high surrogate
+      // is the 512th unit, so a cut by units would end the message in a
+      // lone half. The expectation is written by code points — two whole
+      // emoji survive the cut — so a regression to a unit cut fails here.
+      name: "an over-long body ending mid-emoji",
+      body: JSON.stringify({ a: "x".repeat(505) + "😀".repeat(5) }),
+      contentType: "application/json",
+      shown: (body) => {
+        const points = [...JSON.stringify({ a: "x".repeat(505) + "😀".repeat(5) })];
+        return `${points.slice(0, 512).join("")}… (body of ${Buffer.byteLength(body, "utf8")} bytes)`;
+      },
+    },
+    {
+      // No content-type header at all. The stub encodes the body to bytes
+      // so the Response constructor does not append its own text/plain —
+      // the way a real middlebox can answer without the header. The
+      // media-type branch has nothing to show, and the size still reaches
+      // the message.
+      name: "a missing content type",
+      body: "blocked by a proxy",
+      contentType: "",
+      shown: () => "(non-object body of 18 bytes)",
     },
   ];
 

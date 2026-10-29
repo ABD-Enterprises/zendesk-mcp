@@ -28,7 +28,7 @@ import {
 
 const CALLBACK_PATH = "/callback";
 const TIMEOUT_MS = 5 * 60 * 1000;
-/** The most of a redacted body the error message echoes, in characters. */
+/** The most of a redacted body the error message echoes, in code points. */
 const MAX_ECHO_CHARACTERS = 512;
 /** The longest media type the error message echoes. */
 const MAX_MEDIA_TYPE = 40;
@@ -607,15 +607,16 @@ async function exchangeCode(
     // the filter knows — token, secret, password, authorization, cookie —
     // and the message keeps the rest of the response's diagnosable shape.
     // The filter matches key names, so it cannot see a token a middlebox
-    // parked in the value of some innocuous key; that limit belongs to the
-    // filter and is shared with every audit line, so the call site keeps
-    // the filter's contract rather than growing a second redactor. Two
-    // keys the filter deliberately leaves alone are dropped here instead:
-    // a field named code in this body is the one-time authorization code,
-    // and its client_id is the identifier that pairs with it. The shared
-    // regex may not match either name — audit.test.ts pins a code of
-    // 401 — so the strip lives at the call site, and the status line and
-    // the remaining fields carry the diagnosis.
+    // parked in the value of some innocuous key, nor one used as a key
+    // itself — neither filter inspects what a name contains; that limit
+    // belongs to the filters and is shared with every audit line, so the
+    // call site keeps their contract rather than growing a second
+    // redactor. Two keys they deliberately leave alone are dropped here
+    // instead: a field named code in this body is the one-time
+    // authorization code, and its client_id is the identifier that pairs
+    // with it. The shared regex may not match either name — audit.test.ts
+    // pins a code of 401 — so the strip lives at the call site, and the
+    // status line and the remaining fields carry the diagnosis.
     //
     // A body that never parsed into a JSON object (a proxy's HTML error
     // page, say) has no keys at all to filter, so it is described by its
@@ -651,15 +652,18 @@ async function exchangeCode(
         : undefined;
     // The echo is bounded too: a multi-megabyte body would otherwise be
     // embedded whole, and past the bound the size says everything the
-    // reader needs. The slice runs after both filters, so a cut cannot
+    // reader needs. The cut counts code points, not UTF-16 units, so it
+    // cannot land between the halves of a surrogate pair and leave a lone
+    // one behind — and it runs after both filters, so a cut cannot
     // resurrect what they removed.
+    const points = echo === undefined ? undefined : [...echo];
     const shown =
-      echo === undefined
+      points === undefined
         ? text
           ? `(non-object${described} body of ${count})`
           : "(empty body)"
-        : echo.length > MAX_ECHO_CHARACTERS
-          ? `${echo.slice(0, MAX_ECHO_CHARACTERS)}… (body of ${count})`
+        : points.length > MAX_ECHO_CHARACTERS
+          ? `${points.slice(0, MAX_ECHO_CHARACTERS).join("")}… (body of ${count})`
           : echo;
     throw new Error(
       `Zendesk token exchange failed: HTTP ${response.status} ${shown}`,
