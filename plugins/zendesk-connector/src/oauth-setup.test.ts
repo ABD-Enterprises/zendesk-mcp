@@ -796,6 +796,121 @@ test("opens the authorization URL through the injected launcher", async () => {
   );
 });
 
+test("never prints a token from a rejected token-exchange body", async () => {
+  // The exchange can fail *after* Zendesk has already handed back a real
+  // token: a 200 whose body is missing a refresh_token fails the shape
+  // check, and stringifying that body as-is would put the access token into
+  // the thrown error — where a caller may log or show it. This crafts
+  // exactly that body, so the assertion pins the invariant the roadmap
+  // claims for errors: no credential material, ever.
+  const files = await sandbox();
+  const config: ZendeskConfig = {
+    baseUrl: "https://acme-tools.zendesk.com",
+    mode: "authorization_code",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+    tokenFile: files.tokenFile,
+    scope: "read",
+  };
+  const port = await freePort();
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+  const out: string[] = [];
+  const opened: string[] = [];
+  const leakedToken = "example-access-token-must-not-be-printed";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (!url.endsWith("/oauth/tokens")) {
+      // The exchange is the only call this flow makes; delegate anything
+      // else to the real fetch rather than guessing at the caller's intent.
+      return originalFetch(input, init);
+    }
+    // A token response missing refresh_token: HTTP 200, a real-looking
+    // access token, but not a StoredToken — the exact shape that used to
+    // leak into the error message.
+    return new Response(
+      JSON.stringify({ access_token: leakedToken, token_type: "bearer" }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    // The scaffolding mirrors the positive-path test above: the launcher is
+    // injected so nothing is opened, and the wait is bounded below the poll
+    // deadline so a run that reaches no launcher ends with its own reason
+    // instead of holding the suite open.
+    let ended = false;
+    const outcome = authorizeWithBrowser(
+      config,
+      redirectUri,
+      (line) => out.push(line),
+      recordingSpawn(opened),
+      4_000,
+    ).then(
+      () => {
+        ended = true;
+        return undefined;
+      },
+      (error: unknown) => {
+        ended = true;
+        return error;
+      },
+    );
+
+    const deadline = Date.now() + 5_000;
+    while (opened.length === 0 && !ended) {
+      if (Date.now() > deadline) {
+        throw new Error("the injected launcher was never called");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (opened.length === 0) {
+      // The loop only leaves with the launcher recorded or the run ended:
+      // here the run ended before any launcher call, so its own error says
+      // why. A wait that ran out means the launcher was never reached.
+      const failure = await outcome;
+      assert.ok(failure instanceof Error);
+      if (!failure.message.includes("Timed out")) throw failure;
+      throw new Error("the injected launcher was never called");
+    }
+    const authorizeUrl = opened.find((arg) => arg.startsWith("http"));
+    assert.ok(authorizeUrl !== undefined);
+    // The state the run generated, echoed back the way the browser would:
+    // with it correct, the server accepts the code and proceeds to the
+    // exchange the stub above is waiting to answer.
+    const state = new URL(authorizeUrl).searchParams.get("state");
+    assert.ok(state !== null);
+    const status = await new Promise<number>((resolve, reject) => {
+      const request = get(
+        `http://127.0.0.1:${port}/callback?code=example-code&state=${encodeURIComponent(state)}`,
+        { agent: false },
+        (response) => {
+          response.resume();
+          response.once("end", () => resolve(response.statusCode ?? 0));
+        },
+      );
+      request.once("error", reject);
+    });
+    // The server answers 200 the moment it has the code, before the exchange
+    // runs — so the exchange's rejection is the run's own error, awaited
+    // below, not a status on this response.
+    assert.equal(status, 200);
+
+    const error = await outcome;
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
+    // The message keeps the diagnosable shape but replaces the credential
+    // material: the token and the client secret are both gone.
+    assert.match(error.message, /\[REDACTED\]/);
+    assert.equal(error.message.includes(leakedToken), false);
+    assert.equal(error.message.includes("example-client-secret"), false);
+    // Nothing was stored: the run failed before any token file was written.
+    await assert.rejects(readFile(files.tokenFile), /ENOENT/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("refuses a client file that other users can read", async (ctx) => {
   // Node reports synthetic permission bits on Windows (group and other always
   // look set), so the check is skipped there: this host cannot show the

@@ -24,6 +24,7 @@ import {
   type StoredToken,
   type ZendeskConfig,
 } from "./auth.js";
+import { redact } from "./audit.js";
 
 const CALLBACK_PATH = "/callback";
 const TIMEOUT_MS = 5 * 60 * 1000;
@@ -595,8 +596,13 @@ async function exchangeCode(
   const text = await response.text();
   const payload = text ? safeJson(text) : undefined;
   if (!response.ok || !isTokenResponse(payload)) {
+    // A rejected body can still carry a real token: a 200 that fails the
+    // shape check (a missing refresh_token, say) would otherwise print the
+    // access token into the thrown error, which a caller may log or show.
+    // The audit sink's redact() is the house filter, so the message keeps
+    // the response's diagnosable shape without leaking credential material.
     throw new Error(
-      `Zendesk token exchange failed: HTTP ${response.status} ${JSON.stringify(payload)}`,
+      `Zendesk token exchange failed: HTTP ${response.status} ${JSON.stringify(redact(payload))}`,
     );
   }
 
