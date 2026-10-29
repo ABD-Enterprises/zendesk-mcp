@@ -39,6 +39,9 @@ configuration without starting the server:
 node dist/index.js --healthcheck
 ```
 
+A healthy result means the configuration is present and well-formed — the
+first `zendesk_status` tool call is the real readiness check.
+
 If anything fails, [Troubleshooting](#troubleshooting) maps the common errors
 to their fixes. Before enabling the write tools against a production account,
 consider limiting the session to the read tools with `ZENDESK_ALLOWED_TOOLS`
@@ -332,15 +335,16 @@ Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-a
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `Zendesk connector is not configured. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL.` | No account identifier reached the server. Set `ZENDESK_SUBDOMAIN`, or add `"subdomain"` to `~/.config/codex-zendesk/client.json`. Environment variables override the file. |
+| `Zendesk connector is not configured. Set ZENDESK_SUBDOMAIN or ZENDESK_BASE_URL.` | No account identifier reached the server. Set `ZENDESK_SUBDOMAIN` (or `ZENDESK_BASE_URL`), or add `"subdomain"` (or `"baseUrl"`) to `~/.config/codex-zendesk/client.json`. Environment variables override the file. |
 | `Zendesk OAuth is not configured. Set OAuth client credentials and run npm run oauth:setup...` | The OAuth client id and secret are missing. Set `ZENDESK_OAUTH_CLIENT_ID` and `ZENDESK_OAUTH_CLIENT_SECRET`, or add them to `client.json`. |
-| `No refresh token found in ...` or `Unable to read OAuth token file ...` | The authorization-code token store is missing or unreadable. Run `npm run oauth:setup` again, and check `ZENDESK_OAUTH_TOKEN_FILE` if the file lives elsewhere. |
+| `ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET are required for this OAuth mode.` | `ZENDESK_OAUTH_MODE` is set explicitly and either credential is missing. Set both values (environment or `client.json`) as in the row above. |
+| `No refresh token found in ...` or `Unable to read OAuth token file ...` | The authorization-code token store is missing, unreadable, or holds no refresh token. Run `npm run oauth:setup` again, and check `ZENDESK_OAUTH_TOKEN_FILE` if the file lives elsewhere. |
 | `OAuth client configuration ... must be readable only by its owner (chmod 600).` | The client file is readable by group or others. Run `chmod 600 ~/.config/codex-zendesk/client.json` (or fix the file `ZENDESK_OAUTH_CLIENT_FILE` names). |
 | `npm run oauth:setup` fails to listen on port 3219 | Another process holds the port (often an earlier setup still waiting for authorization). Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
-| The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` (scheme, host, port, and path all count); correct it in Admin Center and run setup again. Declining consent or a declined scope produces the same symptom. |
-| Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool. Add the scope to `ZENDESK_OAUTH_SCOPE`; in authorization-code mode re-run `npm run oauth:setup` so the larger grant replaces the stored token (client-credentials mode requests the new scope on its next token request), then restart the server so it loads the new configuration. |
+| The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` (scheme, host, port, and path all count); correct it in Admin Center, run setup again, then restart the server so it picks up the fresh token. Declining consent or a declined scope produces the same symptom. |
+| Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool, or the account's role lacks the underlying permission. Add the scope to `ZENDESK_OAUTH_SCOPE`: authorization-code mode re-runs `npm run oauth:setup` so the larger grant replaces the stored token, client-credentials mode carries it on the next token request, and `access_token` mode cannot change it — obtain a token with the needed scope there. Then restart the server so it loads the new configuration. |
 | A desktop MCP client reports "not configured" although your shell works | Desktop applications do not inherit shell exports. Put the settings in `~/.config/codex-zendesk/client.json`, which the server reads when the environment is empty. |
-| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). It validates configuration and exits; it never contacts Zendesk and never prints credentials. |
+| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). Healthy means the configuration is present and well-formed — not that Zendesk is reachable or that authorization succeeded (see [Healthcheck and shutdown](#healthcheck-and-shutdown)); use `zendesk_status` for readiness. The check never contacts Zendesk and never prints credentials. |
 
 ## Development
 
