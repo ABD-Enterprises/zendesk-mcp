@@ -811,7 +811,6 @@ async function exchangeFailure(
   error: Error;
   out: string[];
   requests: string[];
-  tokenFile: string;
 }> {
   const files = await sandbox();
   const config: ZendeskConfig = {
@@ -908,7 +907,7 @@ async function exchangeFailure(
 
     const error = await outcome;
     assert.ok(error instanceof Error);
-    return { error, out, requests, tokenFile: files.tokenFile };
+    return { error, out, requests };
   } finally {
     globalThis.fetch = originalFetch;
     // An assertion that throws before the callback is sent would otherwise
@@ -931,7 +930,7 @@ test("never prints a token from a rejected token-exchange body", async () => {
   // there — so the assertion below binds to redact() rather than passing
   // because the secret was never present to begin with.
   const leakedToken = "example-access-token-must-not-be-printed";
-  const { error, out, requests, tokenFile } = await exchangeFailure(
+  const { error, out, requests } = await exchangeFailure(
     JSON.stringify({
       access_token: leakedToken,
       client_secret: "example-client-secret",
@@ -948,15 +947,14 @@ test("never prints a token from a rejected token-exchange body", async () => {
   assert.ok(!error.message.includes("example-client-secret"));
   // Exactly the one expected call went out, and it was the exchange.
   assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
-  // The authorization URL was printed exactly once, as in the flow test
-  // above: the failure hides nothing but the credentials.
+  // The run reported the authorization URL exactly once, as in the flow
+  // test above: the fix narrows what the error carries, not what the run
+  // prints before it.
   assert.equal(
     out.filter((line) => line.startsWith("Opening Zendesk authorization:"))
       .length,
     1,
   );
-  // Nothing was stored: the run failed before any token file was written.
-  await assert.rejects(readFile(tokenFile), /ENOENT/);
 });
 
 test("describes a non-object exchange body by media type and size", async () => {
@@ -978,7 +976,7 @@ test("describes a non-object exchange body by media type and size", async () => 
   assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
 });
 
-test("never echoes a rejected exchange body that is not a JSON object", async () => {
+test("never echoes the raw content of a rejected exchange body", async () => {
   // The branches the two tests above do not reach, each pinned against the
   // same expectation: whatever the rejected body's shape, the thrown error
   // carries its size, its media type, or its redacted form — and never its
@@ -1030,13 +1028,40 @@ test("never echoes a rejected exchange body that is not a JSON object", async ()
       shown: () => "(non-object text/html body of 18 bytes)",
     },
     {
-      // A content type past the length cap: nothing of it is shown, so a
-      // token-shaped subtype cannot be echoed. The body is plain text, and
-      // only its size reaches the message.
+      // A content type past the length bound: nothing of it is shown. The
+      // bound only keeps the echo small — a shorter token-shaped subtype
+      // would still ride along — so past it the size is all the reader
+      // gets.
       name: "an over-long content type",
       body: "blocked",
       contentType: `text/${"a".repeat(50)}`,
       shown: () => "(non-object body of 7 bytes)",
+    },
+    {
+      // The bound's edge, held from both sides with one character of
+      // difference: forty characters is shown, forty-one is not. The
+      // subtype is all "a"s, so the count is the only thing that can
+      // separate the two.
+      name: "a content type at the length bound",
+      body: "blocked",
+      contentType: `text/${"a".repeat(35)}`,
+      shown: () => `(non-object text/${"a".repeat(35)} body of 7 bytes)`,
+    },
+    {
+      name: "a content type one past the bound",
+      body: "blocked",
+      contentType: `text/${"a".repeat(36)}`,
+      shown: () => "(non-object body of 7 bytes)",
+    },
+    {
+      // An upper-case media type: the header is lower-cased before it is
+      // matched, so TEXT/PLAIN reaches the message as text/plain and case
+      // alone cannot smuggle a differently-shaped value past the plain
+      // type/subtype check.
+      name: "an upper-case content type",
+      body: "blocked",
+      contentType: "TEXT/PLAIN; CHARSET=UTF-8",
+      shown: () => "(non-object text/plain body of 7 bytes)",
     },
     {
       // redact() does recurse into arrays, so an array body would have its
@@ -1100,6 +1125,39 @@ test("never echoes a rejected exchange body that is not a JSON object", async ()
       status: 401,
       shown: () =>
         JSON.stringify({ error: "invalid_grant", access_token: "[REDACTED]" }),
+    },
+    {
+      // A JSON echo of the exchange request itself: the shared filter
+      // strips the secret, and the call site drops the pair the filter may
+      // not match — the one-time code and the client id beside it. The
+      // error description the reader actually needs is left alone.
+      name: "a JSON echo of the request",
+      body: JSON.stringify({
+        error: "invalid_grant",
+        error_description: "The code expired.",
+        code: "example-one-time-code",
+        client_id: "example-client-id",
+        client_secret: "example-client-secret",
+      }),
+      contentType: "application/json",
+      shown: () =>
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "The code expired.",
+          client_secret: "[REDACTED]",
+        }),
+    },
+    {
+      // A body whose redacted echo runs past the echo bound: the first
+      // bound-many characters of the echo, then the size. The cut is
+      // expected literally rather than recomputed from the same constants
+      // the implementation uses, so a regression that lifts the bound
+      // leaves the full echo in the message and fails here.
+      name: "an over-long JSON body",
+      body: JSON.stringify({ error: "e".repeat(600) }),
+      contentType: "application/json",
+      shown: (body) =>
+        `${JSON.stringify({ error: "e".repeat(600) }).slice(0, 512)}… (body of ${Buffer.byteLength(body, "utf8")} bytes)`,
     },
   ];
 

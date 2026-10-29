@@ -28,6 +28,10 @@ import {
 
 const CALLBACK_PATH = "/callback";
 const TIMEOUT_MS = 5 * 60 * 1000;
+/** The most of a redacted body the error message echoes, in characters. */
+const MAX_ECHO_CHARACTERS = 512;
+/** The longest media type the error message echoes. */
+const MAX_MEDIA_TYPE = 40;
 /** The hint every failure line carries, so the reader knows where to look. */
 const DOCTOR_HINT = "Run npm run doctor to check the configuration.";
 /** The prompt that asks for the account, with the two accepted spellings. */
@@ -603,12 +607,15 @@ async function exchangeCode(
     // the filter knows — token, secret, password, authorization, cookie —
     // and the message keeps the rest of the response's diagnosable shape.
     // The filter matches key names, so it cannot see a token a middlebox
-    // parked in the value of some innocuous key, and a JSON echo of the
-    // request keeps its client_id and one-time code beside the stripped
-    // secret. That limit belongs to the filter and is shared with every
-    // audit line — widening it is ruled out by audit.test.ts, which
-    // deliberately preserves a field named code — so the call site keeps
-    // the filter's contract rather than growing a second redactor.
+    // parked in the value of some innocuous key; that limit belongs to the
+    // filter and is shared with every audit line, so the call site keeps
+    // the filter's contract rather than growing a second redactor. Two
+    // keys the filter deliberately leaves alone are dropped here instead:
+    // a field named code in this body is the one-time authorization code,
+    // and its client_id is the identifier that pairs with it. The shared
+    // regex may not match either name — audit.test.ts pins a code of
+    // 401 — so the strip lives at the call site, and the status line and
+    // the remaining fields carry the diagnosis.
     //
     // A body that never parsed into a JSON object (a proxy's HTML error
     // page, say) has no keys at all to filter, so it is described by its
@@ -619,8 +626,10 @@ async function exchangeCode(
     // array either way, and an array of unkeyed values is what the filter
     // cannot see into, so the guard below is deliberate rather than an
     // oversight. The media type is narrowed to a short, plain type/subtype
-    // first — a header is free text, and nothing stops a middlebox from
-    // stuffing a token-shaped subtype into one.
+    // first — a header is free text, so nothing stops a middlebox from
+    // stuffing a token-shaped subtype into one; the length bound below
+    // keeps that echo small, and it is a bound on the echo, not a filter
+    // on the header.
     const mediaType = response.headers
       .get("content-type")
       ?.split(";")[0]
@@ -628,19 +637,30 @@ async function exchangeCode(
       .toLowerCase();
     const described =
       mediaType !== undefined &&
-      mediaType.length <= 40 &&
+      mediaType.length <= MAX_MEDIA_TYPE &&
       /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mediaType)
         ? ` ${mediaType}`
         : "";
     // The size is the utf-8 length of the decoded text, which is what the
     // message has in hand; a count of the raw wire bytes is not.
     const size = Buffer.byteLength(text, "utf8");
-    const shown =
+    const count = `${size} ${size === 1 ? "byte" : "bytes"}`;
+    const echo =
       payload !== null && typeof payload === "object" && !Array.isArray(payload)
-        ? JSON.stringify(redact(payload))
-        : text
-          ? `(non-object${described} body of ${size} ${size === 1 ? "byte" : "bytes"})`
-          : "(empty body)";
+        ? JSON.stringify(dropExchangeEcho(redact(payload)))
+        : undefined;
+    // The echo is bounded too: a multi-megabyte body would otherwise be
+    // embedded whole, and past the bound the size says everything the
+    // reader needs. The slice runs after both filters, so a cut cannot
+    // resurrect what they removed.
+    const shown =
+      echo === undefined
+        ? text
+          ? `(non-object${described} body of ${count})`
+          : "(empty body)"
+        : echo.length > MAX_ECHO_CHARACTERS
+          ? `${echo.slice(0, MAX_ECHO_CHARACTERS)}… (body of ${count})`
+          : echo;
     throw new Error(
       `Zendesk token exchange failed: HTTP ${response.status} ${shown}`,
     );
@@ -715,6 +735,23 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+/**
+ * Drops the two fields the exchange request itself carries — code and
+ * client_id — from a rejected body before it is echoed. A field named code
+ * here is the one-time authorization code, and the shared audit filter may
+ * not match that name — audit.test.ts pins a code of 401 — so the strip
+ * lives at this call site rather than in the filter.
+ */
+function dropExchangeEcho(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(dropExchangeEcho);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !/^(code|client_id)$/i.test(key))
+      .map(([key, child]) => [key, dropExchangeEcho(child)]),
+  );
 }
 
 /** True when a token response carries both tokens the connector stores. */
