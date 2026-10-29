@@ -314,14 +314,15 @@ contacting Zendesk:
 - The tool policy (`ZENDESK_READ_ONLY` and `ZENDESK_ALLOWED_TOOLS`).
 - The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219): it
   must be an integer from 1 to 65535 and free to bind on `127.0.0.1`. This
-  check runs only in `authorization_code` mode and only before setup has
-  stored a token, because nothing listens on the port afterwards.
-- The stored token file in `authorization_code` mode: it must exist (unless
-  setup has not run yet — a missing token is reported as "run
-  `npm run oauth:setup`"), be a regular file, parse as JSON, contain an
-  `access_token`, and be readable only by its owner. The permission check is
-  doctor-only; the server itself reads the token file without inspecting its
-  permissions.
+  check runs only in `authorization_code` mode and only when the stored token
+  is missing or unusable — those are exactly the states whose remedy is
+  re-running setup, which needs the port.
+- The stored token file in `authorization_code` mode: it must exist (a missing
+  file is reported as "run `npm run oauth:setup`"), be a regular file, parse
+  as JSON, and contain both an `access_token` and a `refresh_token` (renewal
+  fails without one once the access token expires). It must also be readable
+  only by its owner. The permission check is doctor-only; the server itself
+  reads the token file without inspecting its permissions.
 
 Run it with `npm run doctor`, or directly:
 
@@ -331,8 +332,13 @@ node plugins/zendesk-connector/dist/index.js --doctor
 
 A clean run prints one all-clear line on stdout and exits 0. Every problem is
 one actionable line on stderr and the exit code is 1, so a script can gate on
-it. The output reuses the server's own error messages and never prints
-credential values.
+it. The configuration and token-file messages are the server's own error
+strings (the port and permission messages are the doctor's), and nothing
+printed carries credential values.
+
+An explicit command-line flag always wins over the environment-variable
+shortcuts: `--doctor` (or `--logout`) runs its own mode even on a host that
+exports `ZENDESK_HEALTHCHECK=1`.
 
 ### Healthcheck and shutdown
 
@@ -390,7 +396,7 @@ Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-a
 | `ZENDESK_READ_ONLY conflicts with write tools in ZENDESK_ALLOWED_TOOLS: ...` | Read-only mode is on but the allowlist names write tools. Remove those names from `ZENDESK_ALLOWED_TOOLS`, or unset `ZENDESK_READ_ONLY` if writes are intended. |
 | `OAuth token file ... must be readable only by its owner (chmod 600).` | Reported by the doctor: the token store is accessible to group or others. Run `chmod 600 ~/.config/codex-zendesk/oauth.json` (or fix the file `ZENDESK_OAUTH_TOKEN_FILE` names). The server itself does not check the token file's permissions, so this warning is worth fixing before the first run. |
 | `ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535.` | Reported by the doctor and by `npm run oauth:setup`: the port variable does not parse as a port number. Set it to an integer from 1 to 65535, or unset it to use the default 3219. |
-| `npm run oauth:setup` fails to listen on port 3219 | Another process holds the port (often an earlier setup still waiting for authorization). The doctor reports the same line before setup runs. Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
+| `npm run oauth:setup` fails to listen on port 3219, or the doctor reports `npm run oauth:setup cannot listen on port 3219: another process holds the port ...` | Another process holds the port (often an earlier setup still waiting for authorization); the doctor reports this before setup runs, whenever the stored token is missing or unusable. Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
 | The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` — or the URL for your `ZENDESK_OAUTH_CALLBACK_PORT`; scheme, host, port, and path all count. Correct it in Admin Center, run setup again, then restart the server so it picks up the fresh token. Declining consent or a declined scope produces the same symptom. |
 | Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool, or the account's role lacks the underlying permission. Add the scope to `ZENDESK_OAUTH_SCOPE` (and, if the OAuth client has allowed scopes configured in Admin Center, add it there too — otherwise setup fails with `HTTP 400 invalid_scope`): authorization-code mode re-runs `npm run oauth:setup` so the larger grant replaces the stored token, client-credentials mode carries it on the next token request, and `access_token` mode cannot change it — obtain a token with the needed scope there. Then restart the server so it loads the new configuration. |
 | A desktop MCP client reports "not configured" although your shell works | Desktop applications do not inherit shell exports. Put the settings in `~/.config/codex-zendesk/client.json`, which the server reads when the environment is empty. |

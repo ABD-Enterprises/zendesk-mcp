@@ -82,8 +82,8 @@ One asymmetry is worth knowing: the permission check applies to the client
 file, not to the token file. The connector does not inspect the permissions of
 a token file it reads. Keep the token file owner-only yourself. The doctor
 preflight (`npm run doctor`) does inspect the token file's permissions and
-warns when group or other can read it, so a preflight run closes this gap
-before the first request.
+warns when group or other can read it, turning this silent gap into a
+reported one before the first request.
 
 ### Repository, logs, and the console
 

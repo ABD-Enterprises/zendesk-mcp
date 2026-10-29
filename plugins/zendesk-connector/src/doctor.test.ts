@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, test } from "node:test";
 import type { ZendeskConfig } from "./auth.js";
 import { checkDoctor, isDoctorRequested, runDoctor } from "./doctor.js";
@@ -188,6 +190,114 @@ test("reports a token file without an access token", async () => {
   assert.match(problems[0], /does not contain an access_token/);
 });
 
+test("reports a token file without a refresh token", async () => {
+  const tokenFile = await tempTokenFile(
+    JSON.stringify({ access_token: "invented-access-token" }),
+  );
+  const { calls, probe } = probeRecorder(true);
+
+  const problems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile }),
+    probePort: probe,
+  });
+
+  // Renewal throws this exact message once the access token expires, so the
+  // doctor reports it now — and the port a setup re-run needs is probed.
+  assert.deepEqual(calls, [3219]);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /No refresh token found in .* Run npm run oauth:setup/);
+});
+
+test("probes the port when the stored token is unusable", async () => {
+  const tokenFile = await tempTokenFile("{not json");
+  const { calls, probe } = probeRecorder(false);
+
+  const problems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile }),
+    probePort: probe,
+  });
+
+  // The remedy for an unusable token is re-running setup, so the port setup
+  // would need is reported as busy even though a token file exists.
+  assert.deepEqual(calls, [3219]);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /cannot listen on port 3219/);
+  assert.match(problems[1], /Run npm run oauth:setup/);
+});
+
+test("reports a read-only allowlist that names a write tool", async () => {
+  process.env.ZENDESK_READ_ONLY = "1";
+  process.env.ZENDESK_ALLOWED_TOOLS = "zendesk_status,zendesk_create_ticket";
+
+  const problems = await checkDoctor({ loadConfig: () => config() });
+
+  assert.equal(problems.length, 1);
+  assert.match(
+    problems[0],
+    /ZENDESK_READ_ONLY conflicts with write tools in ZENDESK_ALLOWED_TOOLS: zendesk_create_ticket/,
+  );
+});
+
+test("an explicit --doctor flag wins over the healthcheck environment variable", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const clientFile = join(directory, "client.json");
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      subdomain: "example",
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+    }),
+    { mode: 0o600 },
+  );
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+    }),
+    { mode: 0o600 },
+  );
+
+  const result = await runEntry(["--doctor"], {
+    ...cleanEnv({
+      ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+      ZENDESK_OAUTH_TOKEN_FILE: tokenFile,
+      ZENDESK_HEALTHCHECK: "1",
+    }),
+  });
+
+  // Without the flag precedence the host's ZENDESK_HEALTHCHECK=1 would make
+  // the process print a healthcheck result and skip the doctor entirely.
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /Zendesk connector doctor: all checks passed/);
+  assert.ok(!result.stdout.includes("healthcheck"));
+  assert.equal(result.stderr, "");
+});
+
+test("the default probe reports a free port as free", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-test-"));
+  const listener = createServer();
+  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const address = listener.address();
+  assert.ok(address && typeof address === "object");
+  // Close the listener first: the port the OS assigned is now free, and the
+  // doctor's real loopback bind must report it as such.
+  await new Promise((resolve) => listener.close(resolve));
+  process.env.ZENDESK_OAUTH_CALLBACK_PORT = String(address.port);
+
+  // No probePort: the real bind path, including its success branch.
+  const problems = await checkDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+  });
+
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /Run npm run oauth:setup/);
+  assert.ok(!problems[0].includes("cannot listen on port"));
+});
+
 test("skips the token and port checks outside authorization_code mode", async () => {
   const { calls, probe } = probeRecorder(true);
 
@@ -239,7 +349,10 @@ test("passes against a real authorization-code configuration", async () => {
   );
   await writeFile(
     tokenFile,
-    JSON.stringify({ access_token: "invented-access-token" }),
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+    }),
     { mode: 0o600 },
   );
   process.env = cleanEnv({
@@ -300,6 +413,29 @@ function probeRecorder(result: boolean): {
       return result;
     },
   };
+}
+
+interface EntryResult {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** Runs the built entry point with the given arguments and environment. */
+function runEntry(args: string[], env: NodeJS.ProcessEnv): Promise<EntryResult> {
+  return new Promise((resolve, reject) => {
+    const entry = fileURLToPath(new URL("./index.js", import.meta.url));
+    const child = spawn(process.execPath, [entry, ...args], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.once("error", reject);
+    child.once("close", (code) => resolve({ code, stdout, stderr }));
+  });
 }
 
 async function tempTokenFile(contents: string): Promise<string> {

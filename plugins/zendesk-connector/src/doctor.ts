@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { getConfig, type ZendeskConfig } from "./auth.js";
+import { getConfig, resolveCallbackPort, type ZendeskConfig } from "./auth.js";
 import { assertUsableConfig } from "./health.js";
 import { configuredTools } from "./policy.js";
 
@@ -19,8 +19,12 @@ export interface DoctorOptions {
 }
 
 interface TokenFileState {
-  /** True when the token file could be stat'ed (it exists, whatever state it is in). */
-  exists: boolean;
+  /**
+   * True when the stored token cannot be used and the remedy is to run
+   * `npm run oauth:setup` again — the one problem whose fix needs the
+   * callback port, so the port check runs for these states too.
+   */
+  setupNeeded: boolean;
   /** Why the token file is not usable as stored, undefined when it is fine. */
   problem?: string;
 }
@@ -40,9 +44,10 @@ export function isDoctorRequested(
  * performs, including the client file's permission requirement), the tool
  * policy, the setup callback port, and the authorization-code token file. The
  * port and token-file checks run only in `authorization_code` mode, and the
- * port is checked only before setup has stored a token — afterwards nothing
- * listens on it. A failing configuration skips the two dependent checks, so a
- * single run never repeats the same problem.
+ * port is checked only when the stored token is missing or unusable — those
+ * are exactly the states where the remedy is running `npm run oauth:setup`,
+ * which needs the port. A failing configuration skips the two dependent
+ * checks, so a single run never repeats the same problem.
  */
 export async function checkDoctor(
   options: DoctorOptions = {},
@@ -65,7 +70,7 @@ export async function checkDoctor(
 
   if (config?.mode === "authorization_code") {
     const token = inspectTokenFile(config.tokenFile);
-    if (!token.exists) {
+    if (token.setupNeeded) {
       const portProblem = await checkCallbackPort(options.probePort);
       if (portProblem) problems.push(portProblem);
     }
@@ -77,8 +82,10 @@ export async function checkDoctor(
 
 /**
  * Runs the doctor preflight: one line per problem on stderr and exit 1, or a
- * single all-clear line on stdout and exit 0. The messages come from the same
- * error strings startup uses, so they never carry credential material.
+ * single all-clear line on stdout and exit 0. The configuration and token-file
+ * messages reuse the exact error strings startup produces (the port and
+ * permission messages are doctor-only), and none of them carry credential
+ * material.
  */
 export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
   const writeOut =
@@ -102,12 +109,18 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
 }
 
 /**
- * Inspects the stored authorization-code token file. The read failures reuse
- * the exact messages startup produces, so the troubleshooting table covers the
- * doctor's output too. The permission check is doctor-only: startup reads a
- * token file without inspecting its permissions.
+ * Inspects the stored authorization-code token file. The unreadable,
+ * unparseable, and incomplete-token messages reuse the exact strings startup
+ * produces, so the troubleshooting table covers the doctor's output too. The
+ * permission check is doctor-only: startup reads a token file without
+ * inspecting its permissions.
  */
 function inspectTokenFile(tokenFile: string): TokenFileState {
+  const unreadable: TokenFileState = {
+    setupNeeded: true,
+    problem: `Unable to read OAuth token file ${tokenFile}. Run npm run oauth:setup from the plugin directory.`,
+  };
+
   let mode: number;
   let isFile: boolean;
   try {
@@ -115,25 +128,27 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
     mode = stats.mode;
     isFile = stats.isFile();
   } catch (error) {
+    // ENOENT means setup has not stored a token yet; any other stat failure
+    // (a permission problem on the directory, say) is reported as an
+    // unreadable file without claiming that setup will fix it.
     const missing =
       error instanceof Error &&
       "code" in error &&
       (error as NodeJS.ErrnoException).code === "ENOENT";
-    return {
-      exists: !missing,
-      problem: `Unable to read OAuth token file ${tokenFile}. Run npm run oauth:setup from the plugin directory.`,
-    };
+    return missing
+      ? unreadable
+      : { setupNeeded: false, problem: unreadable.problem };
   }
 
   if (!isFile) {
     return {
-      exists: true,
+      setupNeeded: false,
       problem: `OAuth token file ${tokenFile} is not a regular file.`,
     };
   }
   if ((mode & 0o077) !== 0) {
     return {
-      exists: true,
+      setupNeeded: false,
       problem: `OAuth token file ${tokenFile} must be readable only by its owner (chmod 600).`,
     };
   }
@@ -142,24 +157,27 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
   try {
     payload = JSON.parse(readFileSync(tokenFile, "utf8"));
   } catch {
-    return {
-      exists: true,
-      problem: `Unable to read OAuth token file ${tokenFile}. Run npm run oauth:setup from the plugin directory.`,
-    };
+    return unreadable;
   }
-  if (!payload || typeof payload !== "object") {
+  const token = (payload ?? {}) as {
+    access_token?: unknown;
+    refresh_token?: unknown;
+  };
+  if (!token.access_token) {
     return {
-      exists: true,
+      setupNeeded: true,
       problem: `OAuth token file ${tokenFile} does not contain an access_token.`,
     };
   }
-  if (!(payload as { access_token?: unknown }).access_token) {
+  if (!token.refresh_token) {
+    // Renewal throws this exact message once the access token expires, so a
+    // token file without a refresh token is an hour away from failing.
     return {
-      exists: true,
-      problem: `OAuth token file ${tokenFile} does not contain an access_token.`,
+      setupNeeded: true,
+      problem: `No refresh token found in ${tokenFile}. Run npm run oauth:setup from the plugin directory.`,
     };
   }
-  return { exists: true };
+  return { setupNeeded: false };
 }
 
 /**
@@ -170,7 +188,7 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
 async function checkCallbackPort(
   probe: (port: number) => Promise<boolean> = probePortFree,
 ): Promise<string | undefined> {
-  const port = Number(process.env.ZENDESK_OAUTH_CALLBACK_PORT ?? 3219);
+  const port = resolveCallbackPort();
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     return "ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535.";
   }

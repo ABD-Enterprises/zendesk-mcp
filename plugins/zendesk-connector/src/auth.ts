@@ -108,6 +108,23 @@ export function oauthClientFilePath(): string {
   return env("ZENDESK_OAUTH_CLIENT_FILE") ?? defaultOAuthClientFile();
 }
 
+/** The default loopback port the one-time browser setup listens on. */
+export const OAUTH_CALLBACK_PORT_DEFAULT = 3219;
+
+/**
+ * Reads the setup callback port exactly as `oauth:setup` interprets it: a raw
+ * number, with no empty-value or `${...}` placeholder leniency — an unusable
+ * value must surface as an error in both the setup and the doctor, not be
+ * silently defaulted in one of them.
+ */
+export function resolveCallbackPort(
+  envSource: NodeJS.ProcessEnv = process.env,
+): number {
+  return Number(
+    envSource.ZENDESK_OAUTH_CALLBACK_PORT ?? OAUTH_CALLBACK_PORT_DEFAULT,
+  );
+}
+
 export function getConfig(): ZendeskConfig {
   const clientFile = oauthClientFilePath();
   const saved = readOAuthClientFile(clientFile);

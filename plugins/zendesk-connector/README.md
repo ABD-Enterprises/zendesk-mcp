@@ -83,16 +83,22 @@ matter before the first request:
 
 - The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219) parses
   as an integer from 1 to 65535 and is free to bind on `127.0.0.1`. This runs
-  only in `authorization_code` mode and only before a token has been stored.
+  only in `authorization_code` mode and only when the stored token is missing
+  or unusable — the states whose remedy is re-running setup, which needs the
+  port.
 - The stored token file in `authorization_code` mode: it exists (a missing
   file means "run `npm run oauth:setup`"), is a regular file, parses as JSON,
-  contains an `access_token`, and is readable only by its owner. The
-  permission check is doctor-only; the server reads the token file without
-  inspecting its permissions.
+  and contains both an `access_token` and a `refresh_token` (renewal fails
+  without one once the access token expires). It must also be readable only by
+  its owner. The permission check is doctor-only; the server reads the token
+  file without inspecting its permissions.
 
 A clean run prints one all-clear line on stdout and exits 0. Each problem is
-one actionable line on stderr and the exit code is 1. The messages reuse the
-server's own error strings and never contain credential values.
+one actionable line on stderr and the exit code is 1. The configuration and
+token-file messages are the server's own error strings (the port and
+permission messages are the doctor's), and nothing printed carries credential
+values. An explicit `--doctor` flag wins over the `ZENDESK_HEALTHCHECK`
+environment-variable shortcut.
 
 ## Healthcheck and shutdown
 

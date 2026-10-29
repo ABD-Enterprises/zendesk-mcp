@@ -7,11 +7,22 @@ import { isLogoutRequested, runLogout } from "./logout.js";
 import { createZendeskServer } from "./server.js";
 import { installShutdownHandlers } from "./shutdown.js";
 
-if (isHealthCheckRequested()) {
+const argv = process.argv.slice(2);
+const wantsDoctor = isDoctorRequested(argv);
+const wantsLogout = isLogoutRequested(argv);
+
+// An explicit command-line flag wins over the environment-variable shortcut:
+// a host that exports ZENDESK_HEALTHCHECK=1 still gets the mode its command
+// line asks for, instead of a healthcheck that would silently skip the
+// doctor's or the logout's checks.
+if (
+  argv.includes("--healthcheck") ||
+  (!wantsDoctor && !wantsLogout && isHealthCheckRequested())
+) {
   process.exitCode = runHealthCheck();
-} else if (isDoctorRequested()) {
+} else if (wantsDoctor) {
   process.exitCode = await runDoctor();
-} else if (isLogoutRequested()) {
+} else if (wantsLogout) {
   process.exitCode = await runLogout();
 } else {
   const server = createZendeskServer();

@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { getConfig, writeTokenFile } from "./auth.js";
+import { getConfig, resolveCallbackPort, writeTokenFile } from "./auth.js";
 
-const CALLBACK_PORT = Number(process.env.ZENDESK_OAUTH_CALLBACK_PORT ?? 3219);
+const CALLBACK_PORT = resolveCallbackPort();
 const CALLBACK_PATH = "/callback";
 const TIMEOUT_MS = 5 * 60 * 1000;
 
