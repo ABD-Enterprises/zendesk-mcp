@@ -77,11 +77,13 @@ The doctor diagnoses a setup without contacting Zendesk. Run it with:
 npm run doctor
 ```
 
-or directly with `node dist/index.js --doctor`. The `npm run` form rebuilds
-first, so it needs the dev dependencies that `npm ci` installs; an install
-pruned of them runs the direct command instead. It performs the
-[healthcheck](#healthcheck-and-shutdown) validation and adds the checks that
-matter before the first request:
+or directly with `node dist/index.js --doctor`. The `npm run` form is for a
+git checkout: it rebuilds first, so it needs the dev dependencies that
+`npm ci` installs. An installed package ships only `dist` (no sources or
+`tsconfig`), so there the direct form is the only one —
+`zendesk-mcp --doctor` when the package's `bin` entry is on your `PATH`.
+It performs the [healthcheck](#healthcheck-and-shutdown) validation and adds
+the checks that matter before the first request:
 
 - The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219) parses
   as decimal digits naming an integer from 1 to 65535 and is free to bind on

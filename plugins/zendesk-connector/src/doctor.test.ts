@@ -247,9 +247,15 @@ test("reports a token file this user cannot open without probing the port", asyn
   // stat succeeds and the group/other bits are clear, so only the open
   // itself fails: the access problem is the report's subject, and re-running
   // oauth:setup is not its remedy — the port a re-run would need stays
-  // unprobed. Node's chmod does not block reads for the owner on Windows.
+  // unprobed. The refusal this asserts exists on neither host that ignores
+  // mode bits: Node's chmod does not block reads for the owner on Windows,
+  // and root bypasses them entirely.
   if (process.platform === "win32") {
     ctx.skip("read enforcement for chmod 000 is a POSIX behavior");
+    return;
+  }
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    ctx.skip("root bypasses file mode bits");
     return;
   }
   const tokenFile = await tempTokenFile(
@@ -498,24 +504,32 @@ test("an explicit --logout flag wins over the healthcheck environment variable",
 
 test("the default probe reports a free port as free", async () => {
   const directory = await tempDir();
-  const listener = createServer();
-  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
-  const address = listener.address();
-  assert.ok(address && typeof address === "object");
-  // Close the listener first: the port the OS assigned is now free, and the
-  // doctor's real loopback bind must report it as such.
-  await new Promise((resolve) => listener.close(resolve));
-  process.env.ZENDESK_OAUTH_CALLBACK_PORT = String(address.port);
+  // Another process can take the OS-assigned port between the close and the
+  // doctor's bind, so a stolen port retries with a fresh one instead of
+  // failing a run that only lost a race.
+  for (let attempt = 1; ; attempt++) {
+    const listener = createServer();
+    await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+    const address = listener.address();
+    assert.ok(address && typeof address === "object");
+    // Close the listener first: the port the OS assigned is now free, and the
+    // doctor's real loopback bind must report it as such.
+    await new Promise((resolve) => listener.close(resolve));
+    process.env.ZENDESK_OAUTH_CALLBACK_PORT = String(address.port);
 
-  // No probePort: the real bind path, including its success branch.
-  const problems = await checkDoctor({
-    loadConfig: () =>
-      config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
-  });
+    // No probePort: the real bind path, including its success branch.
+    const problems = await checkDoctor({
+      loadConfig: () =>
+        config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+    });
 
-  assert.equal(problems.length, 1);
-  assert.match(problems[0], /Run npm run oauth:setup/);
-  assert.ok(!problems[0].includes("cannot listen on port"));
+    const stolen = problems.some((line) => line.includes("cannot listen on port"));
+    if (stolen && attempt < 3) continue;
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /Run npm run oauth:setup/);
+    assert.ok(!stolen, `port ${address.port} was stolen in the probe window`);
+    return;
+  }
 });
 
 test("skips the token and port checks outside authorization_code mode", async () => {
