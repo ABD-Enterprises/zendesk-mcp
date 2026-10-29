@@ -21,10 +21,12 @@
   after 2026-09-03 default to stage-publish only, which the workflow's
   `npm publish` does not satisfy. Confirm the repo variable is set:
   `gh variable get NPM_TRUSTED_PUBLISHING` must print `true`. Both are
-  required before the tag push below; without them the release run still
-  goes green but publishes only the image, silently skipping npm, and a
-  first registration expires if the first publish does not land within 2
-  days.
+  required before the tag push below, and they fail differently: without
+  the variable the release run goes green but publishes only the image,
+  silently skipping npm; with the variable set but the trusted publisher
+  missing or lacking **Allow npm publish**, the publish job runs and
+  fails red. A first registration expires if the first publish does not
+  land within 2 days.
 
 ## Publish
 
@@ -42,7 +44,7 @@ only builds an image, and the CI workflow builds the image without pushing it:
   intended `version`, that `CHANGELOG.md` has a section for it, and that the
   release commit is contained in `main`.
 - [ ] Create a signed, annotated version tag and push it:
-  `git tag -s v0.6.0 -m "v0.6.0"`, then `git push origin v0.6.0`.
+  `git tag -s v<version> -m "v<version>"`, then `git push origin v<version>`.
 - [ ] Wait for the `Publish image to GHCR` job to succeed. The workflow requires
   the tag to equal the `package.json` version and the tagged commit to be
   contained in `main`, runs the connector checks (`npm ci`, `npm run check`,
@@ -52,8 +54,8 @@ only builds an image, and the CI workflow builds the image without pushing it:
   proxy or CDN failure, or any other registry error stops the release before
   any build or push.
 - [ ] Verify the published image and record its digest:
-  `docker pull ghcr.io/abd-enterprises/zendesk-mcp:0.6.0`, then
-  `docker image inspect ghcr.io/abd-enterprises/zendesk-mcp:0.6.0 --format
+  `docker pull ghcr.io/abd-enterprises/zendesk-mcp:<version>`, then
+  `docker image inspect ghcr.io/abd-enterprises/zendesk-mcp:<version> --format
   '{{index .RepoDigests 0}}'`. The pull needs `docker login ghcr.io` while
   the package is still private; the workflow summary reports the published
   reference and digest as well.
@@ -62,11 +64,12 @@ only builds an image, and the CI workflow builds the image without pushing it:
   job runs in the same release after the image job and publishes
   `@abd-enterprises/zendesk-mcp` with OIDC provenance — no token or
   one-time password is ever used, and nothing is stored in the repository.
-  If the job was skipped, the trusted-publisher registration or the
-  `NPM_TRUSTED_PUBLISHING` variable was missing (see Before release). If it
-  failed with ENEEDAUTH and the run log shows npm matched a different
-  workflow filename, add `npm-publish.yml` as a second trusted publisher
-  (npm does not validate the filename when saving). Confirm the result with
+  If the job was skipped, `NPM_TRUSTED_PUBLISHING` is not set to `true`
+  (see Before release). If it failed with ENEEDAUTH, either the trusted
+  publisher is not registered or lacks **Allow npm publish**, or npm
+  matched a different workflow filename — in the last case add
+  `npm-publish.yml` as a second trusted publisher (npm does not validate
+  the filename when saving). Confirm the result with
   `npm view @abd-enterprises/zendesk-mcp version` and the provenance on the
   npm package page.
 - [ ] Set the GHCR package visibility to public in the package settings; a new
@@ -74,7 +77,7 @@ only builds an image, and the CI workflow builds the image without pushing it:
   verification step above logged in and Docker reuses the stored credential —
   the pull would then succeed against a still-private package:
   `docker logout ghcr.io`. Confirm an anonymous pull works:
-  `docker pull ghcr.io/abd-enterprises/zendesk-mcp:0.6.0`.
+  `docker pull ghcr.io/abd-enterprises/zendesk-mcp:<version>`.
 - [ ] Verify installation from the published artifact in a clean environment.
 
 ## After release
@@ -130,7 +133,7 @@ to it.
 
 - Move the bad tag back to the previous digest by copying the manifest:
   `docker buildx imagetools create --tag
-  ghcr.io/abd-enterprises/zendesk-mcp:0.6.0
+  ghcr.io/abd-enterprises/zendesk-mcp:<bad-version>
   ghcr.io/abd-enterprises/zendesk-mcp@sha256:<previous-digest>`. Without
   `buildx`, pull the previous digest, retag it locally with `docker tag`, and
   push it again.
