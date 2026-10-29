@@ -12,6 +12,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -19,6 +20,7 @@ import { afterEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { OAuthClientFile, StoredToken, ZendeskConfig } from "./auth.js";
 import {
+  authorizeWithBrowser,
   callbackServerPort,
   createReadlinePrompter,
   isMainModule,
@@ -71,6 +73,8 @@ interface RunResult {
   out: string[];
   err: string[];
   questions: string[];
+  /** Whether each question in `questions` asked with `mask: true`. */
+  masks: boolean[];
   authorizations: { baseUrl: string; redirectUri: string }[];
 }
 
@@ -86,13 +90,15 @@ async function runSetup(
 ): Promise<RunResult> {
   const answers = [...(options.answers ?? [])];
   const questions: string[] = [];
+  const masks: boolean[] = [];
   const out: string[] = [];
   const err: string[] = [];
   const authorizations: { baseUrl: string; redirectUri: string }[] = [];
 
   const setupOptions: OAuthSetupOptions = {
-    prompt: async (question) => {
+    prompt: async (question, promptOptions) => {
       questions.push(question);
+      masks.push(promptOptions?.mask === true);
       const answer = answers.shift();
       if (answer === undefined) {
         throw new Error(`no scripted answer for the question: ${question}`);
@@ -114,7 +120,7 @@ async function runSetup(
 
   const code = await runOAuthSetup(setupOptions);
 
-  return { code, out, err, questions, authorizations };
+  return { code, out, err, questions, masks, authorizations };
 }
 
 /** The paths a test's sandboxed client and token files live at. */
@@ -199,6 +205,9 @@ test("prompts for every missing value and saves what the user entered", async ()
   assert.match(result.questions[1], /^OAuth client id/);
   assert.match(result.questions[2], /^OAuth client secret/);
   assert.ok(result.questions[3].startsWith(`Save these values to ${files.clientFile}`));
+  // Only the client secret is asked for masked; the subdomain, the client id,
+  // and the save question are not secrets and must not be hidden.
+  assert.deepEqual(result.masks, [false, false, true, false]);
 
   // The client file holds the three entered fields and owner-only
   // permissions.
@@ -530,6 +539,100 @@ test("keeps an explicit :80 in the redirect URI the listener binds", async () =>
   const redirectUri = result.authorizations[0].redirectUri;
   assert.equal(redirectUri, "http://127.0.0.1:80/callback");
   assert.equal(callbackServerPort(redirectUri), 80);
+});
+
+/**
+ * Binds `port` on the loopback once and reports what happened: `null` when
+ * it bound, or the errno it failed with. The privileged-port test below can
+ * only show a permission refusal on a host that refuses one, so it asks
+ * this first — root, Windows, and unusual sysctl settings can all bind
+ * port 80, and there the refusal never happens.
+ */
+async function probeBind(port: number): Promise<string | null> {
+  const probe = createServer();
+  return new Promise<string | null>((resolve) => {
+    probe.once("error", (error: Error) =>
+      resolve((error as NodeJS.ErrnoException).code ?? "unknown"),
+    );
+    probe.listen(port, "127.0.0.1", () => {
+      probe.close(() => resolve(null));
+    });
+  });
+}
+
+test("refuses to authorize on a port the host will not bind", async (ctx) => {
+  // The redirect URI names :80, and the listener has to bind that exact
+  // port: a run whose listener is elsewhere would print an authorization
+  // URL for a port nothing serves and sit out its five-minute timeout. On a
+  // host that refuses port 80 the bind itself fails, and that refusal — not
+  // a timeout — is what the user sees. If the listening port were derived
+  // from the URI in a way that lost the :80 (the URL parser reads it back as
+  // an empty `.port`), the listener would bind an ephemeral port instead,
+  // this assertion would fail, and fail immediately: the listen callback
+  // refuses any port that disagrees with the redirect URI before anything is
+  // printed or opened.
+  const probe = await probeBind(80);
+  if (probe !== "EACCES" && probe !== "EPERM") {
+    ctx.skip(
+      probe === null
+        ? "this host can bind port 80, so it cannot show a refusal"
+        : `port 80 fails with ${probe} on this host, not a permission refusal`,
+    );
+    return;
+  }
+
+  const files = await sandbox();
+  const config: ZendeskConfig = {
+    baseUrl: "https://acme-tools.zendesk.com",
+    mode: "authorization_code",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+    tokenFile: files.tokenFile,
+    scope: "read",
+  };
+  const out: string[] = [];
+
+  await assert.rejects(
+    authorizeWithBrowser(
+      config,
+      "http://127.0.0.1:80/callback",
+      (line) => out.push(line),
+    ),
+    (error: unknown) => {
+      const code = (error as NodeJS.ErrnoException).code;
+      return code === "EACCES" || code === "EPERM";
+    },
+  );
+  // The refusal happens before the authorization URL is written out.
+  assert.deepEqual(out, []);
+});
+
+test("refuses a redirect URI whose port the listener cannot hold", async () => {
+  // Port 0 asks the OS for an ephemeral port, which by construction is never
+  // the port the URI names. The listen callback compares what it bound with
+  // what the URI says and fails the run on any disagreement, so this rejects
+  // with the named mismatch — promptly, and before the authorization URL is
+  // printed or the browser opened.
+  const files = await sandbox();
+  const config: ZendeskConfig = {
+    baseUrl: "https://acme-tools.zendesk.com",
+    mode: "authorization_code",
+    clientId: "example-client-id",
+    clientSecret: "example-client-secret",
+    tokenFile: files.tokenFile,
+    scope: "read",
+  };
+  const out: string[] = [];
+
+  await assert.rejects(
+    authorizeWithBrowser(
+      config,
+      "http://127.0.0.1:0/callback",
+      (line) => out.push(line),
+    ),
+    /bound port \d+ instead of the port in the redirect URI \(0\)/,
+  );
+  assert.deepEqual(out, []);
 });
 
 test("refuses a client file that other users can read", async (ctx) => {

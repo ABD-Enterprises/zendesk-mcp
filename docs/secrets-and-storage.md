@@ -192,10 +192,12 @@ node plugins/zendesk-connector/dist/index.js
 ```
 
 Three details matter. The file is created under `umask 077` so it is never
-readable by group or other, which is what the connector requires. The server is
-started without `exec`, so the shell survives to run the cleanup trap. And the
-document is written with a JSON-aware writer, because the connector parses the
-file as JSON and fails to start on malformed content.
+readable by group or other, which is what the connector requires (the mode
+check itself is skipped on Windows, where `umask` does not exist either).
+The server is started without `exec`, so the shell survives to run the
+cleanup trap. And the document is written with a JSON-aware writer, because
+the connector parses the file as JSON and fails to start on malformed
+content.
 
 ### Pattern 3: mount files into the container
 
@@ -216,8 +218,11 @@ Four constraints apply:
 
 - The image runs as the unprivileged `node` user, so the mounted client file
   must be readable by that user and the token file writable by it.
-- The connector refuses a client file that group or other can read, so the
-  mounted file must be owner-only and owned by the user the image runs as.
+- The connector refuses a client file that group or other can read (a check
+  skipped on Windows, where Node reports synthetic permission bits; this
+  pattern runs the connector inside a Linux container, where it applies), so
+  the mounted file must be owner-only and owned by the user the image runs
+  as.
 - Prefer the mounted file over `-e ZENDESK_OAUTH_CLIENT_SECRET=...`. A
   container environment variable is part of the container configuration and is
   readable through the runtime's inspection API; a mounted file is not.

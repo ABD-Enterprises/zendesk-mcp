@@ -435,9 +435,9 @@ export function callbackServerPort(redirectUri: string): number {
 
 /**
  * The real authorization: a loopback callback server, the browser, and the
- * token exchange.
+ * token exchange. Exported so a test can pin the port the listener binds.
  */
-async function authorizeWithBrowser(
+export async function authorizeWithBrowser(
   config: ZendeskConfig,
   redirectUri: string,
   writeOut: (line: string) => void,
@@ -519,6 +519,20 @@ function waitForAuthorizationCode(
 
     server.on("error", (error) => finish(error));
     server.listen(port, "127.0.0.1", () => {
+      // The listener has to be on the port the redirect URI names, or the
+      // browser is sent to a port nothing serves and the run sits out its
+      // five-minute timeout. A bound port that disagrees is a bug, not a
+      // wait condition: fail it here, before anything is printed or opened.
+      const address = server.address();
+      const bound = typeof address === "object" && address !== null ? address.port : -1;
+      if (bound !== port) {
+        finish(
+          new Error(
+            `Callback server bound port ${bound} instead of the port in the redirect URI (${port}).`,
+          ),
+        );
+        return;
+      }
       options.writeOut(`Opening Zendesk authorization:\n${options.authorizeUrl}\n`);
       openBrowser(options.authorizeUrl, options.writeOut);
     });
