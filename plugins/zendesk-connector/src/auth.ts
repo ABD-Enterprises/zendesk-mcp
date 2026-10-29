@@ -169,6 +169,14 @@ export function getConfig(): ZendeskConfig {
 }
 
 /**
+ * The message both `buildConfig` and `oauth:setup` report for a mode that
+ * is not one of `OAUTH_MODES`. The two used to carry their own copies of
+ * the sentence, which could drift apart.
+ */
+export const INVALID_MODE_MESSAGE =
+  "ZENDESK_OAUTH_MODE must be authorization_code, client_credentials, or access_token.";
+
+/**
  * Builds the connector's configuration from a saved client file.
  *
  * The environment still wins over the file (the same precedence `getConfig`
@@ -194,9 +202,7 @@ export function buildConfig(saved: OAuthClientFile): ZendeskConfig {
   let mode: OAuthMode;
   if (requestedMode) {
     if (!isOAuthMode(requestedMode)) {
-      throw new ZendeskAuthError(
-        "ZENDESK_OAUTH_MODE must be authorization_code, client_credentials, or access_token.",
-      );
+      throw new ZendeskAuthError(INVALID_MODE_MESSAGE);
     }
     mode = requestedMode;
   } else if (accessToken) {

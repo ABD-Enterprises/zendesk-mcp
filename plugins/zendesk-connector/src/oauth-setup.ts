@@ -8,6 +8,7 @@ import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   CALLBACK_PORT_ERROR,
+  INVALID_MODE_MESSAGE,
   OAUTH_MODES,
   buildConfig,
   env,
@@ -67,6 +68,12 @@ const ACCESS_TOKEN_ONLY_MESSAGE =
  */
 const INVALID_ACCOUNT_MESSAGE =
   "Not a valid Zendesk subdomain or URL (for example acme-tools or https://acme-tools.zendesk.com).";
+/**
+ * The message printed when the save answer is neither yes nor no. Like the
+ * account refusal it names no environment variable and does not repeat the
+ * answer; it tells the reader which answers the question takes.
+ */
+const INVALID_SAVE_ANSWER_MESSAGE = "Please answer y or n.";
 
 interface OAuthSetupTokenResponse {
   access_token: string;
@@ -174,9 +181,7 @@ export async function runOAuthSetup(
 
   const requestedMode = env("ZENDESK_OAUTH_MODE") ?? saved.mode;
   if (requestedMode !== undefined && !isKnownMode(requestedMode)) {
-    return fail(
-      "ZENDESK_OAUTH_MODE must be authorization_code, client_credentials, or access_token.",
-    );
+    return fail(INVALID_MODE_MESSAGE);
   }
   // Only the browser flow belongs to the setup, so every other mode is
   // refused before anything is asked.
@@ -254,7 +259,7 @@ export async function runOAuthSetup(
       entered.clientSecret = clientSecret;
     }
 
-    const save = await askToSave(ask, clientFile);
+    const save = await askToSave(ask, writeError, clientFile);
     if (save) {
       const saveClientFile =
         options.saveClientFile ?? defaultSaveClientFile(saved, clientFile);
@@ -333,10 +338,12 @@ function isBaseUrl(answer: string): boolean {
 
 /**
  * Asks whether the entered values should be stored, asking again until the
- * answer is one this run understands.
+ * answer is one this run understands. An answer that is neither yes nor no
+ * is reported between the attempts.
  */
 async function askToSave(
   ask: (question: string, options?: { mask?: boolean }) => Promise<string>,
+  writeError: (line: string) => void,
   clientFile: string,
 ): Promise<boolean> {
   const question = `Save these values to ${clientFile} for future runs? [Y/n] `;
@@ -344,6 +351,9 @@ async function askToSave(
     const answer = (await ask(question)).trim().toLowerCase();
     if (answer === "" || answer === "y" || answer === "yes") return true;
     if (answer === "n" || answer === "no") return false;
+    // The question repeats with the same wording, so without this line an
+    // answer the run cannot use would look like it was silently dropped.
+    writeError(`${INVALID_SAVE_ANSWER_MESSAGE}\n`);
   }
 }
 

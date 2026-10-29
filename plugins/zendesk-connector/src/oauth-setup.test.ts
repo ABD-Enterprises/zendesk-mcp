@@ -870,6 +870,9 @@ test("asks again when the save answer is not understood", async () => {
   assert.equal(result.questions.length, 5);
   assert.ok(result.questions[3].startsWith("Save these values to"));
   assert.ok(result.questions[4].startsWith("Save these values to"));
+  // The answer that was not understood is reported once, by a message that
+  // names no environment variable and does not repeat the answer.
+  assert.deepEqual(result.err, ["Please answer y or n.\n"]);
 });
 
 test("uses the values in the client file without prompting", async () => {
