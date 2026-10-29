@@ -165,6 +165,17 @@ export function resolveCallbackPort(): number {
 export function getConfig(): ZendeskConfig {
   const clientFile = oauthClientFilePath();
   const saved = readOAuthClientFile(clientFile);
+  return buildConfig(saved);
+}
+
+/**
+ * Builds the connector's configuration from a saved client file.
+ *
+ * The environment still wins over the file (the same precedence `getConfig`
+ * applies), so a caller that has already read the client file can build the
+ * configuration without reading it again.
+ */
+export function buildConfig(saved: OAuthClientFile): ZendeskConfig {
   const baseUrl = resolveBaseUrl(saved);
   if (!baseUrl) {
     throw new ZendeskAuthError(
@@ -220,7 +231,12 @@ export function getConfig(): ZendeskConfig {
   };
 }
 
-function readOAuthClientFile(clientFile: string): OAuthClientFile {
+/**
+ * Reads the OAuth client file and checks that it is safe to use: a regular
+ * file, readable only by its owner, and a JSON object whose account fields
+ * are strings.
+ */
+export function readOAuthClientFile(clientFile: string): OAuthClientFile {
   try {
     const stats = statSync(clientFile);
     if (!stats.isFile()) {

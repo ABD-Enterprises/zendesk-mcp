@@ -48,6 +48,10 @@ Run the one-time authorization flow from this directory:
 npm run oauth:setup
 ```
 
+When the subdomain, the client id, or the client secret is missing, the setup
+asks for it and can save the answers to that client file with owner-only
+permissions.
+
 The browser flow stores access and rotating refresh tokens in
 `~/.config/codex-zendesk/oauth.json` with owner-only permissions. The MCP server
 refreshes expiring tokens and updates that file automatically. Override the file
