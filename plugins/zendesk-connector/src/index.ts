@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logServerShutdown, logServerStart } from "./audit.js";
+import { isDoctorRequested, runDoctor } from "./doctor.js";
 import { isHealthCheckRequested, runHealthCheck } from "./health.js";
 import { isLogoutRequested, runLogout } from "./logout.js";
 import { createZendeskServer } from "./server.js";
@@ -8,6 +9,8 @@ import { installShutdownHandlers } from "./shutdown.js";
 
 if (isHealthCheckRequested()) {
   process.exitCode = runHealthCheck();
+} else if (isDoctorRequested()) {
+  process.exitCode = await runDoctor();
 } else if (isLogoutRequested()) {
   process.exitCode = await runLogout();
 } else {

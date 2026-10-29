@@ -69,6 +69,31 @@ For a short-lived manually managed OAuth token, set
 `ZENDESK_OAUTH_MODE=access_token` and `ZENDESK_OAUTH_ACCESS_TOKEN`. This mode
 cannot renew expired tokens and is intended only for testing.
 
+## Doctor preflight
+
+The doctor diagnoses a setup without contacting Zendesk. Run it with:
+
+```sh
+npm run doctor
+```
+
+or directly with `node dist/index.js --doctor`. It performs the
+[healthcheck](#healthcheck-and-shutdown) validation and adds the checks that
+matter before the first request:
+
+- The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219) parses
+  as an integer from 1 to 65535 and is free to bind on `127.0.0.1`. This runs
+  only in `authorization_code` mode and only before a token has been stored.
+- The stored token file in `authorization_code` mode: it exists (a missing
+  file means "run `npm run oauth:setup`"), is a regular file, parses as JSON,
+  contains an `access_token`, and is readable only by its owner. The
+  permission check is doctor-only; the server reads the token file without
+  inspecting its permissions.
+
+A clean run prints one all-clear line on stdout and exits 0. Each problem is
+one actionable line on stderr and the exit code is 1. The messages reuse the
+server's own error strings and never contain credential values.
+
 ## Healthcheck and shutdown
 
 Validate the OAuth configuration and tool policy without contacting Zendesk

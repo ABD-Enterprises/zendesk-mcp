@@ -73,7 +73,8 @@ export function runHealthCheck(options: HealthCheckOptions = {}): number {
   return 1;
 }
 
-function assertUsableConfig(config: unknown): void {
+/** Asserts that a loaded configuration carries a usable base URL and mode. */
+export function assertUsableConfig(config: unknown): void {
   if (!config || typeof config !== "object") {
     throw new Error("Zendesk OAuth configuration is missing.");
   }

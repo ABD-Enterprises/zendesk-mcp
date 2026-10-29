@@ -31,6 +31,16 @@ OAuth client in Zendesk Admin Center with the callback URL
 npm run oauth:setup
 ```
 
+Before setup, or any time something is not working, run the doctor preflight:
+
+```sh
+npm run doctor
+```
+
+It checks the configuration, the tool policy, the setup callback port, and the
+stored token, printing one actionable line per problem (details in
+[Doctor preflight](#doctor-preflight)).
+
 Point your MCP client at the built server as in
 [Configure another MCP client](#configure-another-mcp-client), then verify the
 configuration without starting the server:
@@ -293,6 +303,37 @@ export ZENDESK_OAUTH_ACCESS_TOKEN="your-oauth-access-token"
 
 This remains OAuth authentication, but the server cannot renew the token.
 
+### Doctor preflight
+
+The doctor runs the same configuration and tool-policy validation as startup
+and adds the checks that only matter before the first request, without
+contacting Zendesk:
+
+- The OAuth configuration, including the owner-only permission requirement on
+  the client file.
+- The tool policy (`ZENDESK_READ_ONLY` and `ZENDESK_ALLOWED_TOOLS`).
+- The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219): it
+  must be an integer from 1 to 65535 and free to bind on `127.0.0.1`. This
+  check runs only in `authorization_code` mode and only before setup has
+  stored a token, because nothing listens on the port afterwards.
+- The stored token file in `authorization_code` mode: it must exist (unless
+  setup has not run yet — a missing token is reported as "run
+  `npm run oauth:setup`"), be a regular file, parse as JSON, contain an
+  `access_token`, and be readable only by its owner. The permission check is
+  doctor-only; the server itself reads the token file without inspecting its
+  permissions.
+
+Run it with `npm run doctor`, or directly:
+
+```sh
+node plugins/zendesk-connector/dist/index.js --doctor
+```
+
+A clean run prints one all-clear line on stdout and exits 0. Every problem is
+one actionable line on stderr and the exit code is 1, so a script can gate on
+it. The output reuses the server's own error messages and never prints
+credential values.
+
 ### Healthcheck and shutdown
 
 The server validates its OAuth configuration and tool policy and exits
@@ -347,11 +388,14 @@ Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-a
 | `OAuth client configuration ... must be readable only by its owner (chmod 600).` | The client file is accessible to group or others. Run `chmod 600 ~/.config/codex-zendesk/client.json` (or fix the file `ZENDESK_OAUTH_CLIENT_FILE` names). |
 | `ZENDESK_READ_ONLY must be 1, true, 0, or false.` | The read-only flag holds an unrecognized value. Set it to `1` (or `true`) to enable, `0` (or `false`) to disable, or unset it. |
 | `ZENDESK_READ_ONLY conflicts with write tools in ZENDESK_ALLOWED_TOOLS: ...` | Read-only mode is on but the allowlist names write tools. Remove those names from `ZENDESK_ALLOWED_TOOLS`, or unset `ZENDESK_READ_ONLY` if writes are intended. |
-| `npm run oauth:setup` fails to listen on port 3219 | Another process holds the port (often an earlier setup still waiting for authorization). Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
+| `OAuth token file ... must be readable only by its owner (chmod 600).` | Reported by the doctor: the token store is accessible to group or others. Run `chmod 600 ~/.config/codex-zendesk/oauth.json` (or fix the file `ZENDESK_OAUTH_TOKEN_FILE` names). The server itself does not check the token file's permissions, so this warning is worth fixing before the first run. |
+| `ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535.` | Reported by the doctor and by `npm run oauth:setup`: the port variable does not parse as a port number. Set it to an integer from 1 to 65535, or unset it to use the default 3219. |
+| `npm run oauth:setup` fails to listen on port 3219 | Another process holds the port (often an earlier setup still waiting for authorization). The doctor reports the same line before setup runs. Set `ZENDESK_OAUTH_CALLBACK_PORT` to a free port and register that exact callback URL on the OAuth client in Zendesk — the redirect URI must match. |
 | The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` — or the URL for your `ZENDESK_OAUTH_CALLBACK_PORT`; scheme, host, port, and path all count. Correct it in Admin Center, run setup again, then restart the server so it picks up the fresh token. Declining consent or a declined scope produces the same symptom. |
 | Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool, or the account's role lacks the underlying permission. Add the scope to `ZENDESK_OAUTH_SCOPE` (and, if the OAuth client has allowed scopes configured in Admin Center, add it there too — otherwise setup fails with `HTTP 400 invalid_scope`): authorization-code mode re-runs `npm run oauth:setup` so the larger grant replaces the stored token, client-credentials mode carries it on the next token request, and `access_token` mode cannot change it — obtain a token with the needed scope there. Then restart the server so it loads the new configuration. |
 | A desktop MCP client reports "not configured" although your shell works | Desktop applications do not inherit shell exports. Put the settings in `~/.config/codex-zendesk/client.json`, which the server reads when the environment is empty. |
 | You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). Healthy means the configuration is present and well-formed and the tool policy is valid (an unset policy applies the defaults) — not that Zendesk is reachable or that authorization succeeded (see [Healthcheck and shutdown](#healthcheck-and-shutdown)); use `zendesk_status` for readiness. The check never contacts Zendesk and never prints credentials. |
+| You want one diagnosis for the whole setup | Run `npm run doctor` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --doctor` from the repository root). It runs the healthcheck's validation and adds the setup-only checks: the callback port's validity and availability, and the stored token file's state (details in [Doctor preflight](#doctor-preflight)). One actionable line per problem on stderr, exit 1; a single all-clear line on stdout, exit 0. |
 
 ## Development
 
