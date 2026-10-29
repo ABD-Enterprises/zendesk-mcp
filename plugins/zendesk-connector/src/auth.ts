@@ -113,7 +113,7 @@ const OAUTH_CALLBACK_PORT_DEFAULT = 3219;
 
 /** The message both `oauth:setup` and the doctor report for an unusable port. */
 export const CALLBACK_PORT_ERROR =
-  "ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535.";
+  "ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535, written as decimal digits (for example 3219).";
 
 /** True when a raw callback-port value is a usable TCP port. */
 export function isValidCallbackPort(port: number): boolean {

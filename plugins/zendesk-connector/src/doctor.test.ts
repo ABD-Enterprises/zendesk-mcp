@@ -144,7 +144,7 @@ test("reports a busy callback port before the missing token file", async () => {
 
 test("reports a port this user cannot bind with its own advice", async () => {
   const directory = await tempDir();
-  const { calls, probe } = probeRecorder("unavailable");
+  const { calls, probe } = probeRecorder({ errno: "EACCES" });
 
   const problems = await checkDoctor({
     loadConfig: () =>
@@ -155,14 +155,26 @@ test("reports a port this user cannot bind with its own advice", async () => {
   // A bind refusal is not evidence of an earlier setup still waiting: only a
   // port another process holds gets the "earlier setup" advice. On this
   // high default port privileges are irrelevant, so the report must not
-  // blame them either — that advice belongs only to ports below 1024.
+  // blame them either — that advice belongs only to ports below 1024. The
+  // OS errno rides along so the report carries the refusal's own cause.
   assert.deepEqual(calls, [3219]);
   assert.equal(problems.length, 2);
   assert.match(problems[0], /cannot listen on port 3219: this user cannot bind the port/);
-  assert.match(problems[0], /the OS refused it to this user/);
+  assert.match(problems[0], /the OS refused it to this user, errno EACCES/);
   assert.ok(!problems[0].includes("earlier setup"));
   assert.ok(!problems[0].includes("elevated privileges"));
   assert.match(problems[1], /Run npm run oauth:setup/);
+
+  // A probe that could not report an errno still produces the same advice,
+  // just without the detail.
+  const withoutErrno = await checkDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+    probePort: probeRecorder({}).probe,
+  });
+
+  assert.match(withoutErrno[0], /the OS refused it to this user\)\./);
+  assert.ok(!withoutErrno[0].includes("errno"));
 });
 
 test("reports an unusable callback port without probing it", async () => {
@@ -229,6 +241,35 @@ test("reports a token file readable by other users without probing the port", as
           `OAuth token file ${tokenFile} must be readable only by its owner (chmod 600).`,
         ],
   );
+});
+
+test("reports a token file this user cannot open without probing the port", async (ctx) => {
+  // stat succeeds and the group/other bits are clear, so only the open
+  // itself fails: the access problem is the report's subject, and re-running
+  // oauth:setup is not its remedy — the port a re-run would need stays
+  // unprobed. Node's chmod does not block reads for the owner on Windows.
+  if (process.platform === "win32") {
+    ctx.skip("read enforcement for chmod 000 is a POSIX behavior");
+    return;
+  }
+  const tokenFile = await tempTokenFile(
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+    }),
+  );
+  await chmod(tokenFile, 0o000);
+  const { calls, probe } = probeRecorder("free");
+
+  const problems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile }),
+    probePort: probe,
+  });
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(problems, [
+    `Unable to read OAuth token file ${tokenFile}. Check that the path exists and this user can access it.`,
+  ]);
 });
 
 test("reports a token path that cannot be stat'd without probing the port", async () => {
@@ -519,7 +560,7 @@ test("the default probe reports a port this user cannot bind", async (ctx) => {
   // cause. Proceed only when the host genuinely refuses the bind, so this
   // assertion holds wherever the test runs.
   const observed = await bindAttempt(1);
-  if (observed !== "unavailable") {
+  if (typeof observed !== "object") {
     ctx.skip(`port 1 is ${observed} on this host, not refused`);
     return;
   }
@@ -624,7 +665,7 @@ function bindAttempt(port: number): Promise<PortProbeResult> {
   return new Promise((resolve) => {
     const attempt = createServer();
     attempt.once("error", (error: NodeJS.ErrnoException) =>
-      resolve(error.code === "EADDRINUSE" ? "in-use" : "unavailable"),
+      resolve(error.code === "EADDRINUSE" ? "in-use" : { errno: error.code }),
     );
     attempt.listen(port, "127.0.0.1", () => {
       attempt.closeAllConnections();

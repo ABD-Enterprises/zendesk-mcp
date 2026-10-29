@@ -20,7 +20,13 @@ export type PortProbeResult =
   /** Another process already holds the port. */
   | "in-use"
   /** The port cannot be bound at all (for example a privileged port). */
-  | "unavailable";
+  | UnavailablePort;
+
+/** A bind refusal that is not another process holding the port. */
+export interface UnavailablePort {
+  /** The OS errno (`EACCES`, `EMFILE`, ...), when one was reported. */
+  errno?: string;
+}
 
 export interface DoctorOptions {
   /** Loads the OAuth configuration. Defaults to `getConfig`. */
@@ -43,8 +49,8 @@ interface TokenFileState {
    * callback port, so the port check runs for these states too. A missing
    * file or parent directory is ENOENT, so it stays true: setup creates the
    * parent when it stores the token. Other file-state problems (a directory
-   * where the file belongs, loose permissions) set it to false: re-running
-   * setup does not obviously fix them.
+   * where the file belongs, loose permissions, a file this user cannot
+   * open) set it to false: re-running setup does not obviously fix them.
    */
   setupNeeded: boolean;
   /** Why the token file is not usable as stored, undefined when it is fine. */
@@ -188,10 +194,32 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
     };
   }
 
+  let raw: string;
+  try {
+    raw = readFileSync(tokenFile, "utf8");
+  } catch (error) {
+    // stat succeeded, so the path exists and the failure is the open itself
+    // (an unreadable file). Only ENOENT — the file vanished between stat and
+    // read — still means setup never stored a token; a refusal to open is a
+    // permissions problem whose remedy is fixing the file's access, and the
+    // port a setup re-run would need is not probed for it.
+    const missing =
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT";
+    return missing
+      ? unreadable
+      : {
+          setupNeeded: false,
+          problem: `Unable to read OAuth token file ${tokenFile}. Check that the path exists and this user can access it.`,
+        };
+  }
   let payload: unknown;
   try {
-    payload = JSON.parse(readFileSync(tokenFile, "utf8"));
+    payload = JSON.parse(raw);
   } catch {
+    // Unparseable means the stored token is unusable and oauth:setup
+    // replaces the file, so its remedy applies — and so does its port.
     return unreadable;
   }
   const token = (payload ?? {}) as {
@@ -240,12 +268,17 @@ async function checkCallbackPort(
   if (state === "in-use") {
     cause =
       "another process holds the port (often an earlier setup still waiting for authorization)";
-  } else if (port < 1024) {
-    cause = "this user cannot bind the port (a port below 1024 needs elevated privileges)";
   } else {
-    // Above 1024 the port needs no privileges, so privileges are not the
-    // explanation; a sandbox, a firewall, or an address policy can refuse it.
-    cause = "this user cannot bind the port (the OS refused it to this user)";
+    // The errno names the refusal (EACCES, EMFILE, EADDRNOTAVAIL, ...), so
+    // the report carries the OS's own cause instead of only a guess at one.
+    const detail = state.errno === undefined ? "" : `, errno ${state.errno}`;
+    cause =
+      port < 1024
+        ? `this user cannot bind the port (a port below 1024 needs elevated privileges${detail})`
+        : // Above 1024 the port needs no privileges, so privileges are not
+          // the explanation; a sandbox, a firewall, or an address policy
+          // can refuse it.
+          `this user cannot bind the port (the OS refused it to this user${detail})`;
   }
   return `npm run oauth:setup cannot listen on port ${port}: ${cause}. Set ZENDESK_OAUTH_CALLBACK_PORT to a free port and register that exact callback URL on the OAuth client in Zendesk.`;
 }
@@ -255,7 +288,7 @@ function probePortFree(port: number): Promise<PortProbeResult> {
   return new Promise((resolve) => {
     const probe = createServer();
     probe.once("error", (error: NodeJS.ErrnoException) =>
-      resolve(error.code === "EADDRINUSE" ? "in-use" : "unavailable"),
+      resolve(error.code === "EADDRINUSE" ? "in-use" : { errno: error.code }),
     );
     probe.listen(port, "127.0.0.1", () => {
       // Both calls run in this one callback, so no connection can slip in

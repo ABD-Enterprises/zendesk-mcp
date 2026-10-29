@@ -84,11 +84,11 @@ pruned of them runs the direct command instead. It performs the
 matter before the first request:
 
 - The setup callback port (`ZENDESK_OAUTH_CALLBACK_PORT`, default 3219) parses
-  as an integer from 1 to 65535 and is free to bind on `127.0.0.1`. This runs
-  only in `authorization_code` mode and only when re-running setup is the
-  remedy for the token problem — the file is missing, unparseable, or lacks a
-  token field (a path or permission problem skips it), and setup needs the
-  port.
+  as decimal digits naming an integer from 1 to 65535 and is free to bind on
+  `127.0.0.1`. This runs only in `authorization_code` mode and only when
+  re-running setup is the remedy for the token problem — the file is missing,
+  unparseable, or lacks a token field (a path or permission problem skips it),
+  and setup needs the port.
 - The stored token file in `authorization_code` mode: it exists (a missing
   file means "run `npm run oauth:setup`"; a stat failure other than a missing
   path is reported with its own advice instead), is a regular file, parses
@@ -99,8 +99,10 @@ matter before the first request:
   Windows, where Node reports synthetic permission bits regardless of the
   file's ACLs.
 
-A clean run prints one all-clear line on stdout and exits 0. Each failing
-check is one actionable line on stderr and the exit code is 1. The
+A clean run prints one all-clear line on stdout and exits 0 — `npm run
+--silent doctor` suppresses npm's own script banners, so exactly one line
+reaches the shell. Each failing check is one actionable line on stderr and
+the exit code is 1. The
 configuration messages and the token file's missing, unparseable, and
 incomplete messages are the server's own error strings; the port and the token
 file-state messages (an unreadable path, not a regular file, loose
