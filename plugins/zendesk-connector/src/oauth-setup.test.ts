@@ -796,13 +796,22 @@ test("opens the authorization URL through the injected launcher", async () => {
   );
 });
 
-test("never prints a token from a rejected token-exchange body", async () => {
-  // The exchange can fail *after* Zendesk has already handed back a real
-  // token: a 200 whose body is missing a refresh_token fails the shape
-  // check, and stringifying that body as-is would put the access token into
-  // the thrown error — where a caller may log or show it. This crafts
-  // exactly that body, so the assertion pins the invariant the roadmap
-  // claims for errors: no credential material, ever.
+/**
+ * Drives the browser-authorization flow as far as the token exchange and
+ * returns the run's rejection. The fetch stub answers the exchange with the
+ * given body and refuses every other URL, so a flow that grows another call
+ * fails the test instead of reaching the real network. The launcher is
+ * injected, so nothing is ever opened.
+ */
+async function exchangeFailure(
+  body: string,
+  contentType: string,
+): Promise<{
+  error: Error;
+  out: string[];
+  requests: string[];
+  tokenFile: string;
+}> {
   const files = await sandbox();
   const config: ZendeskConfig = {
     baseUrl: "https://acme-tools.zendesk.com",
@@ -816,22 +825,22 @@ test("never prints a token from a rejected token-exchange body", async () => {
   const redirectUri = `http://127.0.0.1:${port}/callback`;
   const out: string[] = [];
   const opened: string[] = [];
-  const leakedToken = "example-access-token-must-not-be-printed";
+  const requests: string[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input, init) => {
     const url = String(input);
-    if (!url.endsWith("/oauth/tokens")) {
-      // The exchange is the only call this flow makes; delegate anything
-      // else to the real fetch rather than guessing at the caller's intent.
-      return originalFetch(input, init);
-    }
-    // A token response missing refresh_token: HTTP 200, a real-looking
-    // access token, but not a StoredToken — the exact shape that used to
-    // leak into the error message.
-    return new Response(
-      JSON.stringify({ access_token: leakedToken, token_type: "bearer" }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
+    requests.push(url);
+    // Fail closed: the exchange is the only call this flow makes today, so
+    // any other URL is a change this test has not agreed to — and answering
+    // it would put a real request on the wire to a plausible real host.
+    assert.ok(
+      url.endsWith("/oauth/tokens"),
+      `unexpected network call from the flow: ${url}`,
     );
+    return new Response(body, {
+      status: 200,
+      headers: { "Content-Type": contentType },
+    });
   }) as typeof fetch;
 
   try {
@@ -892,23 +901,63 @@ test("never prints a token from a rejected token-exchange body", async () => {
       request.once("error", reject);
     });
     // The server answers 200 the moment it has the code, before the exchange
-    // runs — so the exchange's rejection is the run's own error, awaited
-    // below, not a status on this response.
+    // runs — so the exchange's rejection is the run's own error, awaited by
+    // the caller, not a status on this response.
     assert.equal(status, 200);
 
     const error = await outcome;
     assert.ok(error instanceof Error);
-    assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
-    // The message keeps the diagnosable shape but replaces the credential
-    // material: the token and the client secret are both gone.
-    assert.match(error.message, /\[REDACTED\]/);
-    assert.equal(error.message.includes(leakedToken), false);
-    assert.equal(error.message.includes("example-client-secret"), false);
-    // Nothing was stored: the run failed before any token file was written.
-    await assert.rejects(readFile(files.tokenFile), /ENOENT/);
+    return { error, out, requests, tokenFile: files.tokenFile };
   } finally {
     globalThis.fetch = originalFetch;
   }
+}
+
+test("never prints a token from a rejected token-exchange body", async () => {
+  // The exchange can fail *after* Zendesk has already handed back a real
+  // token: a 200 whose body is missing a refresh_token fails the shape
+  // check, and stringifying that body as-is would put the access token into
+  // the thrown error — where a caller may log or show it. This crafts
+  // exactly that body, so the assertion pins the invariant the roadmap
+  // claims for errors: no credential material, ever.
+  const leakedToken = "example-access-token-must-not-be-printed";
+  const { error, out, requests, tokenFile } = await exchangeFailure(
+    JSON.stringify({ access_token: leakedToken, token_type: "bearer" }),
+    "application/json",
+  );
+
+  assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
+  // The message keeps the diagnosable shape but replaces the credential
+  // material: the token and the client secret are both gone.
+  assert.match(error.message, /\[REDACTED\]/);
+  assert.ok(!error.message.includes(leakedToken));
+  assert.ok(!error.message.includes("example-client-secret"));
+  // Exactly the one expected call went out, and it was the exchange.
+  assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+  // The authorization URL was printed exactly once, as in the flow test
+  // above: the failure hides nothing but the credentials.
+  assert.equal(
+    out.filter((line) => line.startsWith("Opening Zendesk authorization:"))
+      .length,
+    1,
+  );
+  // Nothing was stored: the run failed before any token file was written.
+  await assert.rejects(readFile(tokenFile), /ENOENT/);
+});
+
+test("describes a non-object exchange body by size instead of echoing it", async () => {
+  // redact() works on object keys, so a body that never parsed into a JSON
+  // object cannot be filtered by it — and a page that echoed the request
+  // would carry the client secret and the one-time code. Such a body is
+  // therefore named by size and nothing more.
+  const leakedToken = "example-plaintext-token-must-not-be-printed";
+  const body = `access_token=${leakedToken}`;
+  const { error, requests } = await exchangeFailure(body, "text/plain");
+
+  assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
+  assert.ok(!error.message.includes(leakedToken));
+  assert.ok(error.message.includes(`(non-object body of ${body.length} bytes)`));
+  assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
 });
 
 test("refuses a client file that other users can read", async (ctx) => {

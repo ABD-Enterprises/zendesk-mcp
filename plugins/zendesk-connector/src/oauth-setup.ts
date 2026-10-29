@@ -6,6 +6,7 @@ import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createInterface, type Interface } from "node:readline/promises";
 import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { redact } from "./audit.js";
 import {
   CALLBACK_PORT_ERROR,
   INVALID_MODE_MESSAGE,
@@ -24,7 +25,6 @@ import {
   type StoredToken,
   type ZendeskConfig,
 } from "./auth.js";
-import { redact } from "./audit.js";
 
 const CALLBACK_PATH = "/callback";
 const TIMEOUT_MS = 5 * 60 * 1000;
@@ -601,8 +601,19 @@ async function exchangeCode(
     // access token into the thrown error, which a caller may log or show.
     // The audit sink's redact() is the house filter, so the message keeps
     // the response's diagnosable shape without leaking credential material.
+    // redact() works on object keys, so a body that never parsed into a
+    // JSON object (a proxy's HTML error page, say) is described by its
+    // size instead of echoed: nothing in it is structured enough to redact
+    // reliably, and a page that echoed the request would carry the client
+    // secret and the one-time code.
+    const shown =
+      payload !== null && typeof payload === "object" && !Array.isArray(payload)
+        ? JSON.stringify(redact(payload))
+        : text
+          ? `(non-object body of ${text.length} bytes)`
+          : "(empty body)";
     throw new Error(
-      `Zendesk token exchange failed: HTTP ${response.status} ${JSON.stringify(redact(payload))}`,
+      `Zendesk token exchange failed: HTTP ${response.status} ${shown}`,
     );
   }
 
