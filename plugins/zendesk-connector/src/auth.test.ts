@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import {
+  defaultTokenFile,
   isValidCallbackPort,
   resolveCallbackPort,
   sameFilePath,
@@ -140,6 +142,27 @@ test("resolveTokenFile falls back to the client file's tokenFile field", async (
   delete process.env.ZENDESK_OAUTH_TOKEN_FILE;
 
   assert.equal(resolveTokenFile(), tokenFile);
+});
+
+test("resolveTokenFile skips a client path that is not a regular file", async (ctx) => {
+  // A FIFO at the client path would block a bare readFileSync forever,
+  // hanging the logout that calls this. The lenient read applies the strict
+  // reader's one structural guard and falls through to the default path.
+  // mkfifo is POSIX-only; without it this host cannot build the case.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-fifo-test-"));
+  const clientFile = join(directory, "client.json");
+  try {
+    execFileSync("mkfifo", [clientFile]);
+  } catch {
+    ctx.skip("mkfifo is unavailable on this host");
+    return;
+  }
+  process.env = { ...originalEnv, ZENDESK_OAUTH_CLIENT_FILE: clientFile };
+  delete process.env.ZENDESK_OAUTH_TOKEN_FILE;
+  delete process.env.ZENDESK_SUBDOMAIN;
+  delete process.env.ZENDESK_BASE_URL;
+
+  assert.equal(resolveTokenFile(), defaultTokenFile());
 });
 
 test("access-token mode returns the configured bearer token", async () => {

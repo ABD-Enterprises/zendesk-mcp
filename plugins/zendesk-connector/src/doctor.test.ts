@@ -349,7 +349,7 @@ test("reports a token path that is the OAuth client file without probing the por
 
   assert.deepEqual(calls, []);
   assert.deepEqual(problems, [
-    `OAuth token file ${clientFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
+    `OAuth token file ${clientFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path, or fix the client file's tokenFile field; oauth:setup would overwrite the client credentials.`,
   ]);
 });
 
@@ -380,7 +380,7 @@ test("reports a token path that is a case-variant of the client file", async (ct
 
   assert.deepEqual(calls, []);
   assert.deepEqual(problems, [
-    `OAuth token file ${variant} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
+    `OAuth token file ${variant} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path, or fix the client file's tokenFile field; oauth:setup would overwrite the client credentials.`,
   ]);
 });
 

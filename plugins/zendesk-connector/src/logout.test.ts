@@ -402,7 +402,13 @@ test("clears the token file a loose-permission client file names", async () => {
   assert.equal(result.storedCredentials, "removed");
   assert.match(result.error ?? "", /chmod 600/);
   await assert.rejects(() => readFile(tokenFile, "utf8"), /ENOENT/);
+  // The decoy is not merely still there — it still holds its token, so a
+  // logout that emptied the wrong file fails here too.
   assert.ok((await stat(defaultTokenFile)).isFile());
+  assert.equal(
+    JSON.parse(await readFile(defaultTokenFile, "utf8")).access_token,
+    "invented-stale-token",
+  );
 });
 
 test("clears the local credentials when the client file holds a non-string tokenFile", async () => {

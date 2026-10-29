@@ -543,12 +543,17 @@ function savedTokenFile(): string | undefined {
   // permissions, the types of baseUrl/subdomain) are deliberately not
   // applied here: a client file that fails one of them must still lead
   // logout at the token file it names, not at a default path the connector
-  // never wrote. Anything unreadable — missing file, unparseable JSON, a
-  // wrong-typed or empty field — falls through to the default.
+  // never wrote. The strict reader's one structural guard is kept, though:
+  // reading a non-regular path (a FIFO, say) would block the fallback —
+  // and the whole logout — forever. Anything unusable — a non-regular
+  // path, a missing file, unparseable JSON, a wrong-typed or empty field —
+  // falls through to the default.
   try {
-    const payload = JSON.parse(
-      readFileSync(oauthClientFilePath(), "utf8"),
-    ) as unknown;
+    const clientFile = oauthClientFilePath();
+    if (!statSync(clientFile).isFile()) {
+      return undefined;
+    }
+    const payload = JSON.parse(readFileSync(clientFile, "utf8")) as unknown;
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return undefined;
     }

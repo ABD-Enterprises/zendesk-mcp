@@ -165,7 +165,7 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
   if (sameFilePath(tokenFile, oauthClientFilePath())) {
     return {
       setupNeeded: false,
-      problem: `OAuth token file ${tokenFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
+      problem: `OAuth token file ${tokenFile} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path, or fix the client file's tokenFile field; oauth:setup would overwrite the client credentials.`,
     };
   }
 
