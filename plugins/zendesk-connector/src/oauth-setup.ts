@@ -419,6 +419,21 @@ async function finish(
 }
 
 /**
+ * The loopback port the callback server must bind for a redirect URI: the
+ * port the URI names, or the scheme's default when it names none. The URL
+ * parser normalizes a default port away — `new URL("http://127.0.0.1:80/…")`
+ * reads back an empty `.port`, and `Number("")` is `0`, which would bind an
+ * ephemeral port while the browser, the `redirect_uri`, and the printed URL
+ * all still say `:80`. Binding the port the URI names keeps the listener on
+ * the port the browser is sent to.
+ */
+export function callbackServerPort(redirectUri: string): number {
+  const url = new URL(redirectUri);
+  if (url.port !== "") return Number(url.port);
+  return url.protocol === "https:" ? 443 : 80;
+}
+
+/**
  * The real authorization: a loopback callback server, the browser, and the
  * token exchange.
  */
@@ -427,7 +442,7 @@ async function authorizeWithBrowser(
   redirectUri: string,
   writeOut: (line: string) => void,
 ): Promise<StoredToken> {
-  const port = Number(new URL(redirectUri).port);
+  const port = callbackServerPort(redirectUri);
   const state = randomBytes(24).toString("hex");
   const authorizeUrl = new URL("/oauth/authorizations/new", config.baseUrl);
   authorizeUrl.searchParams.set("response_type", "code");

@@ -49,8 +49,9 @@ npm run oauth:setup
 ```
 
 When the subdomain, the client id, or the client secret is missing, the setup
-asks for it and can save the answers to that client file with owner-only
-permissions.
+asks for it in a terminal and can save the answers to that client file with
+owner-only permissions. Without a terminal it prints what is missing and exits
+1 instead of prompting.
 
 The browser flow stores access and rotating refresh tokens in
 `~/.config/codex-zendesk/oauth.json` with owner-only permissions. The MCP server

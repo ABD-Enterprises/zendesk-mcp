@@ -19,6 +19,7 @@ import { afterEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { OAuthClientFile, StoredToken, ZendeskConfig } from "./auth.js";
 import {
+  callbackServerPort,
   createReadlinePrompter,
   isMainModule,
   openBrowser,
@@ -140,6 +141,21 @@ async function sandbox(env: NodeJS.ProcessEnv = {}): Promise<Sandbox> {
   return { directory, clientFile, tokenFile };
 }
 
+/**
+ * Asserts that a file the setup wrote is owner-only. On Windows there is
+ * nothing to assert: Node reports synthetic permission bits there (0666 for
+ * a writable file) regardless of the file's ACLs, which is why the
+ * connector's own client-file check is skipped on Windows too. The rest of
+ * the calling test keeps running either way — this guard returns instead of
+ * calling `ctx.skip()`, because a mid-test skip downgrades every later
+ * assertion failure in that test to a skip.
+ */
+async function assertOwnerOnly(file: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const stats = await stat(file);
+  assert.equal(stats.mode & 0o777, 0o600);
+}
+
 test("runs the browser flow without prompting when everything is configured", async () => {
   const files = await sandbox({
     ZENDESK_SUBDOMAIN: "acme-tools",
@@ -167,8 +183,7 @@ test("runs the browser flow without prompting when everything is configured", as
 
   const stored = JSON.parse(await readFile(files.tokenFile, "utf8"));
   assert.deepEqual(stored, fakeToken);
-  const stats = await stat(files.tokenFile);
-  assert.equal(stats.mode & 0o777, 0o600);
+  await assertOwnerOnly(files.tokenFile);
 });
 
 test("prompts for every missing value and saves what the user entered", async () => {
@@ -193,8 +208,7 @@ test("prompts for every missing value and saves what the user entered", async ()
     clientId: "example-client-id",
     clientSecret: "example-client-secret",
   });
-  const clientStats = await stat(files.clientFile);
-  assert.equal(clientStats.mode & 0o777, 0o600);
+  await assertOwnerOnly(files.clientFile);
 
   const token = JSON.parse(await readFile(files.tokenFile, "utf8"));
   assert.deepEqual(token, fakeToken);
@@ -476,6 +490,46 @@ test("refuses an unusable callback port without prompting", async () => {
     result.err[1],
     "Run npm run doctor to check the configuration.\n",
   );
+});
+
+test("derives the listened callback port from the redirect URI", () => {
+  // The listener has to bind the port the browser is sent to. The URL parser
+  // normalizes a default port away — an http URI carrying :80 reads back an
+  // empty `.port` — so deriving the port any other way would bind an
+  // ephemeral port while the redirect URI still says :80, and the run would
+  // sit out its five-minute timeout on a port nothing serves. Every port the
+  // setup can build therefore round-trips through the derivation.
+  for (const port of [1, 80, 443, 3219, 65535]) {
+    assert.equal(
+      callbackServerPort(`http://127.0.0.1:${port}/callback`),
+      port,
+    );
+  }
+  // A URI with no port at all falls back to the scheme's own default.
+  assert.equal(callbackServerPort("https://127.0.0.1/callback"), 443);
+  assert.equal(callbackServerPort("http://127.0.0.1/callback"), 80);
+});
+
+test("keeps an explicit :80 in the redirect URI the listener binds", async () => {
+  // The URL parser erases an explicit default port, so this pins the two
+  // halves against each other: the redirect URI setup hands to the authorize
+  // step still names :80, and the port the listener derives from that URI is
+  // 80 rather than an ephemeral one. (The listener itself is not started —
+  // the authorize step is injected — so this runs without binding a
+  // privileged port.)
+  await sandbox({
+    ZENDESK_SUBDOMAIN: "acme-tools",
+    ZENDESK_OAUTH_CLIENT_ID: "example-client-id",
+    ZENDESK_OAUTH_CLIENT_SECRET: "example-client-secret",
+    ZENDESK_OAUTH_CALLBACK_PORT: "80",
+  });
+  const result = await runSetup();
+
+  assert.equal(result.code, 0);
+  assert.equal(result.authorizations.length, 1);
+  const redirectUri = result.authorizations[0].redirectUri;
+  assert.equal(redirectUri, "http://127.0.0.1:80/callback");
+  assert.equal(callbackServerPort(redirectUri), 80);
 });
 
 test("refuses a client file that other users can read", async (ctx) => {

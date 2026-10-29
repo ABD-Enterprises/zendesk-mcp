@@ -59,8 +59,9 @@ The connector treats it as sensitive:
   and the connector falls back to the environment variables.
 
 The one-time browser flow (`npm run oauth:setup`) reads the same configuration,
-prompts for anything missing, writes its result to the token file, and can save
-the entered values to the client file.
+prompts for anything missing in a terminal (without one it prints what is
+missing and exits 1), writes its result to the token file, and can save the
+entered values to the client file.
 
 ### The token file
 

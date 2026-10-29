@@ -31,9 +31,10 @@ OAuth client in Zendesk Admin Center with the callback URL
 npm run oauth:setup
 ```
 
-If a value is missing, the setup asks for it and can store the answers in the
-same owner-only `~/.config/codex-zendesk/client.json`, so exporting the
-variables first is optional.
+If a value is missing, the setup asks for it in a terminal — without one it
+prints what is missing and exits 1 — and can store the answers in the same
+owner-only `~/.config/codex-zendesk/client.json`, so exporting the variables
+first is optional.
 
 After configuring the OAuth client, or any time something is not working, run
 the doctor preflight:
@@ -249,9 +250,10 @@ export ZENDESK_OAUTH_CLIENT_SECRET="your-client-secret"
 ```
 
 These exports are optional: `npm run oauth:setup` (below) asks for any value it
-cannot find — the subdomain, the client id, and the client secret — and offers
-to save the answers to `~/.config/codex-zendesk/client.json` with owner-only
-permissions.
+cannot find — the subdomain, the client id, and the client secret — in a
+terminal, and offers to save the answers to
+`~/.config/codex-zendesk/client.json` with owner-only permissions. Without a
+terminal it prints what is missing and exits 1 instead of prompting.
 
 For desktop clients that do not inherit shell environment variables, store the
 same settings in `~/.config/codex-zendesk/client.json`:
