@@ -1,12 +1,12 @@
 import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { resolve } from "node:path";
 import {
   CALLBACK_PORT_ERROR,
   getConfig,
   isValidCallbackPort,
   oauthClientFilePath,
   resolveCallbackPort,
+  sameFilePath,
   type ZendeskConfig,
 } from "./auth.js";
 import { assertUsableConfig } from "./health.js";
@@ -268,23 +268,6 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
 }
 
 /**
- * True when two paths name the same file. Existing paths are compared by
- * device and inode — a case-variant or symlinked spelling of the client file
- * on a case-insensitive volume is the same file — and a path that cannot be
- * stat'd falls back to the resolved string, which is all that is left when
- * one side does not exist yet.
- */
-function sameFilePath(first: string, second: string): boolean {
-  try {
-    const a = statSync(first);
-    const b = statSync(second);
-    return a.dev === b.dev && a.ino === b.ino;
-  } catch {
-    return resolve(first) === resolve(second);
-  }
-}
-
-/**
  * Validates `ZENDESK_OAUTH_CALLBACK_PORT` exactly as `oauth:setup` reads it,
  * then asks whether the loopback port is free. The default probe only binds
  * `127.0.0.1` briefly; no traffic leaves the machine. A port that cannot be
@@ -312,9 +295,10 @@ async function checkCallbackPort(
       port < 1024
         ? `this user cannot bind the port (a port below 1024 needs elevated privileges${detail})`
         : // Above 1024 the port needs no privileges, so privileges are not
-          // the explanation; a sandbox, a firewall, or an address policy
-          // can refuse it.
-          `this user cannot bind the port (the OS refused it to this user${detail})`;
+          // the explanation; a sandbox, a firewall, an address policy, or
+          // descriptor exhaustion (EMFILE, ENFILE) can refuse the bind, and
+          // the errno names which — so this clause claims no cause of its own.
+          `this user cannot bind the port (the OS refused the bind attempt${detail})`;
   }
   return `npm run oauth:setup cannot listen on port ${port}: ${cause}. Set ZENDESK_OAUTH_CALLBACK_PORT to a free port and register that exact callback URL on the OAuth client in Zendesk.`;
 }

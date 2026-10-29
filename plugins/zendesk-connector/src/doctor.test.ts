@@ -161,7 +161,7 @@ test("reports a port this user cannot bind with its own advice", async () => {
   assert.deepEqual(calls, [3219]);
   assert.equal(problems.length, 2);
   assert.match(problems[0], /cannot listen on port 3219: this user cannot bind the port/);
-  assert.match(problems[0], /the OS refused it to this user, errno EACCES/);
+  assert.match(problems[0], /the OS refused the bind attempt, errno EACCES/);
   assert.ok(!problems[0].includes("earlier setup"));
   assert.ok(!problems[0].includes("elevated privileges"));
   assert.match(problems[1], /Run npm run oauth:setup/);
@@ -174,8 +174,21 @@ test("reports a port this user cannot bind with its own advice", async () => {
     probePort: probeRecorder({}).probe,
   });
 
-  assert.match(withoutErrno[0], /the OS refused it to this user\)\./);
+  assert.match(withoutErrno[0], /the OS refused the bind attempt\)\./);
   assert.ok(!withoutErrno[0].includes("errno"));
+
+  // Descriptor exhaustion is also a bind refusal, and its report must not
+  // invent a cause: the clause names none, and the errno carries the OS's own
+  // answer (EMFILE here — not privileges, a sandbox, or "to this user").
+  const exhausted = await checkDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile: join(directory, "oauth.json") }),
+    probePort: probeRecorder({ errno: "EMFILE" }).probe,
+  });
+
+  assert.match(exhausted[0], /the OS refused the bind attempt, errno EMFILE/);
+  assert.ok(!exhausted[0].includes("refused it to this user"));
+  assert.ok(!exhausted[0].includes("elevated privileges"));
 });
 
 test("reports an unusable callback port without probing it", async () => {
@@ -369,6 +382,36 @@ test("reports a token path that is a case-variant of the client file", async (ct
   assert.deepEqual(problems, [
     `OAuth token file ${variant} is the OAuth client file. Set ZENDESK_OAUTH_TOKEN_FILE to a different path; oauth:setup would overwrite the client credentials.`,
   ]);
+});
+
+test("reports a client file whose tokenFile is not a path string", async () => {
+  const directory = await tempDir();
+  // A JSON value of the wrong type is a configuration error like any other:
+  // the entry point must print one actionable line and exit 1 — not crash
+  // with a raw TypeError — and the checks that depend on the configuration
+  // are skipped along with it.
+  const clientFile = join(directory, "client.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      subdomain: "example",
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      mode: "authorization_code",
+      tokenFile: 123,
+    }),
+    { mode: 0o600 },
+  );
+
+  const result = await runEntry(["--doctor"], {
+    ...cleanEnv({ ZENDESK_OAUTH_CLIENT_FILE: clientFile }),
+  });
+
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /OAuth client configuration .*client\.json has a "tokenFile" value that must be a non-empty path string\./);
+  assert.ok(!result.stderr.includes("TypeError"));
+  assert.ok(!result.stderr.includes("cannot listen on port"));
 });
 
 test("reports a token file that does not parse", async () => {

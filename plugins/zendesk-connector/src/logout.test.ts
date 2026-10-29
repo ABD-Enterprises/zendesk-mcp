@@ -208,6 +208,49 @@ test("never removes the OAuth client file", async () => {
   assert.equal(event.storedCredentials, "kept");
 });
 
+test("never removes the OAuth client file spelled with different case", async (ctx) => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-logout-test-"));
+  const clientFile = join(directory, "client.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({ clientId: "invented-client-id" }),
+    { mode: 0o600 },
+  );
+  // On a case-insensitive volume the two spellings are one file, so deleting
+  // through the variant deletes the client credentials. The probe decides
+  // whether this host's volume folds case, so the assertion holds anywhere.
+  const variant = join(directory, "Client.json");
+  try {
+    await stat(variant);
+  } catch {
+    ctx.skip("this volume is case-sensitive");
+    return;
+  }
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
+
+  globalThis.fetch = recordingFetcher([], () => {
+    throw new Error("the tests never reach the network");
+  });
+
+  const lines: string[] = [];
+  const result = await new ZendeskLogout({
+    config: config({ tokenFile: variant }),
+    sink: (line) => lines.push(line),
+  }).run();
+
+  assert.equal(result.storedCredentials, "kept");
+  assert.match(result.error ?? "", /client file/);
+  assert.ok((await stat(clientFile)).isFile());
+  assert.equal(
+    JSON.parse(await readFile(clientFile, "utf8")).clientId,
+    "invented-client-id",
+  );
+
+  assert.equal(lines.length, 1);
+  const event = JSON.parse(lines[0]);
+  assert.equal(event.storedCredentials, "kept");
+});
+
 test("clears the stored credentials when the configuration is incomplete", async () => {
   const directory = await mkdtemp(join(tmpdir(), "zendesk-logout-test-"));
   const tokenFile = join(directory, "oauth.json");
@@ -238,6 +281,58 @@ test("clears the stored credentials when the configuration is incomplete", async
   assert.equal(result.revoked, false);
   assert.equal(result.storedCredentials, "removed");
   assert.match(result.error ?? "", /configuration is unavailable/);
+  await assert.rejects(() => readFile(tokenFile, "utf8"), /ENOENT/);
+
+  assert.equal(lines.length, 1);
+  const event = JSON.parse(lines[0]);
+  assert.equal(event.outcome, "error");
+  assert.equal(event.storedCredentials, "removed");
+});
+
+test("clears the local credentials when the client file holds a non-string tokenFile", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-logout-test-"));
+  const tokenFile = join(directory, "oauth.json");
+  const clientFile = join(directory, "client.json");
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      subdomain: "example",
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      mode: "authorization_code",
+      tokenFile: 123,
+    }),
+    { mode: 0o600 },
+  );
+
+  process.env = {
+    ...originalEnv,
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+    ZENDESK_OAUTH_TOKEN_FILE: tokenFile,
+  };
+  delete process.env.ZENDESK_SUBDOMAIN;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_OAUTH_CLIENT_ID;
+  delete process.env.ZENDESK_OAUTH_CLIENT_SECRET;
+  delete process.env.ZENDESK_OAUTH_ACCESS_TOKEN;
+  delete process.env.ZENDESK_OAUTH_MODE;
+  globalThis.fetch = recordingFetcher([], () => {
+    throw new Error("the tests never reach the network");
+  });
+
+  const lines: string[] = [];
+  const result = await new ZendeskLogout({
+    sink: (line) => lines.push(line),
+  }).run();
+
+  // getConfig rejects the wrong-typed field with a normal configuration
+  // error, so logout reports it instead of crashing on a non-string path —
+  // and, as with any unusable configuration, the local credentials the
+  // resolved path names are still cleared.
+  assert.match(result.error ?? "", /"tokenFile" value that must be a non-empty path string/);
+  assert.equal(result.revoked, false);
+  assert.equal(result.storedCredentials, "removed");
   await assert.rejects(() => readFile(tokenFile, "utf8"), /ENOENT/);
 
   assert.equal(lines.length, 1);

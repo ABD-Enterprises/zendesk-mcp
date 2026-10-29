@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const EXPIRY_SKEW_MS = 60_000;
 const ACCESS_TOKEN_TTL_SECONDS = 3_600;
@@ -106,6 +106,31 @@ export function defaultOAuthClientFile(): string {
 /** The path of the owner-only OAuth client configuration file. */
 export function oauthClientFilePath(): string {
   return env("ZENDESK_OAUTH_CLIENT_FILE") ?? defaultOAuthClientFile();
+}
+
+/**
+ * True when two paths name the same file.
+ *
+ * Existing paths are compared by device and inode, so a case-variant or
+ * symlinked spelling of the client file on a case-insensitive volume is still
+ * the same file. An inode of 0 is not an identity (some FAT and network
+ * filesystems report it for every file), and a path that cannot be stat'd
+ * falls back to the resolved string — all that is left when one side does not
+ * exist yet. A non-string path (only reachable through an unchecked config
+ * value) is never a match; the caller's own read reports it.
+ */
+export function sameFilePath(first: string, second: string): boolean {
+  if (typeof first !== "string" || typeof second !== "string") return false;
+  try {
+    const a = statSync(first);
+    const b = statSync(second);
+    if (a.ino !== 0 && b.ino !== 0) {
+      return a.dev === b.dev && a.ino === b.ino;
+    }
+  } catch {
+    // One side cannot be stat'd; compare the resolved strings below.
+  }
+  return resolve(first) === resolve(second);
 }
 
 /** The default loopback port the one-time browser setup listens on. */
@@ -212,6 +237,20 @@ function readOAuthClientFile(clientFile: string): OAuthClientFile {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw new ZendeskAuthError(
         `OAuth client configuration ${clientFile} must contain a JSON object.`,
+      );
+    }
+    // The cast below promises a string path, and every consumer treats it as
+    // one (an fs call on a number throws a raw TypeError), so a JSON value of
+    // the wrong type is rejected here — as the field is read, before any
+    // consumer can trip over it. An empty string is equally unusable: it is
+    // not a path, and it does not fall back to the default.
+    const saved = payload as { tokenFile?: unknown };
+    if (
+      saved.tokenFile !== undefined &&
+      (typeof saved.tokenFile !== "string" || saved.tokenFile.trim() === "")
+    ) {
+      throw new ZendeskAuthError(
+        `OAuth client configuration ${clientFile} has a "tokenFile" value that must be a non-empty path string.`,
       );
     }
     return payload as OAuthClientFile;

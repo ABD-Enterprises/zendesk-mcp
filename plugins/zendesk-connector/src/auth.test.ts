@@ -6,6 +6,7 @@ import { afterEach, test } from "node:test";
 import {
   isValidCallbackPort,
   resolveCallbackPort,
+  sameFilePath,
   ZendeskAuthError,
   ZendeskOAuth,
   getConfig,
@@ -268,6 +269,15 @@ test("isValidCallbackPort accepts only integers within the TCP range", () => {
   assert.equal(isValidCallbackPort(65536), false);
   assert.equal(isValidCallbackPort(3219.5), false);
   assert.equal(isValidCallbackPort(Number.NaN), false);
+});
+
+test("sameFilePath treats a non-string path as no match instead of throwing", () => {
+  // The client file may hold any JSON value for tokenFile, and the guard runs
+  // before the caller's own read reports it — a wrong-typed value must come
+  // back as "not the same file", never as a raw TypeError.
+  assert.equal(sameFilePath(123 as unknown as string, "example-client.json"), false);
+  assert.equal(sameFilePath("example-token.json", {} as unknown as string), false);
+  assert.equal(sameFilePath(undefined as unknown as string, "example-token.json"), false);
 });
 
 interface RecordedRequest {
