@@ -51,7 +51,9 @@ The connector treats it as sensitive:
 - It must be a regular file.
 - It must not be readable by group or other. Any group or other permission bit
   makes startup fail with a message that names the file and asks for
-  `chmod 600`.
+  `chmod 600` — except on Windows, where Node reports synthetic permission
+  bits regardless of the file's ACLs, so the check is skipped there instead
+  of failing every run.
 - When `ZENDESK_OAUTH_CLIENT_FILE` is set and the file cannot be read, startup
   fails. When the variable is unset, an absent default file is not an error,
   and the connector falls back to the environment variables.

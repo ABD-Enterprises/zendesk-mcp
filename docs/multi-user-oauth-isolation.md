@@ -53,7 +53,9 @@ concretely when a second person shares it:
   notion of a caller, so everyone who can reach it sees the same views.
 
 Sharing the client file is not a workaround either: the connector refuses
-to start when the client file is readable by group or other
+to start when the client file is readable by group or other — a check
+skipped on Windows, where Node reports synthetic permission bits regardless
+of the file's ACLs
 ([auth.ts](../plugins/zendesk-connector/src/auth.ts)), and
 [SECURITY.md](../SECURITY.md) keeps OAuth client secrets in the environment
 or in that owner-only file and never in the repository.
