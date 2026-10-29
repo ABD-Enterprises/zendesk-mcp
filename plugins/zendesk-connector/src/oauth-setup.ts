@@ -449,13 +449,15 @@ export function callbackServerPort(redirectUri: string): number {
  * The real authorization: a loopback callback server, the browser, and the
  * token exchange. Exported so a test can pin the port the listener binds;
  * the browser launcher is a parameter so such a test can also prove that
- * nothing is opened.
+ * nothing is opened, and the wait deadline is a parameter so a test can
+ * bound a failure path instead of sitting out the production timeout.
  */
 export async function authorizeWithBrowser(
   config: ZendeskConfig,
   redirectUri: string,
   writeOut: (line: string) => void,
   spawnImpl?: BrowserSpawn,
+  timeoutMs?: number,
 ): Promise<StoredToken> {
   const port = callbackServerPort(redirectUri);
   const state = randomBytes(24).toString("hex");
@@ -473,6 +475,7 @@ export async function authorizeWithBrowser(
     authorizeUrl: authorizeUrl.toString(),
     writeOut,
     spawnImpl,
+    timeoutMs,
   });
   return exchangeCode(config, redirectUri, code);
 }
@@ -494,6 +497,12 @@ interface CallbackServerOptions {
    * server never launches one; the default is the real launcher.
    */
   spawnImpl?: BrowserSpawn;
+  /**
+   * How long to wait for the callback, in milliseconds. The default is the
+   * production five-minute wait; a test bounds it so a failure path ends
+   * promptly instead of lingering out the full timeout.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -529,7 +538,7 @@ function waitForAuthorizationCode(
 
     const timeout = setTimeout(() => {
       finish(new Error("Timed out waiting for Zendesk authorization."));
-    }, TIMEOUT_MS);
+    }, options.timeoutMs ?? TIMEOUT_MS);
 
     function finish(error?: Error, code?: string) {
       clearTimeout(timeout);

@@ -10,7 +10,7 @@ does not describe a shipped secret-management feature.
 | Source | Contents | Owner-only check |
 | --- | --- | --- |
 | Environment variables | client id, secret, token, account URL | none |
-| `client.json` | client id, secret, mode, scope, account URL | enforced |
+| `client.json` | client id, secret, mode, scope, account URL | enforced on POSIX |
 | `oauth.json` | access token, refresh token, expiry | enforced on write |
 
 The two files live in `~/.config/codex-zendesk/` by default.

@@ -586,7 +586,9 @@ test("refuses to authorize on a port the host will not bind", async (ctx) => {
   // an empty `.port`), the listener would bind an ephemeral port instead,
   // this assertion would fail, and fail immediately: the listen callback
   // refuses any port that disagrees with the redirect URI before anything is
-  // printed or opened.
+  // printed or opened. This test bounds that timeout to four seconds, so
+  // even a doubly-regressed run — no guard and no correct derivation — fails
+  // in seconds rather than waiting out the production five minutes.
   const probe = await probeBind(80);
   if (probe !== "EACCES" && probe !== "EPERM") {
     ctx.skip(
@@ -615,6 +617,7 @@ test("refuses to authorize on a port the host will not bind", async (ctx) => {
       "http://127.0.0.1:80/callback",
       (line) => out.push(line),
       recordingSpawn(opened),
+      4_000,
     ),
     (error: unknown) => {
       const code = (error as NodeJS.ErrnoException).code;
@@ -634,7 +637,8 @@ test("refuses a redirect URI whose port the listener cannot hold", async () => {
   // with the named mismatch — promptly, and before the authorization URL is
   // printed or the browser opened. The launcher is a recording stub, so if
   // the bound-port check were ever removed the test would still fail (at
-  // the callback timeout) without ever starting a real browser.
+  // the callback timeout, bounded here to four seconds) without ever
+  // starting a real browser.
   const files = await sandbox();
   const config: ZendeskConfig = {
     baseUrl: "https://acme-tools.zendesk.com",
@@ -653,6 +657,7 @@ test("refuses a redirect URI whose port the listener cannot hold", async () => {
       "http://127.0.0.1:0/callback",
       (line) => out.push(line),
       recordingSpawn(opened),
+      4_000,
     ),
     /bound port \d+ instead of the port in the redirect URI \(0\)/,
   );
@@ -682,12 +687,14 @@ async function freePort(): Promise<number> {
 test("opens the authorization URL through the injected launcher", async () => {
   // The positive path: the redirect URI names a port this host can bind, the
   // listener holds it, and the run reaches the launcher — which has to be
-  // the injected stub, so nothing is ever opened. (Were the injection to
-  // regress, the real launcher would run instead: harmless on CI's headless
-  // Linux, where the command does not exist, and the test still fails,
-  // because only the stub records anything.) The callback then arrives with
-  // the wrong state on purpose: the run fails on the state check before the
-  // token exchange, so there is no network call and no five-minute wait.
+  // the injected stub, so nothing is ever opened. Were the injection to
+  // regress, the real launcher would run instead: the test still fails,
+  // because only the stub records anything — but on a developer's machine
+  // that regression opens the authorization URL in a real browser, which is
+  // why the seam is asserted from both directions. The callback then
+  // arrives with the wrong state on purpose: the run fails on the state
+  // check before the token exchange, so there is no network call and no
+  // wait for the callback deadline.
   const files = await sandbox();
   const config: ZendeskConfig = {
     baseUrl: "https://acme-tools.zendesk.com",
@@ -702,26 +709,50 @@ test("opens the authorization URL through the injected launcher", async () => {
   const out: string[] = [];
   const opened: string[] = [];
   // The handler is attached at once: a listener that never comes up leaves
-  // its error in the outcome instead of an unhandled rejection.
+  // its error in the outcome instead of an unhandled rejection. The wait is
+  // bounded below the poll deadline, so a run that reaches no launcher ends
+  // with its own reason instead of leaving the production five-minute timer
+  // to hold the suite open after the assertion fails.
+  let ended = false;
   const outcome = authorizeWithBrowser(
     config,
     redirectUri,
     (line) => out.push(line),
     recordingSpawn(opened),
+    4_000,
   ).then(
-    () => undefined,
-    (error: unknown) => error,
+    () => {
+      ended = true;
+      return undefined;
+    },
+    (error: unknown) => {
+      ended = true;
+      return error;
+    },
   );
 
   // The launcher runs from the listen callback, so waiting for it doubles as
-  // waiting for the listener — bounded, so a regression fails at the
-  // deadline instead of hanging.
+  // waiting for the listener. The loop also stops once the run has ended:
+  // an early failure (a bind refusal, say) then reports its own error below
+  // instead of being masked by this deadline. The deadline is the last
+  // resort, for a run that neither calls the launcher nor ends.
   const deadline = Date.now() + 5_000;
-  while (opened.length === 0) {
+  while (opened.length === 0 && !ended) {
     if (Date.now() > deadline) {
       throw new Error("the injected launcher was never called");
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  if (opened.length === 0) {
+    // The loop only leaves with the launcher recorded or the run ended, so
+    // here the run ended before any launcher call: its own error says why.
+    const failure = await outcome;
+    assert.ok(failure instanceof Error);
+    // A wait that ran out means the launcher was never reached — the deadline
+    // above would say the same thing — so report that directly; anything
+    // else (a bind refusal, a port mismatch) is the real reason and stands.
+    if (!failure.message.includes("Timed out")) throw failure;
+    throw new Error("the injected launcher was never called");
   }
   // The launcher was handed the authorization URL, and its redirect_uri is
   // the port the listener actually holds — the same URI the browser would

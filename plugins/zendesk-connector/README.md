@@ -35,9 +35,9 @@ actor ID. The allowlist is a deployment control; it should be combined with
 Zendesk OAuth scopes and the account's own role permissions.
 
 Codex desktop can instead read an owner-only
-`~/.config/codex-zendesk/client.json` file containing `subdomain`, `mode`,
-`clientId`, `clientSecret`, and `scope`. Environment variables override the
-file. Restrict it with `chmod 600`.
+`~/.config/codex-zendesk/client.json` file containing `subdomain`,
+`baseUrl`, `mode`, `clientId`, `clientSecret`, and `scope`. Environment
+variables override the file. Restrict it with `chmod 600`.
 
 Alternatively, set `ZENDESK_BASE_URL` to a full Zendesk URL such as
 `https://your-subdomain.zendesk.com`.
