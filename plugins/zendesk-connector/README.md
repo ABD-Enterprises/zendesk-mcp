@@ -35,9 +35,9 @@ actor ID. The allowlist is a deployment control; it should be combined with
 Zendesk OAuth scopes and the account's own role permissions.
 
 Codex desktop can instead read an owner-only
-`~/.config/codex-zendesk/client.json` file containing `subdomain`, `mode`,
-`clientId`, `clientSecret`, and `scope`. Environment variables override the
-file. Restrict it with `chmod 600`.
+`~/.config/codex-zendesk/client.json` file containing `subdomain`,
+`baseUrl`, `mode`, `clientId`, `clientSecret`, and `scope`. Environment
+variables override the file. Restrict it with `chmod 600`.
 
 Alternatively, set `ZENDESK_BASE_URL` to a full Zendesk URL such as
 `https://your-subdomain.zendesk.com`.
@@ -47,6 +47,11 @@ Run the one-time authorization flow from this directory:
 ```sh
 npm run oauth:setup
 ```
+
+When the subdomain, the client id, or the client secret is missing, the setup
+asks for it in a terminal and can save the answers to that client file with
+owner-only permissions. Without a terminal it prints what is missing and exits
+1 instead of prompting.
 
 The browser flow stores access and rotating refresh tokens in
 `~/.config/codex-zendesk/oauth.json` with owner-only permissions. The MCP server

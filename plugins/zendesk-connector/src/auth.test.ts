@@ -79,7 +79,14 @@ test("getConfig reads an owner-only OAuth client file", async () => {
   assert.equal(loaded.scope, "tickets:read");
 });
 
-test("getConfig rejects an OAuth client file readable by other users", async () => {
+test("getConfig rejects an OAuth client file readable by other users", async (ctx) => {
+  // Node reports synthetic permission bits on Windows (group and other always
+  // look set), so the check is skipped there: this host cannot show the
+  // refusal.
+  if (process.platform === "win32") {
+    ctx.skip("file mode bits are not reported the same way on Windows");
+    return;
+  }
   const directory = await mkdtemp(join(tmpdir(), "zendesk-client-test-"));
   const clientFile = join(directory, "client.json");
   await writeFile(clientFile, JSON.stringify({ subdomain: "tenant" }));

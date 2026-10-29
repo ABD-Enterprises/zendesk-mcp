@@ -374,7 +374,14 @@ test("clears the token file the client file names when the configuration is inco
   assert.equal(event.storedCredentials, "removed");
 });
 
-test("clears the token file a loose-permission client file names", async () => {
+test("clears the token file a loose-permission client file names", async (ctx) => {
+  // Node reports synthetic permission bits on Windows (group and other always
+  // look set), so the check is skipped there: this host cannot show the
+  // configuration failing the permission check.
+  if (process.platform === "win32") {
+    ctx.skip("file mode bits are not reported the same way on Windows");
+    return;
+  }
   const directory = await mkdtemp(join(tmpdir(), "zendesk-logout-test-"));
   const home = join(directory, "home");
   const tokenFile = join(directory, "named-oauth.json");

@@ -114,8 +114,10 @@ testing and cannot renew a token.
 ### Owner-only permissions
 
 The client file must not be readable by group or other; the connector
-refuses to start when it is. The console reads the same file without
-checking its mode, so the owner-only mode is the only protection there. The
+refuses to start when it is (except on Windows, where Node reports
+synthetic permission bits regardless of the file's ACLs, so the check is
+skipped there). The console reads the same file without checking its
+mode, so the owner-only mode is the only protection there. The
 token file (which exists in `authorization_code` mode only) is written
 owner-only but not checked when it is read, so keep it owner-only yourself.
 Restore the modes after any copy or restore, as the
@@ -256,7 +258,8 @@ id and secret in their own client file (`~/.config/codex-zendesk/client.json`
 under their own home, moved by `ZENDESK_OAUTH_CLIENT_FILE`) or in their
 own environment. One registration per person, and no shared client file:
 the connector refuses to start when the client file is readable by group
-or other. The console reads the same file without checking its mode, so
+or other (skipped on Windows, where Node reports synthetic permission
+bits). The console reads the same file without checking its mode, so
 the owner-only mode is the only protection there — a file two host users
 can read is refused by the connector rather than shared, and kept out of
 the console's reach only by its mode.
@@ -326,8 +329,9 @@ one is outside the supported model:
   [operations guide](operations.md#deployment-shape) keeps multi-tenant
   hosting out of scope for this release.
 - **One token file shared between host users.** The client file is refused
-  when group or other can read it, and the token file is owner-only by
-  design. A copy shared between host users is a credential outside the
+  when group or other can read it (except on Windows, where Node reports
+  synthetic permission bits and the check is skipped), and the token file is
+  owner-only by design. A copy shared between host users is a credential outside the
   permission model, not a supported way to run one deployment for two users.
 - **Pooling one console across accounts.** The console takes one set of
   account identifiers from the environment and keeps no account data of its

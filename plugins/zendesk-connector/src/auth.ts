@@ -165,6 +165,25 @@ export function resolveCallbackPort(): number {
 export function getConfig(): ZendeskConfig {
   const clientFile = oauthClientFilePath();
   const saved = readOAuthClientFile(clientFile);
+  return buildConfig(saved);
+}
+
+/**
+ * The message both `buildConfig` and `oauth:setup` report for a mode that
+ * is not one of `OAUTH_MODES`. The two used to carry their own copies of
+ * the sentence, which could drift apart.
+ */
+export const INVALID_MODE_MESSAGE =
+  "ZENDESK_OAUTH_MODE must be authorization_code, client_credentials, or access_token.";
+
+/**
+ * Builds the connector's configuration from a saved client file.
+ *
+ * The environment still wins over the file (the same precedence `getConfig`
+ * applies), so a caller that has already read the client file can build the
+ * configuration without reading it again.
+ */
+export function buildConfig(saved: OAuthClientFile): ZendeskConfig {
   const baseUrl = resolveBaseUrl(saved);
   if (!baseUrl) {
     throw new ZendeskAuthError(
@@ -183,9 +202,7 @@ export function getConfig(): ZendeskConfig {
   let mode: OAuthMode;
   if (requestedMode) {
     if (!isOAuthMode(requestedMode)) {
-      throw new ZendeskAuthError(
-        "ZENDESK_OAUTH_MODE must be authorization_code, client_credentials, or access_token.",
-      );
+      throw new ZendeskAuthError(INVALID_MODE_MESSAGE);
     }
     mode = requestedMode;
   } else if (accessToken) {
@@ -220,7 +237,12 @@ export function getConfig(): ZendeskConfig {
   };
 }
 
-function readOAuthClientFile(clientFile: string): OAuthClientFile {
+/**
+ * Reads the OAuth client file and checks that it is safe to use: a regular
+ * file, readable only by its owner, and a JSON object whose account fields
+ * are strings.
+ */
+export function readOAuthClientFile(clientFile: string): OAuthClientFile {
   try {
     const stats = statSync(clientFile);
     if (!stats.isFile()) {
@@ -228,7 +250,9 @@ function readOAuthClientFile(clientFile: string): OAuthClientFile {
         `OAuth client configuration ${clientFile} is not a regular file.`,
       );
     }
-    if ((stats.mode & 0o077) !== 0) {
+    // Node reports synthetic permission bits on Windows (group and other always
+    // look set), so the check is skipped there instead of failing every run.
+    if (process.platform !== "win32" && (stats.mode & 0o077) !== 0) {
       throw new ZendeskAuthError(
         `OAuth client configuration ${clientFile} must be readable only by its owner (chmod 600).`,
       );

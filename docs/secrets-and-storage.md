@@ -10,7 +10,7 @@ does not describe a shipped secret-management feature.
 | Source | Contents | Owner-only check |
 | --- | --- | --- |
 | Environment variables | client id, secret, token, account URL | none |
-| `client.json` | client id, secret, mode, scope, account URL | enforced |
+| `client.json` | client id, secret, mode, scope, account URL | enforced on POSIX |
 | `oauth.json` | access token, refresh token, expiry | enforced on write |
 
 The two files live in `~/.config/codex-zendesk/` by default.
@@ -51,13 +51,17 @@ The connector treats it as sensitive:
 - It must be a regular file.
 - It must not be readable by group or other. Any group or other permission bit
   makes startup fail with a message that names the file and asks for
-  `chmod 600`.
+  `chmod 600` — except on Windows, where Node reports synthetic permission
+  bits regardless of the file's ACLs, so the check is skipped there instead
+  of failing every run.
 - When `ZENDESK_OAUTH_CLIENT_FILE` is set and the file cannot be read, startup
   fails. When the variable is unset, an absent default file is not an error,
   and the connector falls back to the environment variables.
 
-The one-time browser flow (`npm run oauth:setup`) reads the same configuration
-and writes its result to the token file.
+The one-time browser flow (`npm run oauth:setup`) reads the same configuration,
+prompts for anything missing in a terminal (without one it prints what is
+missing and exits 1), writes its result to the token file, and can save the
+entered values to the client file.
 
 ### The token file
 
@@ -188,10 +192,12 @@ node plugins/zendesk-connector/dist/index.js
 ```
 
 Three details matter. The file is created under `umask 077` so it is never
-readable by group or other, which is what the connector requires. The server is
-started without `exec`, so the shell survives to run the cleanup trap. And the
-document is written with a JSON-aware writer, because the connector parses the
-file as JSON and fails to start on malformed content.
+readable by group or other, which is what the connector requires (the mode
+check itself is skipped on Windows, where Node reports synthetic permission
+bits). The server is started without `exec`, so the shell survives to run
+the cleanup trap. And the document is written with a JSON-aware writer,
+because the connector parses the file as JSON and fails to start on
+malformed content.
 
 ### Pattern 3: mount files into the container
 
@@ -212,8 +218,11 @@ Four constraints apply:
 
 - The image runs as the unprivileged `node` user, so the mounted client file
   must be readable by that user and the token file writable by it.
-- The connector refuses a client file that group or other can read, so the
-  mounted file must be owner-only and owned by the user the image runs as.
+- The connector refuses a client file that group or other can read (a check
+  skipped on Windows, where Node reports synthetic permission bits; this
+  pattern runs the connector inside a Linux container, where it applies), so
+  the mounted file must be owner-only and owned by the user the image runs
+  as.
 - Prefer the mounted file over `-e ZENDESK_OAUTH_CLIENT_SECRET=...`. A
   container environment variable is part of the container configuration and is
   readable through the runtime's inspection API; a mounted file is not.

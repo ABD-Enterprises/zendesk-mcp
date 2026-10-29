@@ -315,8 +315,10 @@ reads, and it belongs in the loop as well.
 
 A restore keeps the owner-only mode only if the archive carried it. The
 connector refuses to start when the client file is readable by its group or
-by others, so a restore that keeps the content but loses the mode fails
-closed at startup instead of running with loose permissions. The token file
+by others — except on Windows, where Node reports synthetic permission bits
+regardless of the file's ACLs and the check is skipped — so a restore that
+keeps the content but loses the mode fails closed at startup instead of
+running with loose permissions. The token file
 is not checked when it is read: the connector writes it with the owner-only
 mode and replaces it atomically, so it repairs the mode on the next write,
 but until then it keeps whatever the restore left behind. The console reads
