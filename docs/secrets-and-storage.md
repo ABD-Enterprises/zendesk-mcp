@@ -193,11 +193,11 @@ node plugins/zendesk-connector/dist/index.js
 
 Three details matter. The file is created under `umask 077` so it is never
 readable by group or other, which is what the connector requires (the mode
-check itself is skipped on Windows, where `umask` does not exist either).
-The server is started without `exec`, so the shell survives to run the
-cleanup trap. And the document is written with a JSON-aware writer, because
-the connector parses the file as JSON and fails to start on malformed
-content.
+check itself is skipped on Windows, where Node reports synthetic permission
+bits). The server is started without `exec`, so the shell survives to run
+the cleanup trap. And the document is written with a JSON-aware writer,
+because the connector parses the file as JSON and fails to start on
+malformed content.
 
 ### Pattern 3: mount files into the container
 

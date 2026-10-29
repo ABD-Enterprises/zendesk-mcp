@@ -26,6 +26,7 @@ import {
   isMainModule,
   openBrowser,
   runOAuthSetup,
+  type BrowserSpawn,
   type OAuthSetupOptions,
   type Prompter,
 } from "./oauth-setup.js";
@@ -560,6 +561,20 @@ async function probeBind(port: number): Promise<string | null> {
   });
 }
 
+/**
+ * A browser launcher that records the call and starts nothing. A test of
+ * the callback server asserts the run never reaches it, so a regression
+ * opens no real browser.
+ */
+function recordingSpawn(opened: string[]): BrowserSpawn {
+  return () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = () => {};
+    opened.push("spawn");
+    return child;
+  };
+}
+
 test("refuses to authorize on a port the host will not bind", async (ctx) => {
   // The redirect URI names :80, and the listener has to bind that exact
   // port: a run whose listener is elsewhere would print an authorization
@@ -591,20 +606,24 @@ test("refuses to authorize on a port the host will not bind", async (ctx) => {
     scope: "read",
   };
   const out: string[] = [];
+  const opened: string[] = [];
 
   await assert.rejects(
     authorizeWithBrowser(
       config,
       "http://127.0.0.1:80/callback",
       (line) => out.push(line),
+      recordingSpawn(opened),
     ),
     (error: unknown) => {
       const code = (error as NodeJS.ErrnoException).code;
       return code === "EACCES" || code === "EPERM";
     },
   );
-  // The refusal happens before the authorization URL is written out.
+  // The refusal happens before the authorization URL is written out and
+  // before any browser is started.
   assert.deepEqual(out, []);
+  assert.deepEqual(opened, []);
 });
 
 test("refuses a redirect URI whose port the listener cannot hold", async () => {
@@ -612,7 +631,9 @@ test("refuses a redirect URI whose port the listener cannot hold", async () => {
   // the port the URI names. The listen callback compares what it bound with
   // what the URI says and fails the run on any disagreement, so this rejects
   // with the named mismatch — promptly, and before the authorization URL is
-  // printed or the browser opened.
+  // printed or the browser opened. The launcher is a recording stub, so if
+  // the bound-port check were ever removed the test would still fail (at
+  // the callback timeout) without ever starting a real browser.
   const files = await sandbox();
   const config: ZendeskConfig = {
     baseUrl: "https://acme-tools.zendesk.com",
@@ -623,16 +644,19 @@ test("refuses a redirect URI whose port the listener cannot hold", async () => {
     scope: "read",
   };
   const out: string[] = [];
+  const opened: string[] = [];
 
   await assert.rejects(
     authorizeWithBrowser(
       config,
       "http://127.0.0.1:0/callback",
       (line) => out.push(line),
+      recordingSpawn(opened),
     ),
     /bound port \d+ instead of the port in the redirect URI \(0\)/,
   );
   assert.deepEqual(out, []);
+  assert.deepEqual(opened, []);
 });
 
 test("refuses a client file that other users can read", async (ctx) => {

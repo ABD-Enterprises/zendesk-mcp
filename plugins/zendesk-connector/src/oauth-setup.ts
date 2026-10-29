@@ -445,12 +445,15 @@ export function callbackServerPort(redirectUri: string): number {
 
 /**
  * The real authorization: a loopback callback server, the browser, and the
- * token exchange. Exported so a test can pin the port the listener binds.
+ * token exchange. Exported so a test can pin the port the listener binds;
+ * the browser launcher is a parameter so such a test can also prove that
+ * nothing is opened.
  */
 export async function authorizeWithBrowser(
   config: ZendeskConfig,
   redirectUri: string,
   writeOut: (line: string) => void,
+  spawnImpl?: BrowserSpawn,
 ): Promise<StoredToken> {
   const port = callbackServerPort(redirectUri);
   const state = randomBytes(24).toString("hex");
@@ -467,6 +470,7 @@ export async function authorizeWithBrowser(
     expectedState: state,
     authorizeUrl: authorizeUrl.toString(),
     writeOut,
+    spawnImpl,
   });
   return exchangeCode(config, redirectUri, code);
 }
@@ -483,6 +487,11 @@ interface CallbackServerOptions {
   authorizeUrl: string;
   /** Writes the authorization URL to stdout. */
   writeOut: (line: string) => void;
+  /**
+   * Starts the browser. A test replaces it, so a test of the callback
+   * server never launches one; the default is the real launcher.
+   */
+  spawnImpl?: BrowserSpawn;
 }
 
 /**
@@ -544,7 +553,7 @@ function waitForAuthorizationCode(
         return;
       }
       options.writeOut(`Opening Zendesk authorization:\n${options.authorizeUrl}\n`);
-      openBrowser(options.authorizeUrl, options.writeOut);
+      openBrowser(options.authorizeUrl, options.writeOut, options.spawnImpl);
     });
   });
 }
