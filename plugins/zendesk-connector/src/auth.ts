@@ -109,7 +109,16 @@ export function oauthClientFilePath(): string {
 }
 
 /** The default loopback port the one-time browser setup listens on. */
-export const OAUTH_CALLBACK_PORT_DEFAULT = 3219;
+const OAUTH_CALLBACK_PORT_DEFAULT = 3219;
+
+/** The message both `oauth:setup` and the doctor report for an unusable port. */
+export const CALLBACK_PORT_ERROR =
+  "ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535.";
+
+/** True when a raw callback-port value is a usable TCP port. */
+export function isValidCallbackPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
 
 /**
  * Reads the setup callback port exactly as `oauth:setup` interprets it: a raw
@@ -117,11 +126,9 @@ export const OAUTH_CALLBACK_PORT_DEFAULT = 3219;
  * value must surface as an error in both the setup and the doctor, not be
  * silently defaulted in one of them.
  */
-export function resolveCallbackPort(
-  envSource: NodeJS.ProcessEnv = process.env,
-): number {
+export function resolveCallbackPort(): number {
   return Number(
-    envSource.ZENDESK_OAUTH_CALLBACK_PORT ?? OAUTH_CALLBACK_PORT_DEFAULT,
+    process.env.ZENDESK_OAUTH_CALLBACK_PORT ?? OAUTH_CALLBACK_PORT_DEFAULT,
   );
 }
 

@@ -45,6 +45,9 @@ function cleanEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   delete env.ZENDESK_OAUTH_ACCESS_TOKEN;
   delete env.ZENDESK_OAUTH_CLIENT_FILE;
   delete env.ZENDESK_OAUTH_TOKEN_FILE;
+  // The mode must come from the arguments a spawn test passes, never from a
+  // ZENDESK_HEALTHCHECK shortcut exported on the host.
+  delete env.ZENDESK_HEALTHCHECK;
   return { ...env, ...extra };
 }
 
@@ -156,7 +159,10 @@ test("reports an unusable callback port without probing it", async () => {
 
 test("reports a token file readable by other users without probing the port", async () => {
   const tokenFile = await tempTokenFile(
-    JSON.stringify({ access_token: "invented-access-token" }),
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+    }),
   );
   await chmod(tokenFile, 0o644);
   const { calls, probe } = probeRecorder(true);
@@ -167,8 +173,37 @@ test("reports a token file readable by other users without probing the port", as
   });
 
   assert.deepEqual(calls, []);
+  // Node reports synthetic permission bits on Windows, so the check is
+  // skipped there instead of failing every run — and with a complete token
+  // stored, that run has nothing else to report.
+  assert.deepEqual(
+    problems,
+    process.platform === "win32"
+      ? []
+      : [
+          `OAuth token file ${tokenFile} must be readable only by its owner (chmod 600).`,
+        ],
+  );
+});
+
+test("reports a token path that cannot be stat'd without probing the port", async () => {
+  const directory = await tempDir();
+  // A file where a directory belongs makes stat fail with ENOTDIR rather than
+  // ENOENT: re-running oauth:setup cannot fix the path, so the message points
+  // at the path itself and the port a setup re-run would need is not probed.
+  const blocker = join(directory, "not-a-directory");
+  await writeFile(blocker, "invented-content");
+  const tokenFile = join(blocker, "oauth.json");
+  const { calls, probe } = probeRecorder(true);
+
+  const problems = await checkDoctor({
+    loadConfig: () => config({ mode: "authorization_code", tokenFile }),
+    probePort: probe,
+  });
+
+  assert.deepEqual(calls, []);
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /OAuth token file .* must be readable only by its owner \(chmod 600\)/);
+  assert.match(problems[0], /Unable to read OAuth token file .*oauth\.json\. Check that the path exists and this user can access it\./);
 });
 
 test("reports a token file that does not parse", async () => {
@@ -246,31 +281,12 @@ test("reports a read-only allowlist that names a write tool", async () => {
 });
 
 test("an explicit --doctor flag wins over the healthcheck environment variable", async () => {
-  const directory = await tempDir();
-  const clientFile = join(directory, "client.json");
-  const tokenFile = join(directory, "oauth.json");
-  await writeFile(
-    clientFile,
-    JSON.stringify({
-      subdomain: "example",
-      clientId: "invented-client-id",
-      clientSecret: "invented-client-secret",
-    }),
-    { mode: 0o600 },
-  );
-  await writeFile(
-    tokenFile,
-    JSON.stringify({
-      access_token: "invented-access-token",
-      refresh_token: "invented-refresh-token",
-    }),
-    { mode: 0o600 },
-  );
+  const files = await writeAuthFiles();
 
   const result = await runEntry(["--doctor"], {
     ...cleanEnv({
-      ZENDESK_OAUTH_CLIENT_FILE: clientFile,
-      ZENDESK_OAUTH_TOKEN_FILE: tokenFile,
+      ZENDESK_OAUTH_CLIENT_FILE: files.clientFile,
+      ZENDESK_OAUTH_TOKEN_FILE: files.tokenFile,
       ZENDESK_HEALTHCHECK: "1",
     }),
   });
@@ -281,6 +297,68 @@ test("an explicit --doctor flag wins over the healthcheck environment variable",
   assert.match(result.stdout, /Zendesk connector doctor: all checks passed/);
   assert.ok(!result.stdout.includes("healthcheck"));
   assert.equal(result.stderr, "");
+});
+
+test("runs the healthcheck from the environment variable alone", async () => {
+  const files = await writeAuthFiles();
+
+  const result = await runEntry([], {
+    ...cleanEnv({
+      ZENDESK_OAUTH_CLIENT_FILE: files.clientFile,
+      ZENDESK_OAUTH_TOKEN_FILE: files.tokenFile,
+      ZENDESK_HEALTHCHECK: "1",
+    }),
+  });
+
+  // The branch index.ts selects when no flag is present: on its own the
+  // shortcut must select the healthcheck, not start the server.
+  assert.equal(result.code, 0);
+  assert.deepEqual(JSON.parse(result.stdout), { healthcheck: "ok" });
+  assert.equal(result.stderr, "");
+});
+
+test("an explicit --healthcheck flag wins over --doctor in either order", async () => {
+  const files = await writeAuthFiles();
+  const env = cleanEnv({
+    ZENDESK_OAUTH_CLIENT_FILE: files.clientFile,
+    ZENDESK_OAUTH_TOKEN_FILE: files.tokenFile,
+  });
+
+  // The documented order is a precedence, not an argv order: whichever way
+  // the two flags are written, the healthcheck runs.
+  for (const args of [
+    ["--healthcheck", "--doctor"],
+    ["--doctor", "--healthcheck"],
+  ]) {
+    const result = await runEntry(args, env);
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(JSON.parse(result.stdout), { healthcheck: "ok" });
+    assert.equal(result.stderr, "");
+  }
+});
+
+test("an explicit --logout flag wins over the healthcheck environment variable", async () => {
+  const directory = await tempDir();
+  const clientFile = join(directory, "missing-client.json");
+  const tokenFile = join(directory, "missing-oauth.json");
+
+  const result = await runEntry(["--logout"], {
+    ...cleanEnv({
+      ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+      ZENDESK_OAUTH_TOKEN_FILE: tokenFile,
+      ZENDESK_HEALTHCHECK: "1",
+    }),
+  });
+
+  // The shortcut would print a healthcheck result and skip the logout. With
+  // the explicit flag the logout runs instead; the unloadable configuration
+  // stops it before any request, so nothing leaves the machine.
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /Zendesk OAuth logout incomplete/);
+  assert.match(result.stderr, /Unable to read OAuth client configuration/);
+  assert.ok(!result.stderr.includes('"healthcheck"'));
 });
 
 test("the default probe reports a free port as free", async () => {
@@ -342,29 +420,10 @@ test("the default probe reports a port that is genuinely in use", async () => {
 });
 
 test("passes against a real authorization-code configuration", async () => {
-  const directory = await tempDir();
-  const clientFile = join(directory, "client.json");
-  const tokenFile = join(directory, "oauth.json");
-  await writeFile(
-    clientFile,
-    JSON.stringify({
-      subdomain: "example",
-      clientId: "invented-client-id",
-      clientSecret: "invented-client-secret",
-    }),
-    { mode: 0o600 },
-  );
-  await writeFile(
-    tokenFile,
-    JSON.stringify({
-      access_token: "invented-access-token",
-      refresh_token: "invented-refresh-token",
-    }),
-    { mode: 0o600 },
-  );
+  const files = await writeAuthFiles();
   process.env = cleanEnv({
-    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
-    ZENDESK_OAUTH_TOKEN_FILE: tokenFile,
+    ZENDESK_OAUTH_CLIENT_FILE: files.clientFile,
+    ZENDESK_OAUTH_TOKEN_FILE: files.tokenFile,
   });
   const out: string[] = [];
   const err: string[] = [];
@@ -450,6 +509,39 @@ async function tempTokenFile(contents: string): Promise<string> {
   const tokenFile = join(directory, "oauth.json");
   await writeFile(tokenFile, contents, { mode: 0o600 });
   return tokenFile;
+}
+
+interface AuthFiles {
+  clientFile: string;
+  tokenFile: string;
+}
+
+/**
+ * Writes an invented client and token pair that `authorization_code` mode
+ * accepts, with owner-only permissions, into a temporary directory.
+ */
+async function writeAuthFiles(): Promise<AuthFiles> {
+  const directory = await tempDir();
+  const clientFile = join(directory, "client.json");
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      subdomain: "example",
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+    }),
+    { mode: 0o600 },
+  );
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+    }),
+    { mode: 0o600 },
+  );
+  return { clientFile, tokenFile };
 }
 
 /** Creates a temporary fixture directory that `afterEach` removes. */

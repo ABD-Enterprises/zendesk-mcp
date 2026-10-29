@@ -1,6 +1,12 @@
 import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { getConfig, resolveCallbackPort, type ZendeskConfig } from "./auth.js";
+import {
+  CALLBACK_PORT_ERROR,
+  getConfig,
+  isValidCallbackPort,
+  resolveCallbackPort,
+  type ZendeskConfig,
+} from "./auth.js";
 import { assertUsableConfig } from "./health.js";
 import { configuredTools } from "./policy.js";
 
@@ -14,7 +20,7 @@ export interface DoctorOptions {
   probePort?: (port: number) => Promise<boolean>;
   /** Writes the all-clear line to stdout. */
   writeOut?: (line: string) => void;
-  /** Writes one line per problem to stderr. */
+  /** Writes one line per failing check to stderr. */
   writeError?: (line: string) => void;
 }
 
@@ -22,7 +28,9 @@ interface TokenFileState {
   /**
    * True when the stored token cannot be used and the remedy is to run
    * `npm run oauth:setup` again — the one problem whose fix needs the
-   * callback port, so the port check runs for these states too.
+   * callback port, so the port check runs for these states too. File-state
+   * problems (missing parent path, not a regular file, loose permissions)
+   * set it to false: re-running setup does not obviously fix them.
    */
   setupNeeded: boolean;
   /** Why the token file is not usable as stored, undefined when it is fine. */
@@ -38,7 +46,7 @@ export function isDoctorRequested(
 
 /**
  * Runs every doctor check without contacting Zendesk and returns one
- * actionable message per problem, in check order.
+ * actionable message per failing check, in check order.
  *
  * Checks, in order: the OAuth configuration (the same validation startup
  * performs, including the client file's permission requirement), the tool
@@ -81,11 +89,11 @@ export async function checkDoctor(
 }
 
 /**
- * Runs the doctor preflight: one line per problem on stderr and exit 1, or a
- * single all-clear line on stdout and exit 0. The configuration and token-file
- * messages reuse the exact error strings startup produces (the port and
- * permission messages are doctor-only), and none of them carry credential
- * material.
+ * Runs the doctor preflight: one line per failing check on stderr and exit 1,
+ * or a single all-clear line on stdout and exit 0. The configuration messages
+ * and the token file's missing/unparseable/incomplete messages reuse the exact
+ * error strings startup produces; the port and the token file-state messages
+ * are the doctor's own. None of them carry credential material.
  */
 export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
   const writeOut =
@@ -109,11 +117,16 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
 }
 
 /**
- * Inspects the stored authorization-code token file. The unreadable,
- * unparseable, and incomplete-token messages reuse the exact strings startup
- * produces, so the troubleshooting table covers the doctor's output too. The
- * permission check is doctor-only: startup reads a token file without
- * inspecting its permissions.
+ * Inspects the stored authorization-code token file: its file state first
+ * (present, a regular file, owner-only permissions), then its contents
+ * (parseable JSON with an `access_token` and a `refresh_token`).
+ *
+ * The missing-file, unparseable, and incomplete-token messages reuse the
+ * exact strings startup produces, so the troubleshooting table covers the
+ * doctor's output too. The file-state messages (unreadable path, not a
+ * regular file, permissions) are the doctor's own: startup reads the token
+ * file without inspecting it, and the permission check is additionally
+ * skipped on Windows, where Node reports synthetic permission bits.
  */
 function inspectTokenFile(tokenFile: string): TokenFileState {
   const unreadable: TokenFileState = {
@@ -127,11 +140,22 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
     const stats = statSync(tokenFile);
     mode = stats.mode;
     isFile = stats.isFile();
-  } catch {
-    // Any stat failure — a missing file, or a path this user cannot read —
-    // reuses startup's message and probes the port: both point the user at
-    // re-running setup, which needs the port.
-    return unreadable;
+  } catch (error) {
+    // ENOENT means setup has not stored a token yet, so its message points
+    // at oauth:setup and the port that a re-run needs is probed. Any other
+    // stat failure (a directory in the path, a path this user cannot read)
+    // is a file-state problem that re-running setup may not fix, so it gets
+    // its own message and no port probe.
+    const missing =
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT";
+    return missing
+      ? unreadable
+      : {
+          setupNeeded: false,
+          problem: `Unable to read OAuth token file ${tokenFile}. Check that the path exists and this user can access it.`,
+        };
   }
 
   if (!isFile) {
@@ -140,7 +164,9 @@ function inspectTokenFile(tokenFile: string): TokenFileState {
       problem: `OAuth token file ${tokenFile} is not a regular file.`,
     };
   }
-  if ((mode & 0o077) !== 0) {
+  // Node reports synthetic permission bits on Windows (group and other always
+  // look set), so the check is skipped there instead of failing every run.
+  if (process.platform !== "win32" && (mode & 0o077) !== 0) {
     return {
       setupNeeded: false,
       problem: `OAuth token file ${tokenFile} must be readable only by its owner (chmod 600).`,
@@ -183,8 +209,8 @@ async function checkCallbackPort(
   probe: (port: number) => Promise<boolean> = probePortFree,
 ): Promise<string | undefined> {
   const port = resolveCallbackPort();
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    return "ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535.";
+  if (!isValidCallbackPort(port)) {
+    return CALLBACK_PORT_ERROR;
   }
   if (await probe(port)) return undefined;
   return `npm run oauth:setup cannot listen on port ${port}: another process holds the port (often an earlier setup still waiting for authorization). Set ZENDESK_OAUTH_CALLBACK_PORT to a free port and register that exact callback URL on the OAuth client in Zendesk.`;

@@ -1,7 +1,13 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { getConfig, resolveCallbackPort, writeTokenFile } from "./auth.js";
+import {
+  CALLBACK_PORT_ERROR,
+  getConfig,
+  isValidCallbackPort,
+  resolveCallbackPort,
+  writeTokenFile,
+} from "./auth.js";
 
 const CALLBACK_PORT = resolveCallbackPort();
 const CALLBACK_PATH = "/callback";
@@ -15,8 +21,8 @@ interface OAuthSetupTokenResponse {
   expires_in?: number;
 }
 
-if (!Number.isInteger(CALLBACK_PORT) || CALLBACK_PORT < 1 || CALLBACK_PORT > 65535) {
-  throw new Error("ZENDESK_OAUTH_CALLBACK_PORT must be an integer from 1 to 65535.");
+if (!isValidCallbackPort(CALLBACK_PORT)) {
+  throw new Error(CALLBACK_PORT_ERROR);
 }
 
 const config = getConfig();

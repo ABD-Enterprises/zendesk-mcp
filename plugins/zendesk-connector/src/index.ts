@@ -2,7 +2,11 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logServerShutdown, logServerStart } from "./audit.js";
 import { isDoctorRequested, runDoctor } from "./doctor.js";
-import { isHealthCheckRequested, runHealthCheck } from "./health.js";
+import {
+  isHealthCheckFlag,
+  isHealthCheckRequested,
+  runHealthCheck,
+} from "./health.js";
 import { isLogoutRequested, runLogout } from "./logout.js";
 import { createZendeskServer } from "./server.js";
 import { installShutdownHandlers } from "./shutdown.js";
@@ -16,7 +20,7 @@ const wantsLogout = isLogoutRequested(argv);
 // line asks for, instead of a healthcheck that would silently skip the
 // doctor's or the logout's checks.
 if (
-  argv.includes("--healthcheck") ||
+  isHealthCheckFlag(argv) ||
   (!wantsDoctor && !wantsLogout && isHealthCheckRequested())
 ) {
   process.exitCode = runHealthCheck();

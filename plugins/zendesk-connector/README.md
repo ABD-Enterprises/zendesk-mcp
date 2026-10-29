@@ -87,18 +87,23 @@ matter before the first request:
   or unusable — the states whose remedy is re-running setup, which needs the
   port.
 - The stored token file in `authorization_code` mode: it exists (a missing
-  file means "run `npm run oauth:setup`"), is a regular file, parses as JSON,
+  file means "run `npm run oauth:setup`"; a path that cannot be stat'd at all
+  is reported with its own advice instead), is a regular file, parses as JSON,
   and contains both an `access_token` and a `refresh_token` (renewal fails
   without one once the access token expires). It must also be readable only by
   its owner. The permission check is doctor-only; the server reads the token
-  file without inspecting its permissions.
+  file without inspecting its permissions, and the doctor skips the check on
+  Windows, where Node reports synthetic permission bits regardless of the
+  file's ACLs.
 
-A clean run prints one all-clear line on stdout and exits 0. Each problem is
-one actionable line on stderr and the exit code is 1. The configuration and
-token-file messages are the server's own error strings (the port, permission,
-and not-a-regular-file messages are the doctor's), and nothing printed carries
-credential values. An explicit `--doctor` flag wins over the
-`ZENDESK_HEALTHCHECK` environment-variable shortcut.
+A clean run prints one all-clear line on stdout and exits 0. Each failing
+check is one actionable line on stderr and the exit code is 1. The
+configuration messages and the token file's missing, unparseable, and
+incomplete messages are the server's own error strings; the port and the token
+file-state messages (an unreadable path, not a regular file, loose
+permissions) are the doctor's, and nothing printed carries credential values.
+An explicit `--doctor` or `--logout` flag wins over the `ZENDESK_HEALTHCHECK`
+environment-variable shortcut.
 
 ## Healthcheck and shutdown
 
