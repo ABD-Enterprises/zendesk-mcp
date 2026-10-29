@@ -424,7 +424,7 @@ export class ZendeskOAuth {
       throw new ZendeskAuthError(
         `Zendesk OAuth token request failed: HTTP ${response.status} ${response.statusText}`,
         response.status,
-        payload,
+        summarizeTokenResponse(text, response.headers.get("content-type")),
       );
     }
 
@@ -433,7 +433,7 @@ export class ZendeskOAuth {
       throw new ZendeskAuthError(
         "Zendesk OAuth response did not include an access token.",
         response.status,
-        payload,
+        summarizeTokenResponse(text, response.headers.get("content-type")),
       );
     }
 
@@ -634,6 +634,58 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+/**
+ * Describes a token endpoint response without carrying any of its values.
+ *
+ * The details of an auth error travel with the failure to the MCP client, so
+ * a raw body would put a live access token, a refresh token, or a client
+ * secret echoed back by the endpoint in front of the model. This summary
+ * keeps what a human needs to diagnose the failure - the media type, the
+ * size, the field names that came back and the OAuth error code - and drops
+ * every value.
+ */
+function summarizeTokenResponse(
+  text: string,
+  contentType: string | null,
+): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    mediaType: narrowMediaType(contentType),
+    bytes: Buffer.byteLength(text, "utf8"),
+  };
+  const payload = text ? safeJson(text) : undefined;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const record = payload as Record<string, unknown>;
+    summary.keys = Object.keys(record).slice(0, 32).map(safeFieldName);
+    // The OAuth error code is a fixed, lowercase vocabulary, so it is safe to
+    // keep and it is what tells an agent why the exchange was refused.
+    const code = record.error;
+    if (typeof code === "string" && /^[a-z][a-z0-9_]{0,31}$/.test(code)) {
+      summary.error = code;
+    }
+  }
+  return summary;
+}
+
+/**
+ * Keeps a JSON field name and masks anything that looks like an opaque
+ * credential a server parked in the name position.
+ */
+function safeFieldName(name: string): string {
+  return /^[a-z][a-z0-9_]{0,63}$/.test(name) && !/\d{3,}/.test(name)
+    ? name
+    : "[REDACTED]";
+}
+
+/** Narrows a Content-Type to its bare `type/subtype`, without parameters. */
+function narrowMediaType(contentType: string | null): string {
+  const bare = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/.test(
+    bare,
+  )
+    ? bare
+    : "unknown";
 }
 
 /**

@@ -418,3 +418,131 @@ function config(overrides: Partial<ZendeskConfig>): ZendeskConfig {
     ...overrides,
   };
 }
+
+test("a refused token exchange reports a shape summary and no body values", async () => {
+  const echoedSecret = "invented-client-secret-value";
+  const oauth = new ZendeskOAuth(
+    config({
+      mode: "client_credentials",
+      clientSecret: echoedSecret,
+    }),
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: "invalid_client",
+          error_description: `client_secret ${echoedSecret} rejected`,
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+        },
+      ),
+  );
+
+  await assert.rejects(
+    () => oauth.getAccessToken(true),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskAuthError);
+      assert.equal(error.status, 401);
+      const details = error.details as Record<string, unknown>;
+      assert.equal(details.mediaType, "application/json");
+      assert.equal(typeof details.bytes, "number");
+      assert.deepEqual(details.keys, ["error", "error_description"]);
+      assert.equal(details.error, "invalid_client");
+      // The body carried a credential in a value; the summary must not.
+      assert.ok(!JSON.stringify(details).includes(echoedSecret));
+      return true;
+    },
+  );
+});
+
+test("a token response without an access token reports no body values", async () => {
+  const leakedToken = "invented-refresh-token-value";
+  const oauth = new ZendeskOAuth(
+    config({ mode: "client_credentials" }),
+    async () =>
+      new Response(
+        JSON.stringify({ refresh_token: leakedToken, token_type: "bearer" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  );
+
+  await assert.rejects(
+    () => oauth.getAccessToken(true),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskAuthError);
+      const details = error.details as Record<string, unknown>;
+      assert.deepEqual(details.keys, ["refresh_token", "token_type"]);
+      assert.ok(!JSON.stringify(details).includes(leakedToken));
+      return true;
+    },
+  );
+});
+
+test("a token error body that is not JSON is described by media type and size", async () => {
+  const oauth = new ZendeskOAuth(
+    config({ mode: "client_credentials" }),
+    async () =>
+      new Response("invented-plain-text-credential", {
+        status: 500,
+        headers: { "Content-Type": "text/plain" },
+      }),
+  );
+
+  await assert.rejects(
+    () => oauth.getAccessToken(true),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskAuthError);
+      const details = error.details as Record<string, unknown>;
+      assert.equal(details.mediaType, "text/plain");
+      assert.equal(details.bytes, "invented-plain-text-credential".length);
+      assert.equal(details.keys, undefined);
+      assert.ok(!JSON.stringify(details).includes("invented-plain-text-credential"));
+      return true;
+    },
+  );
+});
+
+test("a token error body without a content type is described as unknown", async () => {
+  const oauth = new ZendeskOAuth(
+    config({ mode: "client_credentials" }),
+    async () =>
+      // A byte body carries no content type of its own.
+      new Response(new Uint8Array([104, 105]), { status: 500 }),
+  );
+
+  await assert.rejects(
+    () => oauth.getAccessToken(true),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskAuthError);
+      const details = error.details as Record<string, unknown>;
+      assert.equal(details.mediaType, "unknown");
+      assert.equal(details.bytes, 2);
+      assert.equal(details.keys, undefined);
+      assert.ok(!JSON.stringify(details).includes("hi"));
+      return true;
+    },
+  );
+});
+
+test("a credential parked in a field name is masked in the summary", async () => {
+  const oauth = new ZendeskOAuth(
+    config({ mode: "client_credentials" }),
+    async () =>
+      new Response(
+        JSON.stringify({ "sk_live_invented999": "value", error: "invalid_client" }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      ),
+  );
+
+  await assert.rejects(
+    () => oauth.getAccessToken(true),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskAuthError);
+      const details = error.details as Record<string, unknown>;
+      assert.deepEqual(details.keys, ["[REDACTED]", "error"]);
+      assert.ok(!JSON.stringify(details).includes("sk_live_invented999"));
+      return true;
+    },
+  );
+});
