@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import {
-  defaultTokenFile,
   isValidCallbackPort,
   resolveCallbackPort,
   sameFilePath,
@@ -145,24 +144,51 @@ test("resolveTokenFile falls back to the client file's tokenFile field", async (
 });
 
 test("resolveTokenFile skips a client path that is not a regular file", async (ctx) => {
-  // A FIFO at the client path would block a bare readFileSync forever,
-  // hanging the logout that calls this. The lenient read applies the strict
-  // reader's one structural guard and falls through to the default path.
+  // A FIFO at the client path would block a bare readFileSync forever — and
+  // a blocked synchronous call wedges its process, so no timer inside it
+  // could turn the regression into a failure. The fallback therefore runs
+  // in a child process with a timeout: removing the guard kills the child
+  // and fails this test in seconds instead of hanging the whole run.
   // mkfifo is POSIX-only; without it this host cannot build the case.
   const directory = await mkdtemp(join(tmpdir(), "zendesk-fifo-test-"));
   const clientFile = join(directory, "client.json");
   try {
     execFileSync("mkfifo", [clientFile]);
-  } catch {
-    ctx.skip("mkfifo is unavailable on this host");
-    return;
+  } catch (error) {
+    // Only "no mkfifo on this host" may skip; any other failure is the host
+    // acting up and must surface, not silently shrink coverage.
+    if ((error as { code?: string }).code === "ENOENT") {
+      ctx.skip("mkfifo is unavailable on this host");
+      return;
+    }
+    throw error;
   }
-  process.env = { ...originalEnv, ZENDESK_OAUTH_CLIENT_FILE: clientFile };
-  delete process.env.ZENDESK_OAUTH_TOKEN_FILE;
-  delete process.env.ZENDESK_SUBDOMAIN;
-  delete process.env.ZENDESK_BASE_URL;
+  const home = join(directory, "home");
+  const childEnv: NodeJS.ProcessEnv = {
+    ...originalEnv,
+    HOME: home,
+    USERPROFILE: home,
+    ZENDESK_OAUTH_CLIENT_FILE: clientFile,
+  };
+  delete childEnv.ZENDESK_OAUTH_TOKEN_FILE;
+  delete childEnv.ZENDESK_SUBDOMAIN;
+  delete childEnv.ZENDESK_BASE_URL;
 
-  assert.equal(resolveTokenFile(), defaultTokenFile());
+  const script =
+    `import { resolveTokenFile } from ${JSON.stringify(
+      new URL("./auth.js", import.meta.url).href,
+    )};` + "process.stdout.write(resolveTokenFile());";
+  const output = execFileSync(
+    process.execPath,
+    ["--input-type=module", "-e", script],
+    { encoding: "utf8", env: childEnv, timeout: 15_000 },
+  );
+
+  // The fallback lands at the default path under the child's HOME — the
+  // real home is never named, let alone touched. (Computed from `home`
+  // directly: an earlier test replaces process.env with a plain object, so
+  // the parent's defaultTokenFile() no longer reflects the child's HOME.)
+  assert.equal(output, join(home, ".config", "codex-zendesk", "oauth.json"));
 });
 
 test("access-token mode returns the configured bearer token", async () => {
