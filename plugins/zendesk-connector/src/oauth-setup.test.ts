@@ -995,6 +995,8 @@ test("never echoes the raw content of a rejected exchange body", async () => {
     contentType: string;
     status?: number;
     shown: (body: string) => string;
+    /** Values the message must not carry at all, beyond the shared leak. */
+    absent?: string[];
   }> = [
     {
       // An empty body never reaches safeJson: the call site branches on
@@ -1152,6 +1154,11 @@ test("never echoes the raw content of a rejected exchange body", async () => {
           error_description: "The code expired.",
           client_secret: "[REDACTED]",
         }),
+      // The written-out expectation already omits the pair, but an
+      // expectation only pins what it contains: a message carrying both
+      // the expected fragment and the leaked values would still pass it.
+      // These two assert the absence directly.
+      absent: ["example-one-time-code", "example-client-id"],
     },
     {
       // A body whose redacted echo runs past the echo bound: the first
@@ -1169,8 +1176,9 @@ test("never echoes the raw content of a rejected exchange body", async () => {
       // An echo that runs past the bound with a surrogate pair sitting
       // exactly where a UTF-16 cut would fall: the emoji's high surrogate
       // is the 512th unit, so a cut by units would end the message in a
-      // lone half. The expectation is written by code points — two whole
-      // emoji survive the cut — so a regression to a unit cut fails here.
+      // lone half. The expectation is written by code points — exactly one
+      // whole emoji survives the cut — so a regression to a unit cut
+      // fails here.
       name: "an over-long body ending mid-emoji",
       body: JSON.stringify({ a: "x".repeat(505) + "😀".repeat(5) }),
       contentType: "application/json",
@@ -1213,6 +1221,12 @@ test("never echoes the raw content of a rejected exchange body", async () => {
       error.message.includes(testCase.shown(testCase.body)),
       `${testCase.name} did not show the expected body: ${error.message}`,
     );
+    for (const value of testCase.absent ?? []) {
+      assert.ok(
+        !error.message.includes(value),
+        `${testCase.name} echoed ${value}: ${error.message}`,
+      );
+    }
     assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
   }
 });

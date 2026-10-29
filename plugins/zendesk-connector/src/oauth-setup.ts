@@ -652,17 +652,30 @@ async function exchangeCode(
         : undefined;
     // The echo is bounded too: a multi-megabyte body would otherwise be
     // embedded whole, and past the bound the size says everything the
-    // reader needs. The cut counts code points, not UTF-16 units, so it
-    // cannot land between the halves of a surrogate pair and leave a lone
-    // one behind — and it runs after both filters, so a cut cannot
-    // resurrect what they removed.
-    const points = echo === undefined ? undefined : [...echo];
+    // reader needs. The cut counts code points, not UTF-16 units — the
+    // string iterator yields whole code points, so it cannot land between
+    // the halves of a surrogate pair and leave a lone one behind — it
+    // stops one point past the bound to learn whether a cut is needed at
+    // all, and it runs after both filters, so a cut cannot resurrect what
+    // they removed. Only the bound-many points are ever held, so a body
+    // megabytes long costs the memory of one at the bound.
+    const points: string[] = [];
+    let truncated = false;
+    if (echo !== undefined) {
+      for (const point of echo) {
+        points.push(point);
+        if (points.length > MAX_ECHO_CHARACTERS) {
+          truncated = true;
+          break;
+        }
+      }
+    }
     const shown =
-      points === undefined
+      echo === undefined
         ? text
           ? `(non-object${described} body of ${count})`
           : "(empty body)"
-        : points.length > MAX_ECHO_CHARACTERS
+        : truncated
           ? `${points.slice(0, MAX_ECHO_CHARACTERS).join("")}… (body of ${count})`
           : echo;
     throw new Error(
