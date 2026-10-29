@@ -193,10 +193,10 @@ mounted token file.
 
 The image healthcheck runs `node dist/index.js --healthcheck`, so the
 container reports unhealthy until the OAuth configuration is present. Healthy
-means the base URL, OAuth mode, credentials, and tool policy
-(`ZENDESK_ALLOWED_TOOLS` / `ZENDESK_READ_ONLY`) are set and well-formed, not
-that they are correct or that Zendesk is reachable, so use the
-`zendesk_status` tool for readiness.
+means the base URL, OAuth mode, and credentials are set and well-formed and
+the tool policy (`ZENDESK_ALLOWED_TOOLS` / `ZENDESK_READ_ONLY`) is valid — an
+unset policy is valid, the defaults apply — not that any of it is correct or
+that Zendesk is reachable, so use the `zendesk_status` tool for readiness.
 
 For authorization-code deployments, mount the owner-only OAuth client and
 token files instead of placing secrets in the image:
@@ -351,7 +351,7 @@ Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-a
 | The browser opens but Zendesk reports an authorization error | Usually the OAuth client's registered callback URL does not exactly match `http://127.0.0.1:3219/callback` — or the URL for your `ZENDESK_OAUTH_CALLBACK_PORT`; scheme, host, port, and path all count. Correct it in Admin Center, run setup again, then restart the server so it picks up the fresh token. Declining consent or a declined scope produces the same symptom. |
 | Tool calls fail with `Zendesk API request failed: HTTP 403 ...` | Usually the granted scope does not cover the tool, or the account's role lacks the underlying permission. Add the scope to `ZENDESK_OAUTH_SCOPE` (and, if the OAuth client has allowed scopes configured in Admin Center, add it there too — otherwise setup fails with `HTTP 400 invalid_scope`): authorization-code mode re-runs `npm run oauth:setup` so the larger grant replaces the stored token, client-credentials mode carries it on the next token request, and `access_token` mode cannot change it — obtain a token with the needed scope there. Then restart the server so it loads the new configuration. |
 | A desktop MCP client reports "not configured" although your shell works | Desktop applications do not inherit shell exports. Put the settings in `~/.config/codex-zendesk/client.json`, which the server reads when the environment is empty. |
-| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). Healthy means the configuration and tool policy are present and well-formed — not that Zendesk is reachable or that authorization succeeded (see [Healthcheck and shutdown](#healthcheck-and-shutdown)); use `zendesk_status` for readiness. The check never contacts Zendesk and never prints credentials. |
+| You want to check the configuration without serving | Run `node dist/index.js --healthcheck` from `plugins/zendesk-connector` (or `node plugins/zendesk-connector/dist/index.js --healthcheck` from the repository root). Healthy means the configuration is present and well-formed and the tool policy is valid (an unset policy applies the defaults) — not that Zendesk is reachable or that authorization succeeded (see [Healthcheck and shutdown](#healthcheck-and-shutdown)); use `zendesk_status` for readiness. The check never contacts Zendesk and never prints credentials. |
 
 ## Development
 

@@ -114,8 +114,9 @@ files rather than placing secrets in the image.
 
 The image healthcheck runs `node dist/index.js --healthcheck`, so the container
 reports unhealthy until the OAuth configuration is present. Healthy means the
-base URL, OAuth mode, credentials (or, in access-token mode, the token), and
-tool policy are set and well-formed — not that they are correct, that the
+base URL, OAuth mode, and credentials (or, in access-token mode, the token)
+are set and well-formed and the tool policy is valid — an unset policy is
+valid, the defaults apply — not that any of it is correct, that the
 authorization-code token file is readable, or that Zendesk is reachable, so use
 the `zendesk_status` tool for readiness.
 

@@ -95,7 +95,14 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
   }
 });
 
-test("publishes twelve annotated tools and serves status over MCP", async () => {
+test("publishes twelve annotated tools and serves status over MCP", async (t) => {
+  const originalReadOnly = process.env.ZENDESK_READ_ONLY;
+  // An ambient read-only flag would publish nine tools instead of twelve.
+  delete process.env.ZENDESK_READ_ONLY;
+  t.after(() => {
+    if (originalReadOnly === undefined) delete process.env.ZENDESK_READ_ONLY;
+    else process.env.ZENDESK_READ_ONLY = originalReadOnly;
+  });
   const fetcher: typeof fetch = async (_input, init) => {
     assert.equal(
       new Headers(init?.headers).get("authorization"),
