@@ -844,29 +844,29 @@ async function exchangeFailure(
     });
   }) as typeof fetch;
 
-  try {
-    // The scaffolding mirrors the positive-path test above: the launcher is
-    // injected so nothing is opened, and the wait is bounded below the poll
-    // deadline so a run that reaches no launcher ends with its own reason
-    // instead of holding the suite open.
-    let ended = false;
-    const outcome = authorizeWithBrowser(
-      config,
-      redirectUri,
-      (line) => out.push(line),
-      recordingSpawn(opened),
-      4_000,
-    ).then(
-      () => {
-        ended = true;
-        return undefined;
-      },
-      (error: unknown) => {
-        ended = true;
-        return error;
-      },
-    );
+  // The scaffolding mirrors the positive-path test above: the launcher is
+  // injected so nothing is opened, and the wait is bounded below the poll
+  // deadline so a run that reaches no launcher ends with its own reason
+  // instead of holding the suite open.
+  let ended = false;
+  const outcome = authorizeWithBrowser(
+    config,
+    redirectUri,
+    (line) => out.push(line),
+    recordingSpawn(opened),
+    4_000,
+  ).then(
+    () => {
+      ended = true;
+      return undefined;
+    },
+    (error: unknown) => {
+      ended = true;
+      return error;
+    },
+  );
 
+  try {
     const deadline = Date.now() + 5_000;
     while (opened.length === 0 && !ended) {
       if (Date.now() > deadline) {
@@ -911,6 +911,12 @@ async function exchangeFailure(
     return { error, out, requests, tokenFile: files.tokenFile };
   } finally {
     globalThis.fetch = originalFetch;
+    // An assertion that throws before the callback is sent would otherwise
+    // leave the flow's listener bound until its own four-second timeout,
+    // holding a port open past the test's end. outcome never rejects — its
+    // rejection is converted to a value above — so awaiting it here always
+    // settles the run and closes the listener, bounded by that timeout.
+    await outcome;
   }
 }
 
@@ -919,8 +925,8 @@ test("never prints a token from a rejected token-exchange body", async () => {
   // token: a 200 whose body is missing a refresh_token fails the shape
   // check, and stringifying that body as-is would put the access token into
   // the thrown error — where a caller may log or show it. This crafts
-  // exactly that body, so the assertion pins the invariant the roadmap
-  // claims for errors: no credential material, ever. The client secret is
+  // exactly that body, so the assertion pins what the filter does promise:
+  // the keys it knows never reach the message. The client secret is
   // in the body too, the way a middlebox echoing the *request* would put it
   // there — so the assertion below binds to redact() rather than passing
   // because the secret was never present to begin with.
@@ -974,9 +980,10 @@ test("describes a non-object exchange body by media type and size", async () => 
 
 test("never echoes a rejected exchange body that is not a JSON object", async () => {
   // The branches the two tests above do not reach, each pinned against the
-  // same invariant: whatever the rejected body's shape, the thrown error
-  // carries its size or its redacted form and never its raw content. The
-  // cases share one helper, so each still travels the real browser flow.
+  // same expectation: whatever the rejected body's shape, the thrown error
+  // carries its size, its media type, or its redacted form — and never its
+  // raw content. The cases share one helper, so each still travels the
+  // real browser flow.
   const leakedToken = "example-nested-token-must-not-be-printed";
   const cases: Array<{
     name: string;
@@ -986,12 +993,50 @@ test("never echoes a rejected exchange body that is not a JSON object", async ()
     shown: (body: string) => string;
   }> = [
     {
-      // A body that never parsed: safeJson falls back to the raw text, so
-      // the size note is the only thing that can be shown.
+      // An empty body never reaches safeJson: the call site branches on
+      // truthy text first, so the payload stays undefined and the note is
+      // its own, with no size at all.
       name: "an empty body",
       body: "",
       contentType: "application/json",
       shown: () => "(empty body)",
+    },
+    {
+      // A single byte, to pin the singular. The body is a bare character
+      // that is not JSON, so safeJson falls back to the raw text and the
+      // size note applies.
+      name: "a one-byte body",
+      body: "x",
+      contentType: "text/plain",
+      shown: () => "(non-object text/plain body of 1 byte)",
+    },
+    {
+      // A non-ASCII body, with the count written out rather than
+      // recomputed the way the implementation computes it: "é" is one
+      // UTF-16 code unit and two utf-8 bytes, so a regression from
+      // byteLength back to text.length would report 1 and fail here.
+      name: "a non-ASCII body",
+      body: "é",
+      contentType: "text/plain",
+      shown: () => "(non-object text/plain body of 2 bytes)",
+    },
+    {
+      // A content type carrying parameters: only the media type is shown,
+      // so a token a middlebox parked in the charset parameter cannot ride
+      // along into the message.
+      name: "a content type with parameters",
+      body: "blocked by a proxy",
+      contentType: "text/html; charset=utf-8",
+      shown: () => "(non-object text/html body of 18 bytes)",
+    },
+    {
+      // A content type past the length cap: nothing of it is shown, so a
+      // token-shaped subtype cannot be echoed. The body is plain text, and
+      // only its size reaches the message.
+      name: "an over-long content type",
+      body: "blocked",
+      contentType: `text/${"a".repeat(50)}`,
+      shown: () => "(non-object body of 7 bytes)",
     },
     {
       // redact() does recurse into arrays, so an array body would have its

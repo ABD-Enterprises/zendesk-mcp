@@ -602,22 +602,29 @@ async function exchangeCode(
     // The audit sink's redact() is the house filter, so it strips the keys
     // the filter knows — token, secret, password, authorization, cookie —
     // and the message keeps the rest of the response's diagnosable shape.
-    // redact() matches on key names, so it cannot see a token that a
-    // middlebox parked in the value of some innocuous key; that limit is
-    // the filter's, shared with every audit line, and the call site keeps
-    // its contract rather than growing a second, different redactor.
+    // The filter matches key names, so it cannot see a token a middlebox
+    // parked in the value of some innocuous key, and a JSON echo of the
+    // request keeps its client_id and one-time code beside the stripped
+    // secret. That limit belongs to the filter and is shared with every
+    // audit line — widening it is ruled out by audit.test.ts, which
+    // deliberately preserves a field named code — so the call site keeps
+    // the filter's contract rather than growing a second redactor.
     //
     // A body that never parsed into a JSON object (a proxy's HTML error
     // page, say) has no keys at all to filter, so it is described by its
     // media type and size instead of echoed: a page that echoed the
-    // request would carry the client secret and the one-time code. The
-    // media type is narrowed to a short, plain type/subtype first — a
-    // header is free text, and nothing stops a middlebox from stuffing a
-    // token-shaped subtype into one.
+    // request would carry the client secret and the one-time code. A
+    // top-level array reaches the same note even though it did parse and
+    // its entries do carry filterable keys: the shape check rejects an
+    // array either way, and an array of unkeyed values is what the filter
+    // cannot see into, so the guard below is deliberate rather than an
+    // oversight. The media type is narrowed to a short, plain type/subtype
+    // first — a header is free text, and nothing stops a middlebox from
+    // stuffing a token-shaped subtype into one.
     const mediaType = response.headers
       .get("content-type")
       ?.split(";")[0]
-      ?.trim()
+      .trim()
       .toLowerCase();
     const described =
       mediaType !== undefined &&
