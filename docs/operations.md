@@ -161,8 +161,15 @@ proxy that only adds TLS exposes the console to everyone who can reach it.
 Put an authentication layer (single sign-on, basic authentication, or an
 address allowlist) in front of it, or keep the proxy on a private network.
 
-Two further proxy details follow from how the console is written:
+Three further proxy details follow from how the console is written:
 
+- By default the console answers only a request whose `Host` header names the
+  loopback interface. A proxy forwards the name the browser asked for, not the
+  loopback address, so a console behind a proxy needs that name in
+  `ZENDESK_CONSOLE_ALLOWED_HOSTS`; without it every request is refused with
+  `403`. The value is matched against the whole `Host` header, port included,
+  so a proxy that forwards the port has to list it. The list is empty by
+  default, and the console then answers only the loopback names.
 - The console's file routes are rate limited per client address, and a request
   that passes the limit is answered with `429`. The limiter reads the socket
   address and not proxy headers, so behind a proxy every request to those
@@ -172,6 +179,26 @@ Two further proxy details follow from how the console is written:
   job.
 - Every path that the console does not match is answered with the frontend
   entry point, so the proxy forwards all paths rather than a fixed list.
+
+The console's own token asks for read scopes only. It reads two ticket views
+and nothing else, so it asks for `ticket_views:read` — Zendesk documents that
+scope as "view ticket views and the tickets they return" — and `tickets:read`
+for the ticket fields the dashboard reads off the rows a view returns. The
+scope comes from `ZENDESK_CONSOLE_OAUTH_SCOPE`, and then from the
+`ZENDESK_OAUTH_SCOPE` the connector shares with it. The scope recorded in the
+OAuth client file is the connector's scope and is not used here: it carries
+write scopes, and the console writes nothing.
+
+Both scopes are required. A scope that cannot read a view, or the ticket
+fields on it, is a configuration error rather than a dashboard that quietly
+shows every ticket as "Unclassified", and the console names what is missing.
+The broad `read` scope covers both of them, because it covers every GET
+endpoint, so a client that grants it needs nothing else: set the scope to
+`read` and the console asks for that.
+
+The scope has to be allowed on the Zendesk OAuth client as well. A client
+that is not granted it answers the token request with `invalid_scope`, and
+the console reports that in the dashboard.
 
 Run the console in production mode behind a proxy: `npm run build` followed by
 `npm start` in `apps/operations-console`. The development server starts a Vite
@@ -205,6 +232,13 @@ server {
 }
 ```
 
+`$host` drops the port, so the console sees `Host: console.example.com`.
+Start the console with that name on its list:
+
+```sh
+ZENDESK_CONSOLE_ALLOWED_HOSTS=console.example.com npm start
+```
+
 ### Caddy
 
 ```caddyfile
@@ -218,6 +252,13 @@ console.example.com {
 
     reverse_proxy 127.0.0.1:4177
 }
+```
+
+Caddy forwards the original `Host` header, so the console sees
+`Host: console.example.com` here too, and the same setting applies:
+
+```sh
+ZENDESK_CONSOLE_ALLOWED_HOSTS=console.example.com npm start
 ```
 
 Caddy also obtains and renews a certificate on its own when the `tls`
@@ -322,8 +363,18 @@ running with loose permissions. The token file
 is not checked when it is read: the connector writes it with the owner-only
 mode and replaces it atomically, so it repairs the mode on the next write,
 but until then it keeps whatever the restore left behind. The console reads
-the same client file without checking its mode, so the owner-only mode is
-the only protection there.
+the same client file and applies the same rule: it refuses to use a file
+that is accessible to its group or by others — except on Windows, where Node
+reports synthetic permission bits regardless of the file's ACLs and the check
+is skipped — so a console on a client file with loose permissions answers its
+dashboard request with `503`. `/api/overview` returns an `error` field of
+"The Zendesk OAuth client file must be readable only by its owner (chmod 600)."
+and the console logs the reason; the console process keeps running, and the
+secret is never read into memory and never posted to the account. The page
+itself still loads and shows "Zendesk unavailable" with that reason beside it
+in the sidebar. The sidebar is hidden at 760 px and below, where the page
+carries no sign of the failure and the console's log is where the reason is
+recorded.
 
 In a container deployment the client file also has to be readable by the
 container's unprivileged `node` user. Align the owner with that user rather

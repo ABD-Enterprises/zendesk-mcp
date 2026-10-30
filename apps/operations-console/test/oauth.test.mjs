@@ -10,6 +10,7 @@ import {
   makeTempDir,
   removeTempDir,
   writeClientFile,
+  clearAccountEnv,
 } from "./helpers/console.mjs";
 
 const originalEnv = { ...process.env };
@@ -27,6 +28,7 @@ after(async () => {
 
 beforeEach(async () => {
   resetCaches();
+  clearAccountEnv();
   // Every test reads its own mock account, so the recording it asserts on
   // holds the requests of that test only.
   mock = await startMockZendesk();
@@ -51,7 +53,7 @@ test("requests a token with the client credentials from the client file", async 
     grant_type: "client_credentials",
     client_id: CLIENT.clientId,
     client_secret: CLIENT.clientSecret,
-    scope: "read write",
+    scope: "ticket_views:read tickets:read",
   });
   assert.equal(token.value, ACCESS_TOKEN);
   assert.equal(token.baseUrl, mock.baseUrl);
@@ -75,7 +77,8 @@ test("asks for a new token once the cache is cleared", async () => {
 test("reports the status of a failed token request", async () => {
   mock.setTokenResponse(401, { error: "invalid_client" });
 
-  await assert.rejects(() => getOAuthToken(), /Zendesk OAuth failed \(401\)/);
+  // The error code of the body says why the token was refused.
+  await assert.rejects(() => getOAuthToken(), /Zendesk OAuth failed \(401 invalid_client\)/);
   assert.equal(mock.state.tokenRequests.length, 1);
 });
 
@@ -83,7 +86,12 @@ test("fails when the client file is not valid JSON", async () => {
   const file = await writeClientFile(directory, "{ not json");
   process.env.ZENDESK_OAUTH_CLIENT_FILE = file;
 
-  await assert.rejects(() => getOAuthToken(), (error) => error instanceof SyntaxError);
+  // The parse error carries the file's own bytes, so the console reports its
+  // own message instead of the parser's.
+  await assert.rejects(
+    () => getOAuthToken(),
+    /The Zendesk OAuth client file could not be read\./,
+  );
   assert.deepEqual(mock.state.tokenRequests, []);
 });
 
@@ -92,7 +100,7 @@ test("fails when the client file is missing", async () => {
 
   await assert.rejects(
     () => getOAuthToken(),
-    (error) => error.code === "ENOENT",
+    /The Zendesk OAuth client file could not be read\./,
   );
   assert.deepEqual(mock.state.tokenRequests, []);
 });
