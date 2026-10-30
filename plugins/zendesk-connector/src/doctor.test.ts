@@ -296,6 +296,60 @@ test("keeps a stored expiry on one line too", async () => {
     .filter((line) => line !== "");
   assert.equal(lines.filter((line) => line.startsWith("Token expires:")).length, 1);
   assert.ok(!lines.some((line) => line.startsWith("Injected:")));
+  // The joined text as well, so a carriage return left in the value would
+  // not pass, and a line break that became two spaces would not either.
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z Injected: line/);
+  assert.ok(!printed.includes("\r"));
+});
+
+test("prints no expiry that is only whitespace", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "tickets:read", expires_at: "  \r  " }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Token expires:"));
+  assert.match(printed, /Granted scope: tickets:read/);
+});
+
+test("prints no stored value that is not a string", async () => {
+  // A token file that holds a number where a scope belongs is not a token
+  // the doctor can read, and it must not print a line for it.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: 42, expires_at: {} }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.ok(!printed.includes("Token expires:"));
 });
 
 test("prints no stored value that is only whitespace", async () => {
