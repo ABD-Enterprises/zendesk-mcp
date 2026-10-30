@@ -172,12 +172,14 @@ npm run build
 ### How the server is started
 
 The plugin manifest of this directory, `.mcp.json`, starts the built server
-with `node ./dist/index.js`. The path is relative to the plugin root: a host
-that loads the plugin resolves the manifest and the entrypoint against the
-directory the plugin was installed in, and starts the server from there. A
-host that resolves the entrypoint against its own working directory instead
-would not find it — so a manual MCP configuration names the absolute path of
-the built file, as the repository README shows:
+with `node ./dist/index.js`. The path is relative to the plugin root, so it
+resolves only if the host runs the server with the plugin's installed
+directory as its working directory. Hosts differ here: some resolve the
+manifest and the entrypoint against the plugin directory, others against
+their own working directory, where `./dist/index.js` does not exist. This
+repository has not verified the behaviour against a specific host. If your
+host does not start the plugin this way, name the built file by its absolute
+path instead, as the repository README shows:
 
 ```json
 {
