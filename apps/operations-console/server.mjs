@@ -79,6 +79,14 @@ const CONSOLE_DEFAULT_SCOPE = "ticket_views:read tickets:read";
 
 // The scopes the console cannot work without. The broad `read` scope covers
 // every GET endpoint, so it covers both of them.
+//
+// Zendesk documents `ticket_views:read` as "view ticket views and the tickets
+// they return", which may already cover the fields the dashboard reads off
+// the rows; `tickets:read` names ticket fields explicitly, and is the scope
+// that certainly carries them. The console asks for both so that it does not
+// depend on which of the two an account grants, and refuses a token that can
+// read neither: a dashboard that quietly answered "Unclassified" for every
+// ticket would be a dashboard that was wrong without saying so.
 const CONSOLE_REQUIRED_SCOPES = ["ticket_views:read", "tickets:read"];
 
 /**
@@ -443,6 +451,9 @@ async function requestToken() {
     throw new ConsoleError("The Zendesk OAuth client file could not be read.");
   }
   const baseUrl = resolveConsoleBaseUrl(client);
+  // The scope the console asks for. It is worked out once, so the advice the
+  // console gives when the account refuses names the scopes it asked for.
+  const scope = resolveConsoleScope();
   const response = await fetch(`${baseUrl}/oauth/tokens`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -454,7 +465,7 @@ async function requestToken() {
       grant_type: "client_credentials",
       client_id: client.clientId,
       client_secret: client.clientSecret,
-      scope: resolveConsoleScope(),
+      scope,
     }),
   });
   if (response.status >= 300 && response.status < 400) {
@@ -470,7 +481,7 @@ async function requestToken() {
     throw new ConsoleError(
       `Zendesk OAuth failed (${response.status}${code ? ` ${code}` : ""})` +
         (code === "invalid_scope"
-          ? `. The console's token needs the ${CONSOLE_REQUIRED_SCOPES.join(" and ")} scopes: allow them on the Zendesk OAuth client.`
+          ? `. The console's token needs the ${scope.split(" ").join(" and ")}: allow ${scope.split(" ").length > 1 ? "them" : "it"} on the Zendesk OAuth client.`
           : ""),
     );
   }

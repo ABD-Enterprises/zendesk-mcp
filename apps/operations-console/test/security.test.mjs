@@ -17,6 +17,7 @@ import {
   allowedHosts,
   app,
   getOAuthToken,
+  isAllowedHost,
   isLoopbackHost,
   mountStaticFiles,
   resetCaches,
@@ -227,6 +228,18 @@ test("never asks for a scope the operator did not name", () => {
   assert.equal(resolveConsoleScope(), "ticket_views:read tickets:read");
 });
 
+test("names both scopes when neither of them can be granted", () => {
+  process.env.ZENDESK_OAUTH_SCOPE = "tickets:write";
+
+  assert.throws(
+    () => resolveConsoleScope(),
+    (error) =>
+      error.message ===
+      "The console reads ticket views and the ticket fields on them, so its token needs the ticket_views:read and tickets:read scopes. " +
+        "Add them to ZENDESK_CONSOLE_OAUTH_SCOPE (or to ZENDESK_OAUTH_SCOPE) and allow them on the Zendesk OAuth client.",
+  );
+});
+
 test("names the scope it needs when the configured scope cannot read a ticket's fields", () => {
   // The dashboard reads the request type and the system off the rows a view
   // returns. A scope that cannot read them would leave every ticket
@@ -245,7 +258,10 @@ test("names the scope it needs when the configured scope cannot read a view", ()
 
   assert.throws(
     () => resolveConsoleScope(),
-    /ticket_views:read/,
+    (error) =>
+      error.message ===
+      "The console reads ticket views and the ticket fields on them, so its token needs the ticket_views:read scope. " +
+        "Add it to ZENDESK_CONSOLE_OAUTH_SCOPE (or to ZENDESK_OAUTH_SCOPE) and allow it on the Zendesk OAuth client.",
   );
 });
 test("names the scope it needs when nothing readable is configured", () => {
@@ -442,7 +458,7 @@ test("shows the OAuth error code only when it is a known one", async () => {
     // the scopes the console asks for, and the message names the scope.
     assert.equal(
       body.error,
-      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the ticket_views:read and tickets:read scopes: allow them on the Zendesk OAuth client.",
+      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the ticket_views:read and tickets:read: allow them on the Zendesk OAuth client.",
     );
   } finally {
     await account.close();
@@ -497,8 +513,10 @@ test("refuses a request for a file that carries another host", async () => {
   // The Host check runs before every route, the file routes included: a
   // request for the frontend is refused the same way a request for an API
   // route is. The file routes are mounted on the console app here, so the
-  // order the server registers them in is the order the answer comes from.
+  // order the app answers in is the order the server answers in.
   const directory = await makeTempDir("operations-console-static-");
+  const stack = app.router.stack;
+  const mounted = stack.length;
   try {
     await writeFile(
       join(directory, "index.html"),
@@ -520,8 +538,22 @@ test("refuses a request for a file that carries another host", async () => {
       assert.equal(answered.status, 200, `${path} should be answered`);
     }
   } finally {
+    // The file routes stay off the app afterwards, so the next test in this
+    // file finds it as it was.
+    stack.length = mounted;
     await removeTempDir(directory);
   }
+});
+
+test("matches a Host against a list and nothing else", () => {
+  // The list has to be a list. A string would turn the whole-header match
+  // into a substring match, which is the opposite of what the check is for.
+  assert.equal(isAllowedHost("console.example.com", ["console.example.com"]), true);
+  assert.equal(isAllowedHost("console.example.com", "console.example.com"), false);
+  assert.equal(isAllowedHost("console.example.com", undefined), false);
+  assert.equal(isAllowedHost("console.example.com", []), false);
+  // The loopback names are the console's own, with or without a list.
+  assert.equal(isAllowedHost("127.0.0.1:4177", "not-a-list"), true);
 });
 
 /** A server that records every request it receives. */
