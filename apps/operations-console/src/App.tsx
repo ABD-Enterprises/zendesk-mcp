@@ -239,7 +239,7 @@ export function App() {
       <header className="topbar"><div className="mobile-brand"><div className="logo">SO</div><strong>Service Operations</strong></div><div className="topbar-context"><LifeBuoy size={17}/><span>Service desk</span><i>/</i><strong>{sectionLabel(navigation, section)}</strong></div><button className="icon-button" title="Refresh live Zendesk data" aria-label="Refresh live Zendesk data" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? "spin" : ""}/></button></header>
       <div className="mobile-nav">{navigation.map((item) => <button aria-label={item.label} className={section === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><item.icon size={18}/></button>)}</div>
       <div className="page-content">
-        {failure && <div className="failure-band" role="alert"><AlertTriangle size={19}/><div><strong>The console could not reach its server.</strong><span>{failure}</span></div></div>}
+        {failure && <div className="failure-band" role="alert"><AlertTriangle size={19}/><div><strong>{failure}</strong></div></div>}
         {section === "overview" && <OverviewPage data={data}/>} {section === "intake" && <IntakePage data={data}/>} {section === "reports" && <ReportsPage data={data}/>} {section === "knowledge" && <KnowledgePage/>} {section === "controls" && <ControlsPage data={data}/>}
       </div>
     </main>
