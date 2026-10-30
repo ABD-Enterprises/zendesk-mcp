@@ -4,7 +4,7 @@
 **Reviewed revision:** `main` @ `386f270` (v0.6.1) — since advanced to `89add83` by PR #29
 **Scope:** `plugins/zendesk-connector/` (MCP server), `apps/operations-console/` (local web console), `.github/workflows/`, plugin manifests, `docs/`
 **Baseline:** `npm ci && npm run check` — typecheck clean, **171 tests, 0 failures**
-**Status:** Review artifact only. Not committed; lives outside the repo tree (`AGENTS.md:15`).
+**Status:** Review artifact, committed to the tree in PR #72. The findings and the code they describe are a snapshot of `main` @ `386f270`; the disposition column in section 8 is kept current as the findings are fixed.
 
 **Total: 44 findings — 4 High, 21 Medium, 18 Low, 1 Info.**
 Sections 3–5 below are this agent's findings. **Section 6** adds the findings from the parallel agent's review that I independently re-verified against source (**S0, M12, M13, M14**). **Section 7** adds the two findings from my review of PR #71 (**P1, P2**). **Section 8** is the complete 44-row index with disposition and the filed issue number for each.
@@ -35,12 +35,12 @@ Copy this block on its own; the full evidence for every finding is in sections 3
 | S9 | Low | Security | `/api/*` not rate-limited *(deliberate)* | `server.mjs:253,262` | #39 | Open — documentation only |
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
 | S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | Open |
-| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | Open |
+| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | Fixed in PR #76 |
 | M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open |
 | M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open |
 | M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | Open |
 | M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | Open |
-| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | Open |
+| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | Fixed in PR #76 |
 | M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open |
 | M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open |
 | M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open |
@@ -49,7 +49,7 @@ Copy this block on its own; the full evidence for every finding is in sections 3
 | M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open |
 | M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Fixed** in PR #71 |
 | M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open |
-| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | Open |
+| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | Fixed in PR #76 |
 | U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | Open |
 | U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | Open |
 | U3 | Med | Usability | Truncated comments have no continuation path | `server.ts:136,142` | #58 | Open |
@@ -1109,12 +1109,12 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 | S9 | Low | Security | `/api/*` not rate-limited *(deliberate)* | `server.mjs:253,262` | #39 | Open — documentation only |
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
 | S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | Open |
-| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | Open |
+| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | Fixed in PR #76 |
 | M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open |
 | M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open |
 | M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | Open |
 | M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | Open |
-| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | Open |
+| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | Fixed in PR #76 |
 | M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open |
 | M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open |
 | M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open |
@@ -1123,7 +1123,7 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 | M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open |
 | M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Fixed** in PR #71 |
 | M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open |
-| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | Open |
+| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | Fixed in PR #76 |
 | U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | Open |
 | U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | Open |
 | U3 | Med | Usability | Truncated comments have no continuation path | `server.ts:136,142` | #58 | Open |
