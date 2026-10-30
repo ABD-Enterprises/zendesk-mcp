@@ -39,7 +39,7 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -337,8 +337,26 @@ async function requestToken() {
     join(homedir(), ".config", "codex-zendesk", "client.json");
   let client;
   try {
+    // The file holds the client secret, and the console posts that secret to
+    // the account the file names, so the file has to be one only its owner
+    // can write — the rule the connector already applies to it.
+    const stats = await stat(path);
+    if (!stats.isFile()) {
+      throw new ConsoleError(
+        "The Zendesk OAuth client file is not a regular file.",
+      );
+    }
+    // Node reports synthetic permission bits on Windows (group and other
+    // always look set), so the check is skipped there instead of failing
+    // every run.
+    if (process.platform !== "win32" && (stats.mode & 0o077) !== 0) {
+      throw new ConsoleError(
+        "The Zendesk OAuth client file must be readable only by its owner (chmod 600).",
+      );
+    }
     client = JSON.parse(await readFile(path, "utf8"));
   } catch (error) {
+    if (error instanceof ConsoleError) throw error;
     // A parse error can carry a fragment of the file in its text on some
     // Node versions — the client id or the secret — so the reason is logged
     // and not shown.
@@ -383,12 +401,28 @@ async function requestToken() {
   return tokenCache;
 }
 
+// The OAuth error codes the console names.
+//
+// The body of a refused token request is written by the account, so only the
+// codes in this fixed vocabulary reach the browser. Anything else could be a
+// value the console did not write, and the promise the console makes is that
+// only its own messages are shown.
+const OAUTH_ERROR_CODES = new Set([
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "invalid_scope",
+  "access_denied",
+]);
+
 // The error code of a refused token request, when the body names one.
 async function oauthErrorCode(response) {
   try {
     const body = await response.json();
     const code = body && typeof body.error === "string" ? body.error : "";
-    return /^[a-z][a-z0-9_]{0,31}$/.test(code) ? code : "";
+    return OAUTH_ERROR_CODES.has(code) ? code : "";
   } catch {
     return "";
   }

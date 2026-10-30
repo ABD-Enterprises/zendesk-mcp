@@ -8,7 +8,9 @@
  * or the public internet.
  */
 import assert from "node:assert/strict";
+import { chmod, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
+import { join } from "node:path";
 import { connect } from "node:net";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import {
@@ -295,6 +297,87 @@ test("keeps an upstream failure detail out of the browser", async () => {
   }
 });
 
+test("refuses a client file that another user can read", async () => {
+  // The file holds the client secret, and the console posts it to the
+  // account the file names, so it has to be one only its owner can read.
+  const file = join(directory, "loose-client.json");
+  await writeFile(
+    file,
+    JSON.stringify(clientFileFor(mock.baseUrl)),
+    { mode: 0o644 },
+  );
+  await chmod(file, 0o644);
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = file;
+
+  await assert.rejects(getOAuthToken(), /readable only by its owner/i);
+
+  // The secret never left the machine.
+  assert.deepEqual(mock.state.tokenRequests, []);
+});
+
+test("shows the OAuth error code only when it is a known one", async () => {
+  const account = await startRefusingAccount("invalid_scope");
+  try {
+    process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
+      directory,
+      clientFileFor(account.baseUrl),
+    );
+
+    const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+    assert.equal(status, 503);
+    // The code is what tells the operator that the client was not granted
+    // the scopes the console asks for.
+    assert.equal(body.error, "Zendesk OAuth failed (400 invalid_scope)");
+  } finally {
+    await account.close();
+  }
+});
+
+test("does not show an error code the console did not write", async () => {
+  const account = await startRefusingAccount("sk_not_a_code_the_console_knows");
+  try {
+    process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
+      directory,
+      clientFileFor(account.baseUrl),
+    );
+
+    const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+    assert.equal(status, 503);
+    // The body of a refused request is written by the account, so a value
+    // outside the fixed vocabulary of OAuth error codes is not shown.
+    assert.equal(body.error, "Zendesk OAuth failed (400)");
+    assert.ok(
+      !JSON.stringify(body).includes("sk_not_a_code"),
+      `the browser must not see the upstream value: ${JSON.stringify(body)}`,
+    );
+  } finally {
+    await account.close();
+  }
+});
+
+test("does not follow a redirect that would carry the access token", async () => {
+  const target = await startRecordingServer();
+  const account = await startRedirectingViews(target.baseUrl);
+  try {
+    process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
+      directory,
+      clientFileFor(account.baseUrl),
+    );
+
+    // The token request is answered normally; only the view request
+    // redirects, so the token is what a redirect would carry away.
+    const { status } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+    assert.equal(status, 503);
+    assert.deepEqual(target.state.requests, []);
+  } finally {
+    await account.close();
+    await target.close();
+  }
+});
+
 /** A server that records every request it receives. */
 async function startRecordingServer() {
   const state = { requests: [] };
@@ -350,12 +433,66 @@ async function startRedirectingAccount(target) {
   };
 }
 
+/** An account that refuses the token request with the given OAuth error. */
+async function startRefusingAccount(code) {
+  const server = createServer((request, response) => {
+    response.writeHead(400, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ error: code }));
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    async close() {
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    },
+  };
+}
+
+/**
+ * An account that hands out a token but redirects every other request, so a
+ * redirect would carry the access token away.
+ */
+async function startRedirectingViews(target) {
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "POST" && url.pathname === "/oauth/tokens") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({ access_token: "invented-access-token", expires_in: 3600 }),
+      );
+      return;
+    }
+    response.writeHead(307, { Location: `${target}/views` });
+    response.end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    async close() {
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    },
+  };
+}
+
 /**
  * An account that hands out a token but answers the view with a body that is
  * not JSON, so the console's parse error quotes the body it could not read.
  */
-async function startBrokenAccount() {
-  const server = createServer((request, response) => {
+async function startBrokenAccount() {  const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (request.method === "POST" && url.pathname === "/oauth/tokens") {
       response.writeHead(200, { "Content-Type": "application/json" });
