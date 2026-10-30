@@ -1,12 +1,12 @@
 # Critical Review — `zendesk-mcp`
 
 **Date:** 2026-10-29
-**Reviewed revision:** `main` @ `386f270` (v0.6.1) — the fixes of this round have since advanced `main` past it
+**Reviewed revision:** `main` @ `386f270` (v0.6.1) — the fixes of this round have since advanced `main` past it. `386f270` is on `main`, so every code location below can be read at it. The two commits this review also names, `1111f74` and `c46ef87`, are PR #71's own commits and are **not** on `main` — the pull request was squash-merged as `ecb704e` — so a reader who wants them fetches `refs/pull/71/head`.
 **Scope:** `plugins/zendesk-connector/` (MCP server), `apps/operations-console/` (local web console), `.github/workflows/`, plugin manifests, `docs/`
 **Baseline:** `npm ci && npm run check` — typecheck clean, **171 tests, 0 failures**
 **Status:** Review artifact. Committed and tracked since PR #72; the disposition index in section 8 is kept in step with the tree.
 
-**Total: 44 findings — 4 High, 21 Medium, 18 Low, 1 Info.**
+**Total: 44 findings — 4 High, 20 Medium, 19 Low, 1 Info.**
 Sections 3–5 below are this agent's findings. **Section 6** adds the findings from the parallel agent's review that I independently re-verified against source (**S0, M12, M13, M14**). **Section 7** adds the two findings from my review of PR #71 (**P1, P2**). **Section 8** is the complete 44-row index with disposition and the filed issue number for each.
 
 > **Reading guide.** Every finding was re-verified line-by-line against source by the reviewer before being recorded here; each is marked **Confirmed** (read in source and the defect is real) or **Suspected** (needs runtime confirmation). Subagent output was used as a lead list, never as evidence.
@@ -17,7 +17,7 @@ Sections 3–5 below are this agent's findings. **Section 6** adds the findings 
 
 Copy this block on its own; the full evidence for every finding is in sections 3–7.
 
-**44 findings — 4 High, 21 Medium, 18 Low, 1 Info.** 36 fixed and merged, 1 closed by decision, **7 open**, each with a filed issue.
+**44 findings — 4 High, 20 Medium, 19 Low, 1 Info.** 36 fixed and merged, 1 closed by decision, **7 open**, each with a filed issue.
 
 **Done.** Every item this review put first is merged; §8 says which pull request each finding landed in. **Still open:** M1 (#42), M2 (#43), M6 (#50), M7 (#51), M8 (#52), M11 (#55) and M13 (#48) — six deferred refactors, and the tag and publish that are the owner's to make.
 
@@ -36,14 +36,14 @@ Copy this block on its own; the full evidence for every finding is in sections 3
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
 | S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | **Merged** — PR #73 |
 | S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | **Merged** — PR #76 |
-| M1 | Med | Maint | The 12-tool list is duplicated across ten non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
+| M1 | Med | Maint | The tool list is written out by hand in twelve files | `docs/`, `README.md` | #42 | Open — deferred refactor |
 | M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open — deferred refactor |
 | M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | **Merged** — PR #74 |
 | M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | **Merged** — PR #74 |
 | M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | **Merged** — PR #76 |
 | M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open — deferred refactor |
 | M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open — deferred refactor |
-| M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open — deferred refactor |
+| M8 | Low | Maint | 4 env-access styles, 4 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open — deferred refactor |
 | M9 | Low | Maint | `.env.example` documents 8 of ~16 `ZENDESK_*` vars | `.env.example` | #53 | **Merged** — PR #78 |
 | M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | **Merged** — PR #79 |
 | M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open — deferred refactor |
@@ -80,7 +80,7 @@ Three classes of real defect were found.
 2. **The agent-facing tool contract had behavioural defects.** Two of the twelve tools returned data that did not match their own description: `zendesk_get_ticket` reads a `users` side-load it never requests (so comment authors never resolve), and `zendesk_search_tickets` labels non-ticket search results as tickets and hands back broken ticket URLs.
 3. **Write-path semantics were unsafe and undocumented.** `tags: []` silently cleared every tag on a ticket, and all three write tools were annotated `destructiveHint: false` — including one that sends an irreversible public reply.
 
-**Overall verdict: 44 findings — 4 High, 21 Medium, 18 Low, 1 Info** across security (14), maintainability (14) and usability (15), plus 1 Info. 36 are fixed and merged, 1 was closed by decision, and **7 remain open** with a filed issue for each.
+**Overall verdict: 44 findings — 4 High, 20 Medium, 19 Low, 1 Info** across security (14), maintainability (14) and usability (15), plus 1 Info. 36 are fixed and merged, 1 was closed by decision, and **7 remain open** with a filed issue for each.
 
 **Current state after the fixes of this round:**
 - Both credential leaks are **merged** — PR #29 for the setup path and PR #71 for the runtime path.
@@ -106,7 +106,7 @@ Three classes of real defect were found.
 | 8 | S3 | Medium | Security | Console has no Host/origin validation (DNS rebinding) |
 | 9 | S4 | Medium | Security | `redact()` matches key names only; string values are never scrubbed |
 | 10 | M5 | Medium | Maintainability | `npm run e2e:mock` never runs in CI |
-| 11 | M1 | Medium | Maintainability | The 12-tool list is duplicated across ten non-test files |
+| 11 | M1 | Medium | Maintainability | The tool list is written out by hand in twelve files |
 | 12 | M2 | Medium | Maintainability | `safeJson` triplicated; `errorMessage` and mode predicates duplicated |
 
 ---
@@ -408,11 +408,11 @@ runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted", ...]') }}
 
 ## 4. Maintainability findings
 
-### M1 — Medium — The 12-tool list is duplicated across ten non-test files
+### M1 — Medium — The tool list is written out by hand in twelve files
 
 **Disposition: open — deferred refactor.**
 
-**Confirmed.** A repository-wide grep for the tool names returns **284 occurrences across 20 files**. Non-test files that enumerate the tool set:
+**Confirmed.** A repository-wide grep for the tool names returns **293 occurrences across 21 files**. Files that carry the tool set by hand:
 
 | File | Occurrences |
 |---|---|
@@ -421,17 +421,20 @@ runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted", ...]') }}
 | `plugins/zendesk-connector/README.md` | 27 |
 | `README.md` | 15 |
 | `AGENTS.md` | 12 |
+| `plugins/zendesk-connector/e2e/run-e2e.mjs` | 10 |
+| `plugins/zendesk-connector/.env.example` | 9 |
 | `docs/operations.md` | 6 |
 | `CHANGELOG.md` | 6 |
 | `SECURITY.md` | 4 |
 | `docs/multi-user-oauth-isolation.md` | 3 |
 | `docs/secrets-and-storage.md` | 1 |
 
-Nine of the ten name a tool more than once; `docs/secrets-and-storage.md` names a single one.
+Three of them name a single tool: `docs/operations.md`, `docs/multi-user-oauth-isolation.md` and
+`docs/secrets-and-storage.md`.
 
 plus the code itself (`plugins/zendesk-connector/src/server.ts` — 48, `src/policy.ts` — 15).
 
-**Impact.** The tool list is the single most consequential fact in the product and it is maintained in ten places by hand. Adding, removing or renaming a tool silently desynchronises the documentation, the read-only allowlist, the `.env.example` comment, and `AGENTS.md`. `docs/tool-contracts.md`, the root `README.md` and `plugins/zendesk-connector/README.md` each carry their own copy of the 12-tool table.
+**Impact.** The tool list is the single most consequential fact in the product and it is maintained in twelve places by hand. Adding, removing or renaming a tool silently desynchronises the documentation, the read-only allowlist, the `.env.example` comment, and `AGENTS.md`. `docs/tool-contracts.md`, the root `README.md` and `plugins/zendesk-connector/README.md` each carry their own copy of the 12-tool table.
 
 **Remediation.** Make `policy.ts`'s `ALL_TOOLS` the single source of truth and generate the tool tables and the `.env.example` read-only list from it (`scripts/` already contains `check-changelog.mjs`, so a generator fits the existing pattern).
 
@@ -587,14 +590,14 @@ Every other HTTP call site in the project injects a fetcher so tests can substit
 
 ---
 
-### M8 — Low — Environment-variable handling has four access styles and three validation policies
+### M8 — Low — Environment-variable handling has four access styles and four validation policies
 
 **Disposition: open — deferred refactor.**
 
 **Confirmed.** Across `auth.ts`, `policy.ts`, `client.ts` and the console's `server.mjs`:
 
 - Four ways to read an env var: bare `process.env.X`, the `env()` helper, `??` chains against the saved client file, and direct `process.env` reads in the console (`server.mjs:65`).
-- Three different policies for an *unknown* value: `auth.ts` throws on an unrecognised `ZENDESK_OAUTH_MODE`; `policy.ts` throws on an unrecognised `ZENDESK_READ_ONLY`; `client.ts` silently falls back to the default for a retry limit that is not an integer in range; the console treats an empty string as absent (`configValue`, `server.mjs:64-69`).
+- Four different policies for an *unknown* value: `auth.ts` throws on an unrecognised `ZENDESK_OAUTH_MODE`; `policy.ts` throws on an unrecognised `ZENDESK_READ_ONLY`; `client.ts` silently falls back to the default for a retry limit that is not an integer in range; the console treats an empty string as absent (`configValue`, `server.mjs:64-69`).
 
 **Impact.** An operator who typos `ZENDESK_OAUTH_MODE` gets a hard error, while an operator who typos `ZENDESK_MAX_RETRIES` gets the default without being told.
 
@@ -1017,7 +1020,7 @@ The message text is safe (status + statusText only). **The `details` argument is
 
 passes through **verbatim** — the key `error_description` does not match, and `redact()` never inspects what a value contains. The credential lands in the agent's context.
 
-**Disposition: merged in PR #71** (`c46ef87`) — see §7. Filed as issue **#31**.
+**Disposition: merged in PR #71** (`ecb704e`) — see §7. Filed as issue **#31**.
 
 ### M12 — Medium — The three write tools are never invoked by any test
 
@@ -1041,7 +1044,7 @@ The suite's only `callTool` invocation is `zendesk_status`:
 
 No write tool is ever executed against a mock server. That is exactly why the suite is green while **M4** (`tags: []` silently clearing every tag) is live — nothing exercises the write path's behaviour.
 
-**Disposition: merged in PR #71** (`c46ef87`) — the new test `"the write tools send the request bodies Zendesk expects"` asserts real URLs, methods and request bodies, and pins that an omitted `public` stays `false`. Filed as issue **#47**.
+**Disposition: merged in PR #71** (`ecb704e`) — the new test `"the write tools send the request bodies Zendesk expects"` asserts real URLs, methods and request bodies, and pins that an omitted `public` stays `false`. Filed as issue **#47**.
 
 ### M13 — Medium — Release version drift: version says 0.6.1, but only `v0.6.0` is tagged
 
@@ -1086,7 +1089,7 @@ CI's audit step gates at `--audit-level=high`, so a moderate advisory passes **s
 
 I reviewed PR #71 (`fix/s0-runtime-token-leak`) as the fresh-context reviewer required by `AGENTS.md:17`, against its exact head. Two findings, both **reproduced by me** against the built artefact rather than inferred from the diff.
 
-### P1 — High — The retained `error` value was gated by a *shape* check, not the fixed vocabulary the comment claimed *(FIXED at `c46ef87`)*
+### P1 — High — The retained `error` value was gated by a *shape* check, not the fixed vocabulary the comment claimed *(FIXED at `ecb704e`)*
 
 **Confirmed by reproduction at head `1111f743e3b2a7ec499c72961e168134bf8afc0b`.**
 
@@ -1113,7 +1116,7 @@ A shape check is not a vocabulary check. A **lowercase credential looks like a l
 
 **Why this mattered.** The PR's title claims *"keep token-endpoint values out of the runtime auth error"* — and `error` **is** a token-endpoint value, and the one field the change deliberately kept. The invariant the PR stated was not met by the PR itself, and the comment asserted a guarantee the code did not enforce. This is the same class as S0: a value-shaped secret reaching the agent's context.
 
-**Remediation applied** (by the PR author, at `c46ef87`) — the vocabulary check the comment always claimed:
+**Remediation applied** (by the PR author, at `c46ef87`; merged as `ecb704e`) — the vocabulary check the comment always claimed:
 
 ```ts
 const OAUTH_ERROR_CODES = new Set([
@@ -1127,7 +1130,7 @@ const OAUTH_ERROR_CODES = new Set([
 
 **Disposition: merged in PR #71.** Re-running my probe against the new head: both leak cases now return `contains secret: false`, and `invalid_client` is still preserved. Covered by issue **#31**; the change is in PR #71.
 
-### P2 — Medium — The field-name rule missed adjacent credential shapes *(FIXED at `c46ef87`)*
+### P2 — Medium — The field-name rule missed adjacent credential shapes *(FIXED at `ecb704e`)*
 
 **Confirmed by reproduction at head `1111f74`.** The rule for keeping a field *name* was:
 
@@ -1149,7 +1152,7 @@ function safeFieldName(name: string): string {
 
 The heuristic caught the one shape that had been demonstrated and missed its neighbours. A secret in the **name** position is a more exotic threat than one in a value position, so this was P2, not P1 — but `\d{3,}` was the wrong tool.
 
-**Remediation applied** (at `c46ef87`) — the same allowlist device as P1, applied twice rather than two heuristics to keep in sync:
+**Remediation applied** (at `c46ef87`; merged as `ecb704e`) — the same allowlist device as P1, applied twice rather than two heuristics to keep in sync:
 
 ```ts
 const TOKEN_RESPONSE_FIELDS = new Set([
@@ -1161,6 +1164,10 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 **Disposition: merged in PR #71.** All three name cases now return `["[REDACTED]"]`.
 
 ### Review verdict on PR #71 at `c46ef87`
+
+`c46ef87` and `1111f74` are PR #71's own commits. The pull request was squash-merged, so `main`
+carries the merge commit `ecb704e` and neither branch commit; the two are named here because they
+are the revisions the review was run against.
 
 **Approved.** Verified in an isolated checkout at the exact SHA:
 
@@ -1195,14 +1202,14 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
 | S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | **Merged** — PR #73 |
 | S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | **Merged** — PR #76 |
-| M1 | Med | Maint | The 12-tool list is duplicated across ten non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
+| M1 | Med | Maint | The tool list is written out by hand in twelve files | `docs/`, `README.md` | #42 | Open — deferred refactor |
 | M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open — deferred refactor |
 | M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | **Merged** — PR #74 |
 | M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | **Merged** — PR #74 |
 | M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | **Merged** — PR #76 |
 | M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open — deferred refactor |
 | M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open — deferred refactor |
-| M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open — deferred refactor |
+| M8 | Low | Maint | 4 env-access styles, 4 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open — deferred refactor |
 | M9 | Low | Maint | `.env.example` documents 8 of ~16 `ZENDESK_*` vars | `.env.example` | #53 | **Merged** — PR #78 |
 | M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | **Merged** — PR #79 |
 | M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open — deferred refactor |
@@ -1227,7 +1234,7 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 | **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Merged** — PR #71 |
 | **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Merged** — PR #71 |
 
-**Roll-up:** 4 High, 21 Medium, 18 Low, 1 Info = **44**.
+**Roll-up:** 4 High, 20 Medium, 19 Low, 1 Info = **44**.
 **Closed or fixed:** 36 findings, each merged in one of PR #29, #71, #73, #74, #75, #76, #77, #78, #79 and #80; S10 closed by decision. **Open: 7** — M1, M2, M6, M7, M8, M11, M13 — each with a filed issue.
 
 ### What is still live on `main`
@@ -1236,11 +1243,11 @@ The security and correctness findings of this review are all merged. 7 findings 
 
 | ID | Issue | What is left |
 |---|---|---|
-| M1 | #42 | The 12-tool list is duplicated across ten non-test files. |
+| M1 | #42 | The tool list is written out by hand in twelve files, and this artifact is a thirteenth. |
 | M2 | #43 | `safeJson`, `errorMessage` and the mode predicates are duplicated. |
 | M6 | #50 | The client casts an unvalidated response to the caller's type. |
 | M7 | #51 | The token exchange calls the global `fetch` instead of an injected one. |
-| M8 | #52 | Four ways to read an environment variable, three policies for an unknown value. |
+| M8 | #52 | Four ways to read an environment variable, four policies for an unknown value. |
 | M11 | #55 | `server.ts` holds the twelve tool definitions in one function. |
 | M13 | #48 | The version in `package.json` is ahead of the tag; the tag and the publish are the owner's to make. |
 
