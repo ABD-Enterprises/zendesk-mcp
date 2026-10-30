@@ -218,6 +218,44 @@ test("does not show the client file's bytes when the file is malformed", async (
   assert.ok(!JSON.stringify(body).includes("inventeds"));
 });
 
+test("measures its numbers from the whole view, not from one page", async () => {
+  // The view holds three tickets but answers one page at a time. The
+  // headline numbers have to describe the whole view, or "active" and
+  // "untriaged" answer the same question two different ways.
+  mock.setViewResponse(AGING_VIEW_ID, 200, (url) => {
+    const page = url.searchParams.get("page");
+    if (page === "1") {
+      return { count: 3, rows: ROWS.slice(0, 2), next_page: "the next page" };
+    }
+    return { count: 3, rows: ROWS.slice(2), next_page: null };
+  });
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  assert.equal(body.metrics.active, 3);
+  assert.equal(body.metrics.untriaged, UNTRIAGED_COUNT);
+
+  // The whole view was read, so the row-based numbers count every ticket.
+  const agingRequests = mock.state.viewRequests.filter(
+    (request) => request.id === AGING_VIEW_ID,
+  );
+  assert.equal(agingRequests.length, 2);
+  assert.match(agingRequests[0].query, /page=1/);
+  assert.match(agingRequests[1].query, /page=2/);
+  assert.equal(
+    body.metrics.unassigned,
+    ROWS.filter((ticket) => !ticket.assignee_id).length,
+  );
+  const oldest = Math.max(
+    ...ROWS.map((ticket) =>
+      Math.floor((Date.now() - new Date(ticket.created).getTime()) / DAY),
+    ),
+  );
+  assert.equal(body.metrics.oldestDays, oldest);
+});
+
 test("reports a missing configuration as unavailable", async () => {
   clearConsoleConfig();
 

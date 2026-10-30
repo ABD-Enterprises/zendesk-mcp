@@ -49,12 +49,16 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  UNCLASSIFIED_REQUEST_TYPE,
+  UNSPECIFIED_SYSTEM,
+} from "./src/lib/domain.mjs";
 
 export const app = express();
 const port = Number(process.env.PORT || 4177);
 const root = dirname(fileURLToPath(import.meta.url));
 
-const UNCLASSIFIED = "Unclassified";
+const UNCLASSIFIED = UNCLASSIFIED_REQUEST_TYPE;
 
 /**
  * An error whose message the console wrote itself.
@@ -305,13 +309,20 @@ export function hostCheck(request, response, next) {
 // before every route, the API ones included.
 app.use(hostCheck);
 
+// The settings the dashboard itself needs. A missing one of these makes the
+// dashboard unavailable.
 const REQUIRED_CONFIG = {
   brandId: "ZENDESK_CONSOLE_BRAND_ID",
   requestTypeFieldId: "ZENDESK_CONSOLE_REQUEST_TYPE_FIELD_ID",
   systemFieldId: "ZENDESK_CONSOLE_SYSTEM_FIELD_ID",
-  openViewId: "ZENDESK_CONSOLE_VIEW_OPEN_ID",
   untriagedViewId: "ZENDESK_CONSOLE_VIEW_UNTRIAGED_ID",
   agingViewId: "ZENDESK_CONSOLE_VIEW_AGING_ID",
+};
+
+// The settings that only build a link into the account. A missing one of
+// these costs a link, not the dashboard, so it is reported as a warning.
+const LINK_CONFIG = {
+  openViewId: "ZENDESK_CONSOLE_VIEW_OPEN_ID",
   requestTypeViewId: "ZENDESK_CONSOLE_VIEW_REQUEST_TYPE_ID",
 };
 
@@ -337,8 +348,14 @@ export function missingConfigNames() {
   return Object.values(REQUIRED_CONFIG).filter((name) => configValue(name) === undefined);
 }
 
+// Names the console settings that are missing but only cost a link.
+export function missingLinkNames() {
+  return Object.values(LINK_CONFIG).filter((name) => configValue(name) === undefined);
+}
+
 // Reads the console configuration from the environment. Throws an error that
-// names the missing variables; the caller turns it into a 503 response.
+// names the missing variables; the caller turns it into a 503 response. A
+// missing link setting is not an error: the dashboard reads without it.
 export function readConfig() {
   const values = {};
   const missing = [];
@@ -349,6 +366,10 @@ export function readConfig() {
       continue;
     }
     values[key] = value;
+  }
+  for (const [key, name] of Object.entries(LINK_CONFIG)) {
+    const value = configValue(name);
+    if (value !== undefined) values[key] = value;
   }
   if (missing.length > 0) {
     throw new ConsoleError(`Missing console configuration: ${missing.join(", ")}`);
@@ -539,6 +560,28 @@ export async function zendesk(path) {
   return response.json();
 }
 
+// Zendesk answers a view execution with one page of rows and the total count.
+// The console measures its numbers from those rows, so it reads the whole
+// view: a truncated page would make "active" and "untriaged" disagree about
+// the same quantity, and the row-based numbers would count a part of the
+// view. The page limit bounds the work a single dashboard load can cause.
+const VIEW_PAGE_SIZE = 100;
+const VIEW_PAGE_LIMIT = 20;
+
+async function fetchViewRows(viewId) {
+  const rows = [];
+  let count = 0;
+  for (let page = 1; page <= VIEW_PAGE_LIMIT; page += 1) {
+    const view = await zendesk(
+      `/api/v2/views/${viewId}/execute.json?page=${page}&per_page=${VIEW_PAGE_SIZE}`,
+    );
+    rows.push(...(view.rows || []));
+    count = typeof view.count === "number" ? view.count : rows.length;
+    if (!view.next_page) break;
+  }
+  return { rows, count };
+}
+
 function bucketAge(days) {
   if (days <= 2) return "0-2 days";
   if (days <= 5) return "3-5 days";
@@ -581,7 +624,7 @@ function summarize(rows, baseUrl, config) {
       ageDays,
       ageBucket: bucketAge(ageDays),
       requestType: row[config.requestTypeFieldId] || UNCLASSIFIED,
-      system: row[config.systemFieldId] || "Not specified",
+      system: row[config.systemFieldId] || UNSPECIFIED_SYSTEM,
       assigneeId: row.assignee_id,
       url: `${baseUrl}/agent/tickets/${row.ticket.id}`,
     };
@@ -606,6 +649,7 @@ app.get("/api/status", (_request, response) => {
     ok: true,
     configured: missing.length === 0,
     missing,
+    missingLinks: missingLinkNames(),
   });
 });
 
@@ -615,30 +659,36 @@ app.get("/api/overview", async (_request, response) => {
     if (overviewCache.value && overviewCache.expiresAt > Date.now()) {
       return response.json(overviewCache.value);
     }
-    const [agingView, untriagedView] = await Promise.all([
-      zendesk(`/api/v2/views/${config.views.aging}/execute.json`),
+    const [aging, untriagedView] = await Promise.all([
+      fetchViewRows(config.views.aging),
       zendesk(`/api/v2/views/${config.views.untriaged}/execute.json`),
     ]);
     const auth = await getOAuthToken();
-    const summary = summarize(agingView.rows || [], auth.baseUrl, config);
+    const summary = summarize(aging.rows, auth.baseUrl, config);
     const payload = {
       connected: true,
       lastSynced: new Date().toISOString(),
       accountUrl: auth.baseUrl,
       brandId: config.brandId,
       metrics: {
-        active: summary.tickets.length,
+        // Both headline numbers are the total of their view, so they answer
+        // the same question the same way.
+        active: aging.count,
         untriaged: untriagedView.count || 0,
         unassigned: summary.tickets.filter((ticket) => !ticket.assigneeId).length,
-        oldestDays: Math.max(0, ...summary.tickets.map((ticket) => ticket.ageDays)),
+        oldestDays: summary.tickets.reduce(
+          (oldest, ticket) => Math.max(oldest, ticket.ageDays),
+          0,
+        ),
       },
       aging: summary.aging,
       requestTypes: summary.requestTypes,
       tickets: summary.tickets.slice(0, 8),
-      views: Object.fromEntries(Object.entries(config.views).map(([name, id]) => [
-        name,
-        `${auth.baseUrl}/agent/filters/${id}`,
-      ])),
+      views: Object.fromEntries(
+        Object.entries(config.views)
+          .filter(([, id]) => id !== undefined)
+          .map(([name, id]) => [name, `${auth.baseUrl}/agent/filters/${id}`]),
+      ),
     };
     overviewCache = { value: payload, expiresAt: Date.now() + 30_000 };
     response.json(payload);
