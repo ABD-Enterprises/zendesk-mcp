@@ -278,7 +278,11 @@ test("falls back to the next page when the URL names no usable page", async () =
     }
   }
 
-  assert.deepEqual(wrong, []);
+  assert.deepEqual(
+    wrong,
+    [],
+    "every unusable page must fall back to the page after the one asked for",
+  );
 });
 
 test("falls back to the next page when the URL cannot be read", async () => {
@@ -299,10 +303,12 @@ test("falls back to the next page when the URL cannot be read", async () => {
   try {
     const payload = await contractPayload(session.client, "zendesk_get_ticket", {
       ticketId: 42,
-      commentPage: 2,
+      // A page other than the one the other fallback tests use, so the
+      // fallback is the page after this one and not a fixed number.
+      commentPage: 7,
     });
 
-    assert.equal(payload.commentsNextPageNumber, 3);
+    assert.equal(payload.commentsNextPageNumber, 8);
   } finally {
     await session.close();
   }
