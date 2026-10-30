@@ -40,6 +40,19 @@ Three rules govern how the connector reads them:
   as unset. A templating step that fails therefore leaves the connector
   unconfigured instead of authenticating with a literal placeholder string.
 
+Two settings read their value differently:
+
+- `ZENDESK_OAUTH_CALLBACK_PORT` must be written as a run of decimal digits.
+  Anything else — an empty value, a `${...}` placeholder, or a number written
+  another way such as `0x10` — is an error rather than an unset value, and
+  `npm run oauth:setup` stops with that error. `npm run doctor` reports the
+  same error when it checks the setup callback; both read the value through
+  one parser, so the two commands cannot disagree about the port.
+- `ZENDESK_MAX_RETRIES` and `ZENDESK_MAX_RETRY_DELAY_MS` are read without
+  trimming. A value that is not an integer inside the allowed range falls back
+  to the default, and a value of only whitespace counts as 0 rather than as
+  unset.
+
 ### The client file
 
 The client file defaults to `~/.config/codex-zendesk/client.json` and holds the
