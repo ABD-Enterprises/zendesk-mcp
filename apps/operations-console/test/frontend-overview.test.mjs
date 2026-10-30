@@ -110,6 +110,34 @@ test("names the tickets it read when the account states no count", () => {
 
   assert.match(note, /2000/);
   assert.match(note, /measured from the tickets that were read/);
+  // The account states no count, so the active figure is the number of
+  // tickets the console read. The console did not read the whole view, so
+  // that number is a floor and the note has to say so.
+  assert.match(note, /active figure counts only the tickets the console read/);
+  assert.match(note, /floor rather than the size of the view/);
+});
+
+test("does not call the active figure a floor when the account states a count", () => {
+  // The account states how many tickets the view holds, so the active figure
+  // is that count and not the number of tickets the console read.
+  const note = measurementNote({ tickets: 300, total: 5000, complete: false });
+
+  assert.match(note, /the first 300 of the 5000/);
+  assert.ok(!/floor/.test(note), "the count of the account is not a floor");
+});
+
+test("does not call a view it read whole a part of one", () => {
+  // The account says the view holds five thousand tickets and serves three
+  // hundred of them, and then offers no further page. The console read every
+  // ticket the view served, so the note must not say it read a part of the
+  // view: the count is the number that cannot be trusted.
+  const note = measurementNote({ tickets: 300, total: 5000, complete: true });
+
+  assert.match(note, /300/);
+  assert.match(note, /5000/);
+  assert.match(note, /disagree/);
+  assert.ok(!/the first/.test(note), "a view read whole is not a part of the view");
+  assert.ok(!/floor/.test(note), "the count of the account is not a floor");
 });
 
 test("names the disagreement when the count and the rows differ", () => {
@@ -117,6 +145,7 @@ test("names the disagreement when the count and the rows differ", () => {
 
   assert.match(note, /10/);
   assert.match(note, /3/);
+  assert.match(note, /disagree/);
   assert.match(note, /measured from the tickets that were read/);
 });
 

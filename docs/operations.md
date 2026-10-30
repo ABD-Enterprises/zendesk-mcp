@@ -290,9 +290,10 @@ that are absent.
 the open queue and the request-type report. They are not required: the
 dashboard is read without them. The open-queue button then opens the
 account's ticket list instead of the queue; the request-type report has no
-view to open, and its button stays where it is. A name in `missingLinks` is
-therefore not a misconfiguration, and a check that treats it as one will fail
-a console that is working.
+view to open, and its button has nowhere to go: it shows the overview again
+rather than a report. A name in `missingLinks` is therefore not a
+misconfiguration, and a check that treats it as one will fail a console that
+is working.
 
 The endpoint is the health check for the console only. The connector's
 health check is a command that validates the OAuth configuration and tool

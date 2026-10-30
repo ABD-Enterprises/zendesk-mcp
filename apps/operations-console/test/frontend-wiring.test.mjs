@@ -14,6 +14,23 @@ import { ticketRow } from "../src/lib/tickets.mjs";
 
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 
+/**
+ * The source of one page component of the console.
+ *
+ * The suite cannot render the components, so it reads their source. Each page
+ * is read on its own, so that a change to one of them cannot be masked by a
+ * change to another.
+ *
+ * @param {string} name the name of the page component
+ * @returns {string}
+ */
+function pageSource(name) {
+  const start = appSource.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} must be a component of the console`);
+  const end = appSource.indexOf("\nfunction ", start + 1);
+  return appSource.slice(start, end === -1 ? appSource.length : end);
+}
+
 const TICKET = {
   id: 900000000101,
   subject: "invented subject one",
@@ -101,7 +118,25 @@ test("both pages that show a breakdown say how much of the view was measured", (
   // The note is built by the module, and it is rendered on the dashboard and
   // on the queue reports: the request-type breakdown exists only on the
   // reports page, so a note that was only on the dashboard would leave that
-  // breakdown undisclosed.
-  assert.match(appSource, /measurementNote\(data\.measured\)/);
-  assert.equal((appSource.match(/<MeasurementNote note=\{note\} \/>/g) ?? []).length, 2);
+  // breakdown undisclosed. Counting the render sites is not enough: two
+  // notes on one page would satisfy a count, so each page is checked on its
+  // own.
+  const overview = pageSource("OverviewPage");
+  const reports = pageSource("ReportsPage");
+
+  assert.match(overview, /measurementNote\(data\.measured\)/);
+  assert.match(reports, /measurementNote\(data\.measured\)/);
+  assert.match(overview, /<MeasurementNote note=\{note\} \/>/);
+  assert.match(reports, /<MeasurementNote note=\{note\} \/>/);
+  // Each page shows the note above the breakdown it describes, so a note that
+  // moved below it would read as a footnote of a breakdown the operator has
+  // already taken for a whole one.
+  assert.ok(
+    overview.indexOf("<MeasurementNote note={note} />") < overview.indexOf('className="metric-grid"'),
+    "the overview shows the note above the metrics",
+  );
+  assert.ok(
+    reports.indexOf("<MeasurementNote note={note} />") < reports.indexOf('className="report-grid"'),
+    "the reports show the note above the breakdowns",
+  );
 });

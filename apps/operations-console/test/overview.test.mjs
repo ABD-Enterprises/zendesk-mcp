@@ -342,6 +342,9 @@ test("says so when the account states no count of its own", async () => {
   assert.equal(body.measured.total, null);
   assert.equal(body.measured.tickets, 2000);
   assert.equal(body.measured.complete, false);
+  // The active figure is then the number of tickets the console read, and
+  // the note says it is a floor rather than the size of the view.
+  assert.equal(body.metrics.active, 2000);
 });
 
 test("says so when the account's count and the tickets it served disagree", async () => {

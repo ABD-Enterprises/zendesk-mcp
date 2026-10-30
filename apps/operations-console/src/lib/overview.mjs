@@ -8,13 +8,14 @@
 import { formatCount, formatSyncTime } from "./format.mjs";
 
 /**
- * The note the console shows when it did not measure the whole view.
+ * The note the console shows when it did not measure the whole view, or when
+ * the account's count and the tickets it served disagree.
  *
  * The console measures the breakdown of a view from the tickets it read. When
- * the view is longer than the console reads, or when the account's count and
- * the tickets it served disagree, the breakdown covers only part of the view.
- * The console says so rather than letting a partial measurement read as a
- * whole one.
+ * the view is longer than the console reads, the breakdown covers only part of
+ * it; when the count and the tickets disagree, the console cannot tell which of
+ * the two is wrong. The console says so rather than letting a partial
+ * measurement read as a whole one.
  *
  * @param {any} measured the measurement the payload carries
  * @returns {string} the note, or "" when there is nothing to disclose
@@ -27,16 +28,47 @@ export function measurementNote(measured) {
   const total = measured.total === null || measured.total === undefined
     ? null
     : Number(measured.total);
-  if (measured.complete && (total === null || total === read)) return "";
-  const scope = total !== null && total > read
-    ? `the first ${formatCount(read)} of the ${formatCount(total)} tickets in the view`
-    : total !== null && total < read
-      ? `${formatCount(read)} tickets of a view the account says holds ${formatCount(total)}`
+  const complete = Boolean(measured.complete);
+  // The console read the whole view and the account agrees on its size, so
+  // there is nothing to disclose.
+  if (complete && (total === null || total === read)) return "";
+
+  // The account's count and the tickets it served can disagree. A count below
+  // the number of tickets read cannot be a part of the view, and a count above
+  // a view the console read to its end cannot be the size of that view. In
+  // both cases the count is the number that cannot be trusted, so the note
+  // names the disagreement instead of calling the measurement a part of the
+  // view.
+  const countDisagrees =
+    total !== null && (total < read || (complete && total > read));
+
+  // What the console read.
+  const scope = countDisagrees
+    ? complete
+      ? `${formatCount(read)} tickets, every ticket the view served`
+      : `the first ${formatCount(read)} tickets of the view`
+    : total !== null && total > read
+      ? `the first ${formatCount(read)} of the ${formatCount(total)} tickets in the view`
       : `the first ${formatCount(read)} tickets of the view`;
-  return (
-    `The console read ${scope}. The unassigned figure, the oldest ticket and ` +
-    "the breakdowns are measured from the tickets that were read."
+
+  const parts = [`The console read ${scope}.`];
+  if (countDisagrees) {
+    parts.push(
+      `The account says the view holds ${formatCount(total)}, and the two numbers disagree.`,
+    );
+  }
+  if (total === null) {
+    // The account states no count, so the active figure is the number of
+    // tickets the console read. The console did not read the whole view, so
+    // that number is a floor rather than the size of the view.
+    parts.push(
+      "The active figure counts only the tickets the console read, so it is a floor rather than the size of the view.",
+    );
+  }
+  parts.push(
+    "The unassigned figure, the oldest ticket and the breakdowns are measured from the tickets that were read.",
   );
+  return parts.join(" ");
 }
 
 /**

@@ -573,7 +573,9 @@ export async function zendesk(path) {
 const VIEW_PAGE_SIZE = 100;
 const VIEW_PAGE_LIMIT = 20;
 // The pages of a view are read a few at a time, so a view of twenty pages
-// costs five round trips instead of twenty.
+// costs five round trips instead of twenty when the account states how many
+// tickets the view holds. Without a count the console cannot tell how many
+// pages there are and reads them one at a time.
 const VIEW_PAGE_CONCURRENCY = 5;
 
 async function fetchViewRows(viewId) {
@@ -704,19 +706,23 @@ app.get("/api/overview", async (_request, response) => {
       lastSynced: new Date().toISOString(),
       accountUrl: auth.baseUrl,
       brandId: config.brandId,
-      // What the breakdown below was measured from. The headline number is
-      // the total of the view; the breakdown is measured from the tickets the
-      // console read, and a view that is longer than the page limit is not
-      // read whole. The console says which it has, rather than reporting a
-      // total next to a breakdown of part of the view.
+      // What the breakdown was measured from. The headline number is the
+      // account's own count of the view when the account states one, and the
+      // number of tickets the console read when it does not; the breakdown is
+      // measured from the tickets the console read, and a view that is longer
+      // than the page limit is not read whole. The console says which it has,
+      // rather than reporting a total next to a breakdown of part of the view.
       measured: {
         tickets: aging.rows.length,
         total: aging.count,
         complete: aging.complete,
       },
       metrics: {
-        // Both headline numbers are the total of their view, so they answer
-        // the same question the same way.
+        // The active figure is the account's count of the view when the
+        // account states one, and the number of tickets the console read when
+        // it does not; the console says which it has, so a figure that is
+        // only a floor is not read as the size of the view. The triage figure
+        // is the account's count of its own view.
         active: aging.count ?? aging.rows.length,
         untriaged: untriagedView.count || 0,
         unassigned: summary.tickets.filter((ticket) => !ticket.assigneeId).length,
