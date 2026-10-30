@@ -192,9 +192,13 @@ shows:
 }
 ```
 
-The manifest also passes the `ZENDESK_*` environment variables through its
-`env` block; a manual configuration has to set them in the client's own
-environment.
+The manifest also forwards thirteen of the sixteen `ZENDESK_*` variables
+through its `env` block — the three it leaves out, the OAuth callback port,
+the shutdown timeout and the healthcheck shortcut, all have defaults. A
+manual configuration has to set the variables in the client's own
+environment. The block uses `${VAR}` placeholders, which the host is expected
+to substitute; a placeholder the host leaves unsubstituted is read as an
+unset variable, not as a literal value.
 
 ### Container
 
