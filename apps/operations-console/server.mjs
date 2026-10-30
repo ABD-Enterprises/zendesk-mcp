@@ -563,9 +563,9 @@ export async function zendesk(path) {
 
 // Zendesk answers a view execution with one page of rows and the total count.
 // The console measures its numbers from those rows, so it reads the whole
-// view: a truncated page would make "active" and "untriaged" disagree about
-// the same quantity, and the row-based numbers would count a part of the
-// view. The page limit bounds the work a single dashboard load can cause.
+// view: a truncated page would leave the headline describing a part of the
+// view while the breakdown covered all of it. The page limit bounds the work
+// a single dashboard load can cause.
 //
 // The limit is a bound, not a promise. A view that is longer than it is not
 // fully measured, and the console says so rather than reporting a total next

@@ -74,7 +74,7 @@ function MeasurementNote({ note }: { note: string }) {
 
 function OverviewPage({ data }: { data: Overview }) {
   const oldest = data.tickets[0] ? ticketRow(data.tickets[0]) : undefined;
-  const note = measurementNote(data.measured);
+  const note = measurementNote(data.measured, data.connected);
   // The band states a fact about the queue, so it may only do so when the
   // dashboard describes the whole queue.
   const whole = measurementIsWhole(data.measured);
@@ -150,7 +150,7 @@ function IntakePage({ data }: { data: Overview }) {
 }
 
 function ReportsPage({ data }: { data: Overview }) {
-  const note = measurementNote(data.measured);
+  const note = measurementNote(data.measured, data.connected);
   return <>
     <section className="page-heading"><div><p className="eyebrow">Native Zendesk reporting</p><h1>Queue reports that stay current</h1><p>Operational views update from live ticket data. Explore remains the destination for historical dashboards and scheduled delivery.</p></div></section>
     <MeasurementNote note={note} />

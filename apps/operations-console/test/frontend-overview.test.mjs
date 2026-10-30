@@ -213,11 +213,41 @@ test("says something when the account counted tickets the console never read", (
 });
 
 test("says nothing when the console could not reach its server", () => {
-  // An empty measurement with no count is the signature of a console that
-  // could not reach its server. A note that said the console read no tickets
-  // would read as a measurement of an empty queue, which is the opposite of
-  // what happened.
-  assert.equal(measurementNote({ tickets: 0, total: null, complete: false }), "");
+  // A console that could not reach its server has no measurement to disclose:
+  // the empty payload it shows is not a measurement of an empty queue, so a
+  // note that said the console read no tickets would read as one.
+  assert.equal(measurementNote({ tickets: 0, total: null, complete: false }, false), "");
+});
+
+test("says something when a connected account served no rows at all", () => {
+  // The same measurement, from an account that was reached: the console
+  // cannot tell the two apart by the measurement alone, so it keys the
+  // silence on the connection and not on the shape.
+  const note = measurementNote({ tickets: 0, total: null, complete: false }, true);
+
+  assert.notEqual(note, "");
+  assert.match(note, /no tickets/);
+  assert.match(note, /floor rather than the size of the view/);
+});
+
+test("says that a page was left when the account counts nothing", () => {
+  // The account counts nothing and the view still had a page to offer. The
+  // count is not shown to be wrong — it may be right and the pages may have
+  // come back empty — but the note says that the console measured nothing.
+  const note = measurementNote({ tickets: 0, total: 0, complete: false });
+
+  assert.notEqual(note, "");
+  assert.match(note, /no tickets/);
+  assert.match(note, /pages the console read served no tickets/);
+});
+
+test("says what the triage figure is", () => {
+  // The triage figure is the account's count of the untriaged view, whose
+  // rows the console never reads. The operator is told where the other
+  // figures come from, and is told about this one too.
+  const note = measurementNote({ tickets: 2000, total: 5000, complete: false });
+
+  assert.match(note, /triage figure is the account's count of the untriaged view/);
 });
 
 test("links to a view of the account", () => {

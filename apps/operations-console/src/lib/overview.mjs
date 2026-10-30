@@ -39,25 +39,28 @@ export function measurementIsWhole(measured) {
  * the two is wrong. The console says so rather than letting a partial
  * measurement read as a whole one.
  *
+ * A console that could not reach its server has no measurement to disclose at
+ * all: the empty payload it shows is not a measurement of an empty queue, so
+ * the note is silent then.
+ *
  * @param {any} measured the measurement the payload carries
- * @returns {string} the note, or "" when the dashboard describes the whole view
+ * @param {boolean} [connected] whether the console reached the account
+ * @returns {string} the note, or "" when there is nothing to disclose
  */
-export function measurementNote(measured) {
+export function measurementNote(measured, connected = true) {
   if (!measured) return "";
   const read = Number(measured.tickets) || 0;
   const total = measured.total === null || measured.total === undefined
     ? null
     : Number(measured.total);
   const complete = Boolean(measured.complete);
+  // A console that could not reach its server has no measurement to disclose:
+  // the empty payload is not a measurement of an empty queue.
+  if (!connected) return "";
   // The whole view was read and the account agrees on its size: every figure
   // the console measured is a figure of the whole view, so there is nothing
   // to disclose.
   if (measurementIsWhole(measured)) return "";
-  // Nothing was measured and the account states no count. That is the
-  // signature of a console that could not reach its server: there is no
-  // measurement to disclose, and a note that says the console read no tickets
-  // would read as a measurement of an empty queue.
-  if (read === 0 && total === null && !complete) return "";
 
   // The account's count and the tickets it served can disagree. A count below
   // the number of tickets read cannot be a part of the view, and a count above
@@ -71,8 +74,7 @@ export function measurementNote(measured) {
   // The console read nothing while the view still had a page to offer. The
   // count may well be right — the pages came back empty — so the console
   // does not call it wrong. It says that it measured nothing.
-  const countUnmeasured =
-    total !== null && read === 0 && !complete && total > 0;
+  const countUnmeasured = total !== null && read === 0 && !complete;
 
   // What the console read.
   const scope = read === 0
@@ -114,7 +116,7 @@ export function measurementNote(measured) {
     );
   }
   parts.push(
-    "The unassigned figure, the oldest ticket and the breakdowns are measured from the tickets that were read.",
+    "The unassigned figure, the oldest ticket and the breakdowns are measured from the tickets that were read, and the triage figure is the account's count of the untriaged view.",
   );
   return parts.join(" ");
 }

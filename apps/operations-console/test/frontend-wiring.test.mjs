@@ -135,8 +135,8 @@ test("both pages that show a breakdown say how much of the view was measured", (
   const overview = pageSource("OverviewPage");
   const reports = pageSource("ReportsPage");
 
-  assert.match(overview, /measurementNote\(data\.measured\)/);
-  assert.match(reports, /measurementNote\(data\.measured\)/);
+  assert.match(overview, /measurementNote\(data\.measured, data\.connected\)/);
+  assert.match(reports, /measurementNote\(data\.measured, data\.connected\)/);
   assert.match(overview, /<MeasurementNote note=\{note\} \/>/);
   assert.match(reports, /<MeasurementNote note=\{note\} \/>/);
   // Each page shows the note above the breakdown it describes, so a note that
