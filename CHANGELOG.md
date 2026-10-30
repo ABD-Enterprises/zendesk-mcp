@@ -2,7 +2,15 @@
 
 ## Unreleased
 
-No changes recorded yet.
+- The operations console now answers the `Host` names an operator lists in
+  `ZENDESK_CONSOLE_ALLOWED_HOSTS`, so a console behind a reverse proxy has to
+  name the proxy's host there; until it does, every request is refused with
+  `403`. Its token asks for `ticket_views:read` and `tickets:read` instead of
+  a broad `read write`, so the Zendesk OAuth client has to allow both scopes.
+  The console takes its account from the OAuth client file alone, refuses an
+  account URL that is not HTTPS (except on the loopback interface), refuses a
+  redirect rather than following it, and only shows the browser a message the
+  console wrote itself.
 
 ## 0.6.1
 

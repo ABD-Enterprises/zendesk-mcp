@@ -15,8 +15,10 @@ import { connect } from "node:net";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import {
   allowedHosts,
+  app,
   getOAuthToken,
   isLoopbackHost,
+  mountStaticFiles,
   resetCaches,
   resolveConsoleBaseUrl,
   resolveConsoleScope,
@@ -196,9 +198,9 @@ test("drops the write scopes of the configured scope", () => {
 
 test("takes the scope of the console's own setting first", () => {
   process.env.ZENDESK_OAUTH_SCOPE = "ticket_views:read tickets:read";
-  process.env.ZENDESK_CONSOLE_OAUTH_SCOPE = "ticket_views:read";
+  process.env.ZENDESK_CONSOLE_OAUTH_SCOPE = "ticket_views:read tickets:read";
 
-  assert.equal(resolveConsoleScope(), "ticket_views:read");
+  assert.equal(resolveConsoleScope(), "ticket_views:read tickets:read");
 });
 
 test("does not take the scope of the client file", async () => {
@@ -220,9 +222,22 @@ test("never asks for a scope the operator did not name", () => {
   // Zendesk caps what a client may request at the scopes allowed on the
   // OAuth client and answers a request outside that set with
   // `400 invalid_scope`, so the console does not add a scope of its own.
+  process.env.ZENDESK_OAUTH_SCOPE = "ticket_views:read tickets:read";
+
+  assert.equal(resolveConsoleScope(), "ticket_views:read tickets:read");
+});
+
+test("names the scope it needs when the configured scope cannot read a ticket's fields", () => {
+  // The dashboard reads the request type and the system off the rows a view
+  // returns. A scope that cannot read them would leave every ticket
+  // "Unclassified", so the console says what is missing instead of running
+  // with a dashboard that is quietly wrong.
   process.env.ZENDESK_OAUTH_SCOPE = "ticket_views:read";
 
-  assert.equal(resolveConsoleScope(), "ticket_views:read");
+  assert.throws(
+    () => resolveConsoleScope(),
+    /tickets:read/,
+  );
 });
 
 test("names the scope it needs when the configured scope cannot read a view", () => {
@@ -233,7 +248,6 @@ test("names the scope it needs when the configured scope cannot read a view", ()
     /ticket_views:read/,
   );
 });
-
 test("names the scope it needs when nothing readable is configured", () => {
   process.env.ZENDESK_OAUTH_SCOPE = "tickets:write";
 
@@ -428,7 +442,7 @@ test("shows the OAuth error code only when it is a known one", async () => {
     // the scopes the console asks for, and the message names the scope.
     assert.equal(
       body.error,
-      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the ticket_views:read scope: allow it on the Zendesk OAuth client.",
+      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the ticket_views:read and tickets:read scopes: allow them on the Zendesk OAuth client.",
     );
   } finally {
     await account.close();
@@ -476,6 +490,37 @@ test("does not follow a redirect that would carry the access token", async () =>
   } finally {
     await account.close();
     await target.close();
+  }
+});
+
+test("refuses a request for a file that carries another host", async () => {
+  // The Host check runs before every route, the file routes included: a
+  // request for the frontend is refused the same way a request for an API
+  // route is. The file routes are mounted on the console app here, so the
+  // order the server registers them in is the order the answer comes from.
+  const directory = await makeTempDir("operations-console-static-");
+  try {
+    await writeFile(
+      join(directory, "index.html"),
+      "<!doctype html><title>Console</title>",
+    );
+    mountStaticFiles(app, { distDir: directory });
+
+    for (const path of ["/", "/index.html", "/some/spa/route"]) {
+      const refused = await fetchWithHost(
+        `${consoleServer.baseUrl}${path}`,
+        "attacker.example.com",
+      );
+      assert.equal(refused.status, 403, `${path} should be refused`);
+      assert.deepEqual(refused.body, { error: "Forbidden" });
+
+      // The console itself is answered, so the refusal above was the Host
+      // check and not a route that does not exist.
+      const answered = await fetch(`${consoleServer.baseUrl}${path}`);
+      assert.equal(answered.status, 200, `${path} should be answered`);
+    }
+  } finally {
+    await removeTempDir(directory);
   }
 });
 

@@ -31,12 +31,12 @@
  *   GET /api/status   liveness and configuration status; never calls Zendesk
  *   GET /api/overview the dashboard payload; calls Zendesk
  *
- * The server binds to the loopback interface and answers only a request that
- * carries a loopback Host header: a page on another origin can reach a
- * loopback server through DNS rebinding, and the Host header is what tells
- * the two apart. A console behind a reverse proxy names the proxy's host in
- * ZENDESK_CONSOLE_ALLOWED_HOSTS; the proxy's own access control is what
- * stands in front of it then.
+ * The server binds to the loopback interface and, by default, answers only a
+ * request that carries a loopback Host header: a page on another origin can
+ * reach a loopback server through DNS rebinding, and the Host header is what
+ * tells the two apart. A console behind a reverse proxy names the proxy's
+ * host in ZENDESK_CONSOLE_ALLOWED_HOSTS, and then answers that name too; the
+ * proxy's own access control is what stands in front of it.
  *
  * This module exports the Express app and the helpers it is built from, so the
  * test suite in `test/` can drive them without starting a server. The HTTP
@@ -77,10 +77,9 @@ class ConsoleError extends Error {}
  */
 const CONSOLE_DEFAULT_SCOPE = "ticket_views:read tickets:read";
 
-// The scope the console cannot work without. A view is read with
-// `ticket_views:read`, or with the broad `read` scope, which covers every
-// GET endpoint.
-const CONSOLE_REQUIRED_SCOPE = "ticket_views:read";
+// The scopes the console cannot work without. The broad `read` scope covers
+// every GET endpoint, so it covers both of them.
+const CONSOLE_REQUIRED_SCOPES = ["ticket_views:read", "tickets:read"];
 
 /**
  * The scope the console asks its own token for.
@@ -95,13 +94,14 @@ const CONSOLE_REQUIRED_SCOPE = "ticket_views:read";
  * operator who deliberately narrowed the account to read-only therefore does
  * not get a write-capable console token.
  *
- * What is left must still let the console read a view. The console never adds
- * a scope of its own to make that true: Zendesk caps what a client may
- * request at the scopes allowed on the OAuth client and answers a request
- * outside that set with `400 invalid_scope`, so adding `ticket_views:read`
- * behind the operator's back would take the console down for an operator
- * whose client does not carry it. A scope that cannot read a view is a
- * configuration error, and the console names it.
+ * What is left must still let the console read a view and the ticket fields
+ * on it. The console never adds a scope of its own to make that true:
+ * Zendesk caps what a client may request at the scopes allowed on the OAuth
+ * client and answers a request outside that set with `400 invalid_scope`, so
+ * adding `ticket_views:read` behind the operator's back would take the
+ * console down for an operator whose client does not carry it. A scope that
+ * cannot read a view is a configuration error, and the console names the
+ * scopes it needs.
  */
 export function resolveConsoleScope() {
   const configured =
@@ -112,12 +112,19 @@ export function resolveConsoleScope() {
   const readOnly = scope
     .split(/\s+/)
     .filter((part) => part === "read" || part.endsWith(":read"));
-  const readsViews =
-    readOnly.includes(CONSOLE_REQUIRED_SCOPE) || readOnly.includes("read");
-  if (readOnly.length === 0 || !readsViews) {
+  // The broad `read` scope covers both of the required scopes.
+  const missing = CONSOLE_REQUIRED_SCOPES.filter(
+    (required) => !readOnly.includes(required) && !readOnly.includes("read"),
+  );
+  if (readOnly.length === 0 || missing.length > 0) {
     throw new ConsoleError(
-      `The console reads ticket views, so its token needs the ${CONSOLE_REQUIRED_SCOPE} scope. ` +
-        "Add it to ZENDESK_CONSOLE_OAUTH_SCOPE (or to ZENDESK_OAUTH_SCOPE) and allow it on the Zendesk OAuth client.",
+      `The console reads ticket views and the ticket fields on them, so its token needs ` +
+        `the ${missing.join(" and ")} scope${missing.length > 1 ? "s" : ""}. ` +
+        "Add " +
+        (missing.length > 1 ? "them" : "it") +
+        " to ZENDESK_CONSOLE_OAUTH_SCOPE (or to ZENDESK_OAUTH_SCOPE) and allow " +
+        (missing.length > 1 ? "them" : "it") +
+        " on the Zendesk OAuth client.",
     );
   }
   return readOnly.join(" ");
@@ -265,18 +272,30 @@ export function allowedHosts() {
 export function isAllowedHost(hostHeader, extraHosts = []) {
   if (isLoopbackHost(hostHeader)) return true;
   if (typeof hostHeader !== "string" || hostHeader === "") return false;
+  // The list has to be a list. A string would turn the whole-header match
+  // into a substring match, which is the opposite of what the check is for.
+  if (!Array.isArray(extraHosts)) return false;
   return extraHosts.includes(hostHeader.trim().toLowerCase());
 }
 
-// Refuses a request that was not addressed to the console itself. It runs
-// before every route, the API ones included.
-app.use((request, response, next) => {
+/**
+ * The middleware that refuses a request that was not addressed to the console.
+ *
+ * It is exported so the test suite can mount it ahead of the file routes and
+ * prove that a request for the frontend is refused the same way a request for
+ * an API route is.
+ */
+export function hostCheck(request, response, next) {
   if (isAllowedHost(request.headers.host, allowedHosts())) {
     next();
     return;
   }
   response.status(403).json({ error: "Forbidden" });
-});
+}
+
+// Refuses a request that was not addressed to the console itself. It runs
+// before every route, the API ones included.
+app.use(hostCheck);
 
 const REQUIRED_CONFIG = {
   brandId: "ZENDESK_CONSOLE_BRAND_ID",
@@ -451,7 +470,7 @@ async function requestToken() {
     throw new ConsoleError(
       `Zendesk OAuth failed (${response.status}${code ? ` ${code}` : ""})` +
         (code === "invalid_scope"
-          ? `. The console's token needs the ${CONSOLE_REQUIRED_SCOPE} scope: allow it on the Zendesk OAuth client.`
+          ? `. The console's token needs the ${CONSOLE_REQUIRED_SCOPES.join(" and ")} scopes: allow them on the Zendesk OAuth client.`
           : ""),
     );
   }

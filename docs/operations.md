@@ -161,10 +161,10 @@ proxy that only adds TLS exposes the console to everyone who can reach it.
 Put an authentication layer (single sign-on, basic authentication, or an
 address allowlist) in front of it, or keep the proxy on a private network.
 
-Two further proxy details follow from how the console is written:
+Three further proxy details follow from how the console is written:
 
-- The console answers only a request whose `Host` header names the loopback
-  interface. A proxy forwards the name the browser asked for, not the
+- By default the console answers only a request whose `Host` header names the
+  loopback interface. A proxy forwards the name the browser asked for, not the
   loopback address, so a console behind a proxy needs that name in
   `ZENDESK_CONSOLE_ALLOWED_HOSTS`; without it every request is refused with
   `403`. The value is matched against the whole `Host` header, port included,
@@ -188,6 +188,10 @@ scope comes from `ZENDESK_CONSOLE_OAUTH_SCOPE`, and then from the
 `ZENDESK_OAUTH_SCOPE` the connector shares with it. The scope recorded in the
 OAuth client file is the connector's scope and is not used here: it carries
 write scopes, and the console writes nothing.
+
+Both scopes are required. A scope that cannot read a view, or the ticket
+fields on it, is a configuration error rather than a dashboard that quietly
+shows every ticket as "Unclassified", and the console names what is missing.
 
 The scope has to be allowed on the Zendesk OAuth client as well. A client
 that is not granted it answers the token request with `invalid_scope`, and
