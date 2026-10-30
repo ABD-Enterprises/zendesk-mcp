@@ -372,6 +372,16 @@ root has no `package.json`), or directly with the built output:
 node plugins/zendesk-connector/dist/index.js --doctor
 ```
 
+With `--tools` the doctor also prints what the agent will receive: the
+resolved base URL, the OAuth mode, the requested scope, and the enabled tool
+names. When a token is stored, it also prints the scope the account granted
+and the token's expiry, so the scope the connector asks for and the scope it
+was given can be compared. Nothing it prints contacts Zendesk.
+
+```sh
+npm run doctor -- --tools
+```
+
 The `npm run` form is for a git checkout: it rebuilds first, so it needs the
 dev dependencies that `npm ci` installs. An installed package ships only
 `dist` (no sources or `tsconfig`), so there the direct form is the only one —
@@ -391,6 +401,15 @@ An explicit command-line flag always wins over the environment-variable
 shortcuts: `--doctor` (or `--logout`) runs its own mode even on a host that
 exports `ZENDESK_HEALTHCHECK=1`. When two mode flags appear together, the
 order is `--healthcheck`, then `--doctor`, then `--logout`.
+
+`--help` prints the usage of the command line, and a flag the connector does
+not know is refused with exit code 2 rather than starting the server — an
+unknown flag used to fall through to the server, which then waited on stdin
+forever and printed nothing, so a typo read as a broken install.
+
+```sh
+node plugins/zendesk-connector/dist/index.js --help
+```
 
 ### Healthcheck and shutdown
 

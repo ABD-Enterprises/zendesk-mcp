@@ -8,7 +8,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, test } from "node:test";
 import type { ZendeskConfig } from "./auth.js";
-import { checkDoctor, isDoctorRequested, runDoctor } from "./doctor.js";
+import {
+  checkDoctor,
+  isDoctorRequested,
+  isToolsRequested,
+  runDoctor,
+} from "./doctor.js";
 import type { PortProbeResult } from "./doctor.js";
 
 const originalEnv = { ...process.env };
@@ -57,6 +62,445 @@ test("detects the doctor flag", () => {
   assert.equal(isDoctorRequested(["--doctor"]), true);
   assert.equal(isDoctorRequested(["--healthcheck"]), false);
   assert.equal(isDoctorRequested([]), false);
+});
+
+test("detects the inventory flag", () => {
+  assert.equal(isToolsRequested(["--tools"]), true);
+  assert.equal(isToolsRequested(["--doctor", "--tools"]), true);
+  assert.equal(isToolsRequested(["--doctor"]), false);
+  assert.equal(isToolsRequested([]), false);
+});
+
+test("prints the resolved configuration and the enabled tools on request", async () => {
+  const out: string[] = [];
+  const err: string[] = [];
+
+  const code = await runDoctor({
+    loadConfig: () => config(),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: (line) => err.push(line),
+  });
+
+  assert.equal(code, 0);
+  const printed = out.join("");
+  assert.match(printed, /Base URL: https:\/\/example\.zendesk\.com/);
+  assert.match(printed, /OAuth mode: access_token/);
+  assert.match(printed, /Scope: read write/);
+  // The operator can see what the agent will receive without starting it.
+  assert.match(printed, /Enabled tools \(12 of 12\): zendesk_add_ticket_comment/);
+  // Nothing printed carries a credential, on this surface as on the others.
+  assert.ok(!printed.includes("invented-access-token"));
+  assert.ok(!printed.includes("invented-client-secret"));
+  assert.ok(!printed.includes("invented-client-id"));
+  assert.deepEqual(err, []);
+});
+
+test("the inventory still prints the configuration when the tool policy is broken", async () => {
+  const previous = process.env.ZENDESK_ALLOWED_TOOLS;
+  process.env.ZENDESK_ALLOWED_TOOLS = "zendesk_not_a_tool";
+  const out: string[] = [];
+  const err: string[] = [];
+
+  try {
+    await runDoctor({
+      loadConfig: () => config(),
+      tools: true,
+      writeOut: (line) => out.push(line),
+      writeError: (line) => err.push(line),
+    });
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_ALLOWED_TOOLS;
+    else process.env.ZENDESK_ALLOWED_TOOLS = previous;
+  }
+
+  const printed = out.join("");
+  // The tool policy is broken, but the configuration is what the operator
+  // asked for, so it is printed anyway.
+  assert.match(printed, /Base URL: https:\/\/example\.zendesk\.com/);
+  assert.match(printed, /The enabled tools could not be resolved\./);
+});
+
+test("says the configuration failed when the configuration cannot be loaded", async () => {
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () => {
+      throw new Error("the configuration is not usable");
+    },
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  // The tools are not what failed, so the message must not say they were.
+  assert.match(printed, /The configuration could not be resolved\./);
+  assert.ok(!printed.includes("The enabled tools could not be resolved."));
+});
+
+test("prints the granted scope and the expiry of the stored token", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+      scope: "tickets:read",
+      expires_at: "2026-12-01T00:00:00.000Z",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read tickets:write" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  // The scope above is what the connector asks for; the stored one is what
+  // the account granted, and only the stored one says what the token can do.
+  assert.match(printed, /Scope: tickets:read tickets:write/);
+  assert.match(printed, /Granted scope: tickets:read/);
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z/);
+  // Nothing printed carries a credential.
+  assert.ok(!printed.includes("invented-access-token"));
+  assert.ok(!printed.includes("invented-refresh-token"));
+});
+
+test("prints no token lines when there is no stored token", async () => {
+  // The client-credentials mode stores no token — it asks the account for
+  // one per request — so a token file left over from another mode says
+  // nothing about the live configuration.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      scope: "tickets:read",
+      expires_at: "2026-12-01T00:00:00.000Z",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () => config({ mode: "client_credentials", tokenFile }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.match(printed, /Scope: read write/);
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.ok(!printed.includes("Token expires:"));
+});
+
+test("keeps a stored value on one line", async () => {
+  // The doctor prints one fact per line, so a value that carried a line
+  // break would print as two, and the second would read as a fact of its own.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      scope: "tickets:read\nInjected: line",
+      expires_at: "2026-12-01T00:00:00.000Z",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  const lines = printed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  // One line for the scope, and no line of its own for the rest of it.
+  assert.equal(lines.filter((line) => line.startsWith("Granted scope:")).length, 1);
+  assert.ok(!lines.some((line) => line.startsWith("Injected:")));
+  assert.match(printed, /Granted scope: tickets:read Injected: line/);
+  // A carriage return does not make a second line, but it overwrites the
+  // line it is on, so the output carries none.
+  assert.ok(!printed.includes("\r"));
+});
+
+test("keeps a stored value on one line when it carries a carriage return", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "tickets:read\rInjected: line" }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("\r"));
+  assert.match(printed, /Granted scope: tickets:read Injected: line/);
+});
+
+test("keeps a stored expiry on one line too", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      scope: "tickets:read",
+      expires_at: "2026-12-01T00:00:00.000Z\r\nInjected: line",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  const lines = printed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  assert.equal(lines.filter((line) => line.startsWith("Token expires:")).length, 1);
+  assert.ok(!lines.some((line) => line.startsWith("Injected:")));
+  // The joined text as well, so a carriage return left in the value would
+  // not pass, and a line break that became two spaces would not either.
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z Injected: line/);
+  assert.ok(!printed.includes("\r"));
+});
+
+test("prints no expiry that is only whitespace", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "tickets:read", expires_at: "  \r  " }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Token expires:"));
+  assert.match(printed, /Granted scope: tickets:read/);
+});
+
+test("prints no scope that is not a string", async () => {
+  // A token file that holds a number where a scope belongs is not a token
+  // the doctor can read, and it must not print a line for it.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: 42, expires_at: "2026-12-01T00:00:00.000Z" }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  // The scope is not printed, and the expiry still is: the expiry was read,
+  // and only the scope was refused.
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z/);
+});
+
+test("prints no expiry that is not a string", async () => {
+  // The same rule on the other value: a token file that holds a number
+  // where an expiry belongs is not a token the doctor can read.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "tickets:read", expires_at: 42 }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  // The expiry is not printed, and the scope still is: the file was read,
+  // and only the expiry was refused.
+  assert.ok(!printed.includes("Token expires:"));
+  assert.match(printed, /Granted scope: tickets:read/);
+});
+
+test("prints no stored value that is only whitespace", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "  \r  ", expires_at: "2026-12-01T00:00:00.000Z" }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z/);
+});
+
+test("prints no granted scope for a token that carries none", async () => {
+  // A token without a scope says nothing about what it may do, and the
+  // access token beside it must never be printed under any label.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.ok(!printed.includes("invented-access-token"));
+  assert.ok(!printed.includes("invented-refresh-token"));
+});
+
+test("prints no granted scope when the token file is the OAuth client file", async () => {
+  // The client file holds the scope the connector asks for. Printing it
+  // under "granted" would say a token was granted something no token was
+  // ever granted.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-client-"));
+  tempDirs.push(directory);
+  const clientFile = join(directory, "client.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      scope: "tickets:read tickets:write",
+    }),
+    { mode: 0o600 },
+  );
+  const previous = process.env.ZENDESK_OAUTH_CLIENT_FILE;
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
+  const out: string[] = [];
+  const errors: string[] = [];
+
+  try {
+    await runDoctor({
+      loadConfig: () =>
+        config({
+          mode: "authorization_code",
+          tokenFile: clientFile,
+          scope: "tickets:read tickets:write",
+        }),
+      tools: true,
+      writeOut: (line) => out.push(line),
+      writeError: (line) => errors.push(line),
+    });
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_OAUTH_CLIENT_FILE;
+    else process.env.ZENDESK_OAUTH_CLIENT_FILE = previous;
+  }
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.ok(!printed.includes("Token expires:"));
+  // The problem is still reported: the inventory stays quiet about a token
+  // that was never issued, and the checks say what is wrong.
+  assert.match(errors.join(""), /is the OAuth client file/);
+});
+
+test("names the read-only tool set in the inventory", async () => {
+  const previous = process.env.ZENDESK_READ_ONLY;
+  process.env.ZENDESK_READ_ONLY = "1";
+  const out: string[] = [];
+
+  try {
+    await runDoctor({
+      loadConfig: () => config(),
+      tools: true,
+      writeOut: (line) => out.push(line),
+      writeError: () => {},
+    });
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_READ_ONLY;
+    else process.env.ZENDESK_READ_ONLY = previous;
+  }
+
+  assert.match(out.join(""), /Enabled tools \(9 of 12\)/);
+  assert.ok(!out.join("").includes("zendesk_update_ticket"));
 });
 
 test("prints one all-clear line to stdout and exits zero", async () => {
