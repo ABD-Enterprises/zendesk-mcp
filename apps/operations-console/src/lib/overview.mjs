@@ -56,10 +56,17 @@ export function toOverviewState(payload) {
 /**
  * Describes the account the console is connected to.
  *
+ * A console that cannot reach its own server and an account it cannot reach
+ * are different failures, and only the second one is an OAuth problem. The
+ * failure of the console itself is passed in, because the sidebar would
+ * otherwise point at the OAuth configuration for a server that never
+ * answered.
+ *
  * @param {any} overview
+ * @param {string | null} [failure] why the console could not reach its server
  * @returns {{connected: boolean, title: string, detail: string}}
  */
-export function connectionStatus(overview) {
+export function connectionStatus(overview, failure) {
   const connected = Boolean(overview && overview.connected);
   if (connected) {
     return {
@@ -71,7 +78,7 @@ export function connectionStatus(overview) {
   return {
     connected,
     title: "Zendesk unavailable",
-    detail: overview?.error || "Check OAuth configuration",
+    detail: failure || overview?.error || "Check OAuth configuration",
   };
 }
 
@@ -120,6 +127,11 @@ export const CONSOLE_UNREACHABLE =
  * two apart. The failure is therefore reported next to the dashboard, not
  * in place of it.
  *
+ * A payload the server DID answer with is not a failure of the console. The
+ * console answers `503` with `{"connected":false,"error":"…"}` when it cannot
+ * reach the account, and that body is a valid answer: the reason is kept on
+ * the overview and shown by the sidebar, and no failure is reported.
+ *
  * @param {() => Promise<any>} [fetchImpl] the fetch the loader calls
  * @returns {Promise<{overview: any, failure: string | null}>}
  */
@@ -128,7 +140,10 @@ export async function loadOverview(fetchImpl = fetch) {
     const response = await fetchImpl("/api/overview");
     const payload = await response.json();
     return { overview: toOverviewState(payload), failure: null };
-  } catch {
+  } catch (error) {
+    // The reason stays in the console: the browser gets the console's own
+    // message, and what caused it is written here.
+    console.error("[operations-console] the overview could not be loaded", error);
     return { overview: EMPTY_OVERVIEW, failure: CONSOLE_UNREACHABLE };
   }
 }

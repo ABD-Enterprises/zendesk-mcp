@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -83,11 +83,11 @@ function OverviewPage({ data }: { data: Overview }) {
       <MetricCard label="Oldest active" value={data.metrics.oldestDays} note="Calendar days" tone="blue" />
     </section>
 
-    <section className="alert-band">
+    {data.metrics.unassigned > 0 && <section className="alert-band">
       <AlertTriangle size={20} />
       <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} active tickets are currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
       <button onClick={() => location.hash = "controls"}>Review blocker<ChevronRight size={16} /></button>
-    </section>
+    </section>}
 
     <div className="two-column">
       <section className="panel">
@@ -207,17 +207,25 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const requestId = useRef(0);
 
   const load = async () => {
+    // Two loads can overlap — the button is disabled while one runs, but the
+    // first load on mount cannot be cancelled — and the older one may settle
+    // last. Only the newest load may write, or a stale failure can replace a
+    // newer success.
+    const id = requestId.current + 1;
+    requestId.current = id;
     setLoading(true);
     try {
       // The loader reports a transport failure instead of leaving the
       // dashboard empty: zeros read as a quiet account, and the operator
       // cannot tell the two apart.
       const loaded = await loadOverview();
+      if (id !== requestId.current) return;
       setData(loaded.overview);
       setFailure(loaded.failure);
-    } finally { setLoading(false); }
+    } finally { if (id === requestId.current) setLoading(false); }
   };
   useEffect(() => { load(); }, []);
   useEffect(() => {
@@ -225,7 +233,7 @@ export function App() {
     window.addEventListener("hashchange", handler); return () => window.removeEventListener("hashchange", handler);
   }, []);
   const visibleNav = useMemo(() => navigation.filter((item) => matchesQuery(item.label, query)), [query]);
-  const connection = connectionStatus(data);
+  const connection = connectionStatus(data, failure);
 
   const go = (id: Section) => { location.hash = id; setSection(id); };
   return <div className="app-shell">

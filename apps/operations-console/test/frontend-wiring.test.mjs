@@ -106,3 +106,30 @@ test("a failed load is reported instead of shown as an empty dashboard", () => {
   assert.match(appSource, /setFailure\(loaded\.failure\)/);
   assert.match(appSource, /failure &&/);
 });
+
+test("the failure reason that is rendered is the console's own message", () => {
+  // The band shows the text the console wrote, not a guess, and the text is
+  // marked as an alert so that it is announced.
+  assert.match(appSource, /role="alert"/);
+  assert.match(appSource, /<strong>\{failure\}<\/strong>/);
+});
+
+test("the spinner is stopped even when the load failed", () => {
+  // The loading state is cleared in a finally, and only by the newest load,
+  // so a failed load cannot leave the spinner turning.
+  assert.match(appSource, /finally \{ if \(id === requestId\.current\) setLoading\(false\); \}/);
+});
+
+test("only the newest load may write", () => {
+  // Two loads can overlap — the refresh button is disabled while one runs,
+  // but the first load on mount cannot be cancelled — and the older one may
+  // settle last. A stale failure must not replace a newer success.
+  assert.match(appSource, /if \(id !== requestId\.current\) return;/);
+});
+
+test("the account blocker is shown only when there are unassigned tickets", () => {
+  // Every number is zero when the load failed, and a band that says the
+  // queue has no assigned agent would turn a failure into a claim about the
+  // account. The band is only true when the count is.
+  assert.match(appSource, /data\.metrics\.unassigned > 0 && <section className="alert-band">/);
+});

@@ -87,6 +87,32 @@ test("points at the OAuth configuration when the server reports no reason", () =
   assert.equal(connectionStatus({ connected: false, error: "" }).detail, "Check OAuth configuration");
 });
 
+test("does not point at the OAuth configuration when the console is the problem", () => {
+  // A console that cannot reach its own server did not fail on an OAuth
+  // configuration, and telling the operator to check one sends them looking
+  // in the wrong place.
+  const status = connectionStatus({ connected: false }, CONSOLE_UNREACHABLE);
+
+  assert.equal(status.connected, false);
+  assert.equal(status.title, "Zendesk unavailable");
+  assert.equal(status.detail, CONSOLE_UNREACHABLE);
+  assert.notEqual(status.detail, "Check OAuth configuration");
+});
+
+test("the reason of an account the server cannot reach is not a console failure", async () => {
+  // The server answered. Its answer says the account is unreachable, which
+  // is a different condition from the console failing to reach the server,
+  // so it is not reported as a failure of the console.
+  const loaded = await loadOverview(async () => ({
+    json: async () => ({ connected: false, error: "Zendesk request failed (503)" }),
+  }));
+
+  assert.equal(loaded.failure, null);
+  assert.equal(loaded.overview.connected, false);
+  assert.equal(loaded.overview.error, "Zendesk request failed (503)");
+  assert.equal(connectionStatus(loaded.overview, loaded.failure).detail, "Zendesk request failed (503)");
+});
+
 test("links to a view of the account", () => {
   const views = { open: "https://example.zendesk.com/agent/filters/900000000004" };
 
