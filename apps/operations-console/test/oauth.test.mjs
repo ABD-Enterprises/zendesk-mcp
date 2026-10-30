@@ -51,7 +51,7 @@ test("requests a token with the client credentials from the client file", async 
     grant_type: "client_credentials",
     client_id: CLIENT.clientId,
     client_secret: CLIENT.clientSecret,
-    scope: "read write",
+    scope: "tickets:read users:read organizations:read brands:read groups:read",
   });
   assert.equal(token.value, ACCESS_TOKEN);
   assert.equal(token.baseUrl, mock.baseUrl);
@@ -83,7 +83,12 @@ test("fails when the client file is not valid JSON", async () => {
   const file = await writeClientFile(directory, "{ not json");
   process.env.ZENDESK_OAUTH_CLIENT_FILE = file;
 
-  await assert.rejects(() => getOAuthToken(), (error) => error instanceof SyntaxError);
+  // The parse error carries the file's own bytes, so the console reports its
+  // own message instead of the parser's.
+  await assert.rejects(
+    () => getOAuthToken(),
+    /The Zendesk OAuth client file could not be read\./,
+  );
   assert.deepEqual(mock.state.tokenRequests, []);
 });
 
@@ -92,7 +97,7 @@ test("fails when the client file is missing", async () => {
 
   await assert.rejects(
     () => getOAuthToken(),
-    (error) => error.code === "ENOENT",
+    /The Zendesk OAuth client file could not be read\./,
   );
   assert.deepEqual(mock.state.tokenRequests, []);
 });
