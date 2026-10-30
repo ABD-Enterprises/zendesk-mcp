@@ -15,6 +15,9 @@
 - **Breaking:** `zendesk_update_ticket` refuses an empty `tags` array instead
   of sending it to Zendesk, where it would remove every tag on the ticket. A
   call that succeeded before now fails.
+- **Breaking:** a tag must name something. Both write tools now reject a
+  `tags` list holding an empty string, so a call that sent `tags: [""]`
+  fails instead of writing an empty tag.
 - **Breaking:** `zendesk_create_ticket` sends its first comment with
   `public: true`, so the requester sees the ticket's description. The value
   used to be left to the account's own default, and an account configured for

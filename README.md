@@ -142,6 +142,9 @@ Two more changes travel with it, and both change what a call does:
 - `zendesk_update_ticket` refuses an empty `tags` array. It used to send it,
   and Zendesk reads that as "remove every tag on the ticket", so a call that
   succeeded before now fails. Send the tags the ticket should keep.
+- A tag must name something. Both write tools now reject a `tags` list that
+  holds an empty string, so a call that sent `tags: [""]` fails instead of
+  writing an empty tag.
 - `zendesk_create_ticket` sends its first comment with `public: true`, so the
   requester sees the ticket's description. The value used to be left to the
   account's own default, and an account configured for private comments now

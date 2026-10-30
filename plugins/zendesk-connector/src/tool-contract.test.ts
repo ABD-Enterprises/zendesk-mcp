@@ -222,6 +222,53 @@ test("refuses an empty tags array instead of clearing a ticket's tags", async ()
   }
 });
 
+test("refuses a tag that names nothing", async () => {
+  const { client, requests } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
+  const session = await connectContracts(client);
+
+  try {
+    // An empty string is a tag with no name. Both write tools refuse it.
+    const updated = await callContract(session.client, "zendesk_update_ticket", {
+      ticketId: 42,
+      tags: [""],
+    });
+    assert.equal(updated.isError, true);
+
+    const created = await callContract(session.client, "zendesk_create_ticket", {
+      subject: "Example subject",
+      comment: "Example body",
+      tags: [""],
+    });
+    assert.equal(created.isError, true);
+
+    // Neither call reached the account.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a new ticket starts with no tags when the list is empty", async () => {
+  const { client, requests } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
+  const session = await connectContracts(client);
+
+  try {
+    await contractPayload(session.client, "zendesk_create_ticket", {
+      subject: "Example subject",
+      comment: "Example body",
+      tags: [],
+    });
+
+    // An empty list would tell Zendesk to remove every tag, and a new ticket
+    // has none to remove, so the list is dropped rather than sent.
+    assert.equal(requests.length, 1);
+    const body = requests[0].body as { ticket: { tags?: string[] } };
+    assert.equal(body.ticket.tags, undefined);
+  } finally {
+    await session.close();
+  }
+});
+
 test("sends the tags it is given", async () => {
   const { client, requests } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
   const session = await connectContracts(client);

@@ -666,8 +666,9 @@ function buildTicketPayload(input: {
   if (input.comment) {
     // The visibility is sent explicitly. The contract says the requester
     // sees this comment, and a field the connector leaves out is a field
-    // whose behaviour it does not control.
-    ticket.comment = { body: input.comment, public: input.public ?? true };
+    // whose behaviour it does not control. The schema's default is the
+    // source of truth, so anything but an explicit false is public.
+    ticket.comment = { body: input.comment, public: input.public !== false };
   }
   if (input.requesterEmail) {
     ticket.requester = {
