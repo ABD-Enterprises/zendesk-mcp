@@ -120,11 +120,13 @@ testing and cannot renew a token.
 
 ### Owner-only permissions
 
-The client file must not be readable by group or other; the connector
+The client file must not be accessible to group or other; the connector
 refuses to start when it is (except on Windows, where Node reports
 synthetic permission bits regardless of the file's ACLs, so the check is
 skipped there). The console applies the same rule to the file it reads and
-refuses to start when it is readable by group or other. The
+refuses to use a file that is accessible to group or other, so its dashboard
+answers `503` instead of reading a view; the check is skipped there for the
+console as well, and the console process itself keeps running. The
 token file (which exists in `authorization_code` mode only) is written
 owner-only but not checked when it is read, so keep it owner-only yourself.
 Restore the modes after any copy or restore, as the
@@ -264,11 +266,11 @@ as described in the
 id and secret in their own client file (`~/.config/codex-zendesk/client.json`
 under their own home, moved by `ZENDESK_OAUTH_CLIENT_FILE`) or in their
 own environment. One registration per person, and no shared client file:
-the connector refuses to start when the client file is readable by group
+the connector refuses to start when the client file is accessible to group
 or other (skipped on Windows, where Node reports synthetic permission
 bits). The console applies the same rule to the file it reads — a file two
-host users can read is refused by the connector and by the console rather
-than shared.
+host users can read is refused by the connector and is not used by the
+console, so it is never shared.
 
 Sharing one client registration widens the blast radius of a leak, and
 sharing one token file defeats the reason to run per-user deployments.
