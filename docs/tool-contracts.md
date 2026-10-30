@@ -169,7 +169,9 @@ carry `status` and `details` when they have them:
   "status": 404,
   "details": {
     "response": { "error": { "title": "RecordNotFound", "description": "Not found" } },
-    "retryAfterSeconds": 1
+    "retryAfterSeconds": 0,
+    "rateLimitRemaining": null,
+    "rateLimitResetSeconds": null
   }
 }
 ```
@@ -178,9 +180,11 @@ Errors that map from the client layer:
 
 - A Zendesk HTTP failure surfaces as `Zendesk API request failed: HTTP
   <status> <statusText>`, with `status` set to the HTTP code and `details`
-  carrying Zendesk's own error body under `response` plus the rate-limit
-  headers when present: `retryAfterSeconds`, `rateLimitRemaining`, and
-  `rateLimitResetSeconds`.
+  carrying Zendesk's own error body under `response` plus three rate-limit
+  keys: `retryAfterSeconds`, `rateLimitRemaining` and
+  `rateLimitResetSeconds`. The keys are always there; the two header values
+  are `null` when the response carries no such header, and `retryAfterSeconds`
+  is 0 when the response advertises no wait.
 - Before failing, the client retries a `401` once with a refreshed token when
   the mode allows refresh, and retries `429` up to `ZENDESK_MAX_RETRIES`
   times (default 2), waiting no longer than `ZENDESK_MAX_RETRY_DELAY_MS`

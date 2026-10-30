@@ -175,8 +175,9 @@ Three further proxy details follow from how the console is written:
   address and not proxy headers, so behind a proxy every request to those
   routes counts against the proxy's address. `ZENDESK_CONSOLE_RATE_LIMIT` and
   `ZENDESK_CONSOLE_RATE_LIMIT_WINDOW_MS` adjust the limit. The two API
-  routes are not behind the limiter, so rate limiting them is the proxy's
-  job.
+  routes are deliberately not behind the limiter — they are registered before
+  the limiter is installed, and the test suite pins that scoping — so rate
+  limiting them is the proxy's job.
 - Every path that the console does not match is answered with the frontend
   entry point, so the proxy forwards all paths rather than a fixed list.
 

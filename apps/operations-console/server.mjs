@@ -561,11 +561,14 @@ export async function zendesk(path) {
   return response.json();
 }
 
-// Zendesk answers a view execution with one page of rows and the total count.
-// The console measures its numbers from those rows, so it reads the whole
-// view: a truncated page would leave the breakdown describing a part of the
-// view while the headline covered all of it. The page limit bounds the work
-// a single dashboard load can cause.
+// Zendesk answers a view execution with one page of rows, and usually with
+// the total count as well. The console measures its numbers from those rows,
+// so it reads the whole view: a truncated page would leave the breakdown
+// describing a part of the view while the headline — the account's count of
+// the view — covered all of it. An account that states no count leaves the
+// headline describing a part of the view too, and the note says the figure
+// is a floor. The page limit bounds the work a single dashboard load can
+// cause.
 //
 // The limit is a bound, not a promise. A view that is longer than it is not
 // fully measured, and the console says so rather than reporting a total next
