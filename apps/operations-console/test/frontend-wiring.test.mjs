@@ -253,3 +253,17 @@ test("the workstream panel says that its statuses are not measured", () => {
     /<h2>Workstream readiness<\/h2><p>[^<]*[Ii]llustrative[^<]*not measured from the account[^<]*<\/p>/,
   );
 });
+
+test("the sidebar is told why the console could not reach its server", () => {
+  // The sidebar's fallback for an account it cannot reach is "Check OAuth
+  // configuration", which points at the wrong cause when the console's own
+  // server is the problem. The component hands its failure to the status
+  // builder, so the sidebar shows the reason the console wrote. What the
+  // builder does with that reason is covered in frontend-overview.test.mjs;
+  // what is held here is that the component passes it on.
+  assert.match(appSource, /connectionStatus\(data, failure\)/);
+  assert.ok(
+    !/connectionStatus\(data\)/.test(appSource),
+    "the component must not drop the failure it was given",
+  );
+});

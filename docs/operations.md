@@ -310,6 +310,30 @@ A proxy that needs its own health path can forward one, but keep it restricted
 to the monitoring address — the response body names the configuration
 variables the console is missing.
 
+### What the dashboard shows when it cannot be read
+
+The dashboard page reads the account through `GET /api/overview`. There are
+two failures, and they look different.
+
+**The console cannot reach its own server** — the server is not running, or
+the answer is not JSON. The page shows a red band above the dashboard,
+carrying the console's own message, and the band is announced to assistive
+technology. The sidebar shows the same reason. The numbers below the band
+are the last ones the page read, so they are last-known rather than current;
+on a first load that fails there are none, and the band sits above an empty
+dashboard.
+
+**The console reaches its server, and the account is the unreachable party**
+— the account refuses the request, or the OAuth client file is not
+owner-only. The server answers `503` with an `error` field, the page loads
+normally, and the reason appears in the sidebar. Below 760 px the sidebar is
+hidden, so the page carries no sign of that failure and the console's log is
+where the reason is recorded.
+
+Neither failure answers with zeros. A dashboard of zero tickets, no blockers
+and no ageing reads as a quiet account, and that is the one answer the
+console does not give.
+
 ## Backup and recovery
 
 ### What to back up
