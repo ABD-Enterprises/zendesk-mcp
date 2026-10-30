@@ -10,10 +10,13 @@ import {
   type ZendeskConfig,
 } from "./auth.js";
 import { assertUsableConfig } from "./health.js";
-import { configuredTools } from "./policy.js";
+import { configuredTools, toolNames } from "./policy.js";
 
 /** The configuration fields the doctor inspects beyond startup validation. */
-type DoctorConfig = Pick<ZendeskConfig, "baseUrl" | "mode" | "tokenFile">;
+type DoctorConfig = Pick<
+  ZendeskConfig,
+  "baseUrl" | "mode" | "tokenFile" | "scope"
+>;
 
 /** What the loopback port probe found when it tried to bind. */
 export type PortProbeResult =
@@ -38,6 +41,11 @@ export interface DoctorOptions {
    * Defaults to a real bind.
    */
   probePort?: (port: number) => Promise<PortProbeResult>;
+  /**
+   * Prints the resolved configuration and the enabled tools, so an operator
+   * can see what the agent will receive without starting the server.
+   */
+  tools?: boolean;
   /** Writes the all-clear line to stdout. */
   writeOut?: (line: string) => void;
   /** Writes one line per failing check to stderr. */
@@ -66,6 +74,13 @@ export function isDoctorRequested(
   argv: string[] = process.argv.slice(2),
 ): boolean {
   return argv.includes("--doctor");
+}
+
+/** Reports whether the process was asked to print the tool inventory. */
+export function isToolsRequested(
+  argv: string[] = process.argv.slice(2),
+): boolean {
+  return argv.includes("--tools");
 }
 
 /**
@@ -140,10 +155,37 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
     // information for the person running it, never credential material.
     const tokenFile = tokenFileOf(options);
     if (tokenFile) writeOut(`OAuth token file: ${tokenFile}\n`);
-    return 0;
+  } else {
+    for (const problem of problems) writeError(`${problem}\n`);
   }
-  for (const problem of problems) writeError(`${problem}\n`);
-  return 1;
+  if (options.tools) writeInventory(options, writeOut);
+  return problems.length === 0 ? 0 : 1;
+}
+
+/**
+ * Prints the resolved configuration and the enabled tools.
+ *
+ * Without it an operator cannot confirm what the agent will receive: the
+ * tool policy is read from the environment, and the only way to see the
+ * result was to start the server and list its tools.
+ */
+function writeInventory(
+  options: DoctorOptions,
+  writeOut: (line: string) => void,
+): void {
+  try {
+    const loaded = (options.loadConfig ?? getConfig)();
+    const enabled = [...configuredTools()].sort();
+    writeOut(`Base URL: ${loaded.baseUrl}\n`);
+    writeOut(`OAuth mode: ${loaded.mode}\n`);
+    writeOut(`Scope: ${loaded.scope}\n`);
+    writeOut(
+      `Enabled tools (${enabled.length} of ${toolNames().length}): ${enabled.join(", ")}\n`,
+    );
+  } catch {
+    // The checks already reported what is wrong with the configuration.
+    writeOut("The enabled tools could not be resolved.\n");
+  }
 }
 
 /** The token file of a configuration that passed the checks, if it has one. */

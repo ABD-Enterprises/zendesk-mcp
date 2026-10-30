@@ -348,6 +348,14 @@ root has no `package.json`), or directly with the built output:
 node plugins/zendesk-connector/dist/index.js --doctor
 ```
 
+With `--tools` the doctor also prints what the agent will receive: the
+resolved base URL, the OAuth mode, the effective scope, and the enabled tool
+names.
+
+```sh
+npm run doctor -- --tools
+```
+
 The `npm run` form is for a git checkout: it rebuilds first, so it needs the
 dev dependencies that `npm ci` installs. An installed package ships only
 `dist` (no sources or `tsconfig`), so there the direct form is the only one —

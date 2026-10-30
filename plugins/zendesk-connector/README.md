@@ -86,7 +86,15 @@ npm run doctor
 
 or directly with `node dist/index.js --doctor`. The `npm run` form is for a
 git checkout: it rebuilds first, so it needs the dev dependencies that
-`npm ci` installs. An installed package ships only `dist` (no sources or
+`npm ci` installs.
+
+With `--tools` the doctor also prints what the agent will receive: the
+resolved base URL, the OAuth mode, the effective scope, and the enabled tool
+names.
+
+```sh
+npm run doctor -- --tools
+``` An installed package ships only `dist` (no sources or
 `tsconfig`), so there the direct form is the only one —
 `zendesk-mcp --doctor` when the package's `bin` entry is on your `PATH`.
 It performs the [healthcheck](#healthcheck-and-shutdown) validation and adds

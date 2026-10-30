@@ -8,7 +8,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, test } from "node:test";
 import type { ZendeskConfig } from "./auth.js";
-import { checkDoctor, isDoctorRequested, runDoctor } from "./doctor.js";
+import {
+  checkDoctor,
+  isDoctorRequested,
+  isToolsRequested,
+  runDoctor,
+} from "./doctor.js";
 import type { PortProbeResult } from "./doctor.js";
 
 const originalEnv = { ...process.env };
@@ -57,6 +62,55 @@ test("detects the doctor flag", () => {
   assert.equal(isDoctorRequested(["--doctor"]), true);
   assert.equal(isDoctorRequested(["--healthcheck"]), false);
   assert.equal(isDoctorRequested([]), false);
+});
+
+test("detects the inventory flag", () => {
+  assert.equal(isToolsRequested(["--tools"]), true);
+  assert.equal(isToolsRequested(["--doctor", "--tools"]), true);
+  assert.equal(isToolsRequested(["--doctor"]), false);
+  assert.equal(isToolsRequested([]), false);
+});
+
+test("prints the resolved configuration and the enabled tools on request", async () => {
+  const out: string[] = [];
+  const err: string[] = [];
+
+  const code = await runDoctor({
+    loadConfig: () => config(),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: (line) => err.push(line),
+  });
+
+  assert.equal(code, 0);
+  const printed = out.join("");
+  assert.match(printed, /Base URL: https:\/\/example\.zendesk\.com/);
+  assert.match(printed, /OAuth mode: access_token/);
+  assert.match(printed, /Scope: read write/);
+  // The operator can see what the agent will receive without starting it.
+  assert.match(printed, /Enabled tools \(12 of 12\): zendesk_add_ticket_comment/);
+  assert.deepEqual(err, []);
+});
+
+test("names the read-only tool set in the inventory", async () => {
+  const previous = process.env.ZENDESK_READ_ONLY;
+  process.env.ZENDESK_READ_ONLY = "1";
+  const out: string[] = [];
+
+  try {
+    await runDoctor({
+      loadConfig: () => config(),
+      tools: true,
+      writeOut: (line) => out.push(line),
+      writeError: () => {},
+    });
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_READ_ONLY;
+    else process.env.ZENDESK_READ_ONLY = previous;
+  }
+
+  assert.match(out.join(""), /Enabled tools \(9 of 12\)/);
+  assert.ok(!out.join("").includes("zendesk_update_ticket"));
 });
 
 test("prints one all-clear line to stdout and exits zero", async () => {

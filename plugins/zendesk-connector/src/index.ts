@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logServerShutdown, logServerStart } from "./audit.js";
-import { isDoctorRequested, runDoctor } from "./doctor.js";
+import { isDoctorRequested, isToolsRequested, runDoctor } from "./doctor.js";
 import {
   isHealthCheckFlag,
   isHealthCheckRequested,
@@ -12,7 +12,10 @@ import { createZendeskServer } from "./server.js";
 import { installShutdownHandlers } from "./shutdown.js";
 
 const argv = process.argv.slice(2);
-const wantsDoctor = isDoctorRequested(argv);
+const wantsTools = isToolsRequested(argv);
+// The inventory is part of the doctor: asking for it means running the
+// preflight, not starting the server.
+const wantsDoctor = isDoctorRequested(argv) || wantsTools;
 const wantsLogout = isLogoutRequested(argv);
 
 // An explicit command-line flag wins over the environment-variable shortcut:
