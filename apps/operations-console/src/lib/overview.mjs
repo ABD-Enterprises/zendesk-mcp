@@ -12,9 +12,9 @@ import { formatCount, formatSyncTime } from "./format.mjs";
  *
  * The console reads a view until the view offers no further page, or until it
  * reaches the page limit. When it read the whole view and the account agrees
- * on its size, every figure on the dashboard is a figure of the whole view.
- * Otherwise the dashboard describes a part of it, or the account's count and
- * the tickets it served disagree, and the console has to say so.
+ * on its size, every figure the console measured is a figure of the whole
+ * view. Otherwise the dashboard describes a part of it, or the account's count
+ * and the tickets it served disagree, and the console has to say so.
  *
  * @param {any} measured the measurement the payload carries
  * @returns {boolean}
@@ -50,20 +50,29 @@ export function measurementNote(measured) {
     : Number(measured.total);
   const complete = Boolean(measured.complete);
   // The whole view was read and the account agrees on its size: every figure
-  // on the dashboard is a figure of the whole view, so there is nothing to
-  // disclose.
+  // the console measured is a figure of the whole view, so there is nothing
+  // to disclose.
   if (measurementIsWhole(measured)) return "";
+  // Nothing was measured and the account states no count. That is the
+  // signature of a console that could not reach its server: there is no
+  // measurement to disclose, and a note that says the console read no tickets
+  // would read as a measurement of an empty queue.
+  if (read === 0 && total === null && !complete) return "";
 
   // The account's count and the tickets it served can disagree. A count below
   // the number of tickets read cannot be a part of the view, and a count above
   // a view the console read to its end cannot be the size of that view. A
   // count that equals the tickets read is too low as well when the console
   // knows the view has a page it did not read.
-  const countTooHigh =
-    total !== null && total > read && (complete || read === 0);
+  const countTooHigh = total !== null && complete && total > read;
   const countTooLow =
     total !== null &&
     (total < read || (total === read && !complete && total > 0));
+  // The console read nothing while the view still had a page to offer. The
+  // count may well be right — the pages came back empty — so the console
+  // does not call it wrong. It says that it measured nothing.
+  const countUnmeasured =
+    total !== null && read === 0 && !complete && total > 0;
 
   // What the console read.
   const scope = read === 0
@@ -83,6 +92,10 @@ export function measurementNote(measured) {
         total < read
           ? `The account says the view holds ${formatCount(total)}, and the console read ${formatCount(read)} tickets, so the two numbers disagree.`
           : `The account says the view holds ${formatCount(total)}, and the view has pages the console did not read, so the two numbers disagree.`,
+      );
+    } else if (countUnmeasured) {
+      parts.push(
+        `The account says the view holds ${formatCount(total)}, and the pages the console read served no tickets.`,
       );
     } else {
       parts.push(`The account says the view holds ${formatCount(total)}.`);

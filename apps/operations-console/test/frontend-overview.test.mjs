@@ -194,16 +194,30 @@ test("says something when the account counted tickets the console never read", (
   // dashboard shows a headline over an all-zero breakdown and no
   // qualification.
   const whole = measurementNote({ tickets: 0, total: 5000, complete: true });
-  const partial = measurementNote({ tickets: 0, total: 5000, complete: false });
 
   assert.notEqual(whole, "");
   assert.match(whole, /no tickets/);
   assert.match(whole, /5000/);
   assert.match(whole, /disagree/);
+
+  // The view still had a page to offer, so the console cannot say the view
+  // served no tickets: the pages it read served none, and the count may well
+  // be right.
+  const partial = measurementNote({ tickets: 0, total: 5000, complete: false });
+
   assert.notEqual(partial, "");
   assert.match(partial, /no tickets/);
   assert.match(partial, /5000/);
-  assert.match(partial, /disagree/);
+  assert.match(partial, /pages the console read served no tickets/);
+  assert.ok(!/disagree/.test(partial), "the count is not shown to be wrong");
+});
+
+test("says nothing when the console could not reach its server", () => {
+  // An empty measurement with no count is the signature of a console that
+  // could not reach its server. A note that said the console read no tickets
+  // would read as a measurement of an empty queue, which is the opposite of
+  // what happened.
+  assert.equal(measurementNote({ tickets: 0, total: null, complete: false }), "");
 });
 
 test("links to a view of the account", () => {
