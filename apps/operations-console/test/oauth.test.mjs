@@ -10,6 +10,7 @@ import {
   makeTempDir,
   removeTempDir,
   writeClientFile,
+  clearAccountEnv,
 } from "./helpers/console.mjs";
 
 const originalEnv = { ...process.env };
@@ -27,6 +28,7 @@ after(async () => {
 
 beforeEach(async () => {
   resetCaches();
+  clearAccountEnv();
   // Every test reads its own mock account, so the recording it asserts on
   // holds the requests of that test only.
   mock = await startMockZendesk();
@@ -51,7 +53,7 @@ test("requests a token with the client credentials from the client file", async 
     grant_type: "client_credentials",
     client_id: CLIENT.clientId,
     client_secret: CLIENT.clientSecret,
-    scope: "tickets:read users:read organizations:read brands:read groups:read",
+    scope: "tickets:read ticket_views:read users:read organizations:read brands:read groups:read",
   });
   assert.equal(token.value, ACCESS_TOKEN);
   assert.equal(token.baseUrl, mock.baseUrl);
@@ -75,7 +77,8 @@ test("asks for a new token once the cache is cleared", async () => {
 test("reports the status of a failed token request", async () => {
   mock.setTokenResponse(401, { error: "invalid_client" });
 
-  await assert.rejects(() => getOAuthToken(), /Zendesk OAuth failed \(401\)/);
+  // The error code of the body says why the token was refused.
+  await assert.rejects(() => getOAuthToken(), /Zendesk OAuth failed \(401 invalid_client\)/);
   assert.equal(mock.state.tokenRequests.length, 1);
 });
 

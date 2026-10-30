@@ -35,6 +35,16 @@ export const CLIENT = {
 
 export const ACCESS_TOKEN = "invented-access-token";
 
+// Removes the account settings a host may export. The console reads the
+// scope from the environment, so an exported value would decide what the
+// tests ask for; the account comes from the client file, and the tests point
+// that at their own mock.
+export function clearAccountEnv() {
+  delete process.env.ZENDESK_OAUTH_SCOPE;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_SUBDOMAIN;
+}
+
 // Sets every console setting, overriding the ones given. A value of undefined
 // removes the setting.
 export function applyConsoleConfig(overrides = {}) {

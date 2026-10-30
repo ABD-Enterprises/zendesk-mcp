@@ -26,6 +26,7 @@ import {
   removeTempDir,
   startConsole,
   writeClientFile,
+  clearAccountEnv,
 } from "./helpers/console.mjs";
 
 const originalEnv = { ...process.env };
@@ -46,6 +47,7 @@ after(async () => {
 
 beforeEach(async () => {
   resetCaches();
+  clearAccountEnv();
   applyConsoleConfig();
   // The scope and the account are resolved from the environment first, so a
   // value that happens to be exported on the host would decide what the
@@ -118,27 +120,32 @@ test("asks for the read scopes and no others", async () => {
   const [tokenRequest] = mock.state.tokenRequests;
   assert.equal(
     tokenRequest.body.scope,
-    "tickets:read users:read organizations:read brands:read groups:read",
+    "tickets:read ticket_views:read users:read organizations:read brands:read groups:read",
   );
 });
 
 test("drops the write scopes of the configured scope", async () => {
   process.env.ZENDESK_OAUTH_SCOPE = "tickets:read tickets:write users:read";
 
-  assert.equal(resolveConsoleScope(), "tickets:read users:read");
+  // The scope of a view is its own, and the console reads views.
+  assert.equal(
+    resolveConsoleScope(),
+    "tickets:read ticket_views:read users:read",
+  );
 });
 
 test("reads the scope of the client file when the environment is silent", () => {
   assert.equal(
     resolveConsoleScope({ scope: "tickets:read organizations:read" }),
-    "tickets:read organizations:read",
+    "tickets:read ticket_views:read organizations:read",
   );
 });
 
 test("falls back to the read scopes when nothing readable is configured", () => {
+  // The console reads views, so it needs the scope of a view as well.
   assert.equal(
     resolveConsoleScope({ scope: "read write" }),
-    "tickets:read users:read organizations:read brands:read groups:read",
+    "tickets:read ticket_views:read users:read organizations:read brands:read groups:read",
   );
 });
 
@@ -172,12 +179,14 @@ test("refuses an account URL that is not HTTPS", async () => {
   assert.deepEqual(mock.state.tokenRequests, []);
 });
 
-test("takes the account from the environment before the client file", async () => {
+test("takes the account from the client file, not from the environment", async () => {
   process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(directory, {
     baseUrl: "https://file-account.zendesk.com",
     clientId: "invented-client-id",
     clientSecret: "invented-client-secret",
   });
+  // An exported account variable names an account for the connector. The
+  // console does not follow it: the client secret would go to that account.
   process.env.ZENDESK_BASE_URL = "https://example-account.zendesk.com";
 
   const requested = [];
@@ -192,29 +201,35 @@ test("takes the account from the environment before the client file", async () =
 
   try {
     const token = await getOAuthToken();
-    assert.equal(token.baseUrl, "https://example-account.zendesk.com");
+    assert.equal(token.baseUrl, "https://file-account.zendesk.com");
   } finally {
     globalThis.fetch = originalFetch;
   }
 
-  // The environment names the account, so the file's own URL is not used.
   assert.equal(requested.length, 1);
-  assert.match(requested[0], /^https:\/\/example-account\.zendesk\.com\/oauth\/tokens$/);
+  assert.match(requested[0], /^https:\/\/file-account\.zendesk\.com\/oauth\/tokens$/);
 });
 
-test("names the account from the subdomain when no URL is configured", () => {
-  process.env.ZENDESK_SUBDOMAIN = "example-account";
-
+test("names the account from the subdomain of the client file", () => {
   assert.equal(
-    resolveConsoleBaseUrl({}),
+    resolveConsoleBaseUrl({ subdomain: "example-account" }),
     "https://example-account.zendesk.com",
   );
 });
 
-test("names no account when nothing says which one", () => {
+test("names no account when the client file names none", () => {
   assert.throws(
     () => resolveConsoleBaseUrl({}),
-    /account is not configured/,
+    /does not name an account/,
+  );
+});
+
+test("ignores an exported account variable", () => {
+  process.env.ZENDESK_SUBDOMAIN = "example-account";
+
+  assert.throws(
+    () => resolveConsoleBaseUrl({}),
+    /does not name an account/,
   );
 });
 

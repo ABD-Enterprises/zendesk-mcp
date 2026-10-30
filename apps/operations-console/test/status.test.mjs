@@ -10,6 +10,7 @@ import {
   clearConsoleConfig,
   getJson,
   startConsole,
+  clearAccountEnv,
 } from "./helpers/console.mjs";
 
 const originalEnv = { ...process.env };
@@ -27,6 +28,7 @@ after(async () => {
 
 beforeEach(async () => {
   resetCaches();
+  clearAccountEnv();
   // Every test reads its own mock account, so the recording it asserts on
   // holds the requests of that test only.
   mock = await startMockZendesk();

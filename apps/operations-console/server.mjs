@@ -68,8 +68,10 @@ class ConsoleError extends Error {}
  */
 const CONNECTOR_DEFAULT_SCOPE =
   "tickets:read tickets:write users:read organizations:read brands:read groups:read";
+// The console reads views, and a view is its own scope: the token needs
+// ticket_views:read to read the views the dashboard asks for.
 const CONSOLE_READ_SCOPE =
-  "tickets:read users:read organizations:read brands:read groups:read";
+  "tickets:read ticket_views:read users:read organizations:read brands:read groups:read";
 
 /**
  * The scope the console asks its own token for.
@@ -86,7 +88,14 @@ export function resolveConsoleScope(clientConfig = {}) {
   const configured = configValue("ZENDESK_OAUTH_SCOPE") ?? fromFile;
   const scope = configured === "" ? CONNECTOR_DEFAULT_SCOPE : configured;
   const readOnly = scope.split(/\s+/).filter((part) => part.endsWith(":read"));
-  return readOnly.length > 0 ? readOnly.join(" ") : CONSOLE_READ_SCOPE;
+  const wanted = new Set(
+    readOnly.length > 0 ? readOnly : CONSOLE_READ_SCOPE.split(" "),
+  );
+  // The console reads views, and a view has its own scope.
+  wanted.add("ticket_views:read");
+  // Only the scopes the console itself needs: a token that carries more than
+  // the console uses is a token that can do more than the console does.
+  return CONSOLE_READ_SCOPE.split(" ").filter((part) => wanted.has(part)).join(" ");
 }
 
 /**
@@ -128,25 +137,29 @@ function validateBaseUrl(value) {
  * would use.
  */
 export function resolveConsoleBaseUrl(client) {
-  const explicit = configValue("ZENDESK_BASE_URL");
-  const configured = explicit ?? (typeof client.baseUrl === "string" ? client.baseUrl : "");
-  if (configured) {
-    return validateBaseUrl(configured.replace(/\/+$/, ""));
+  // The account comes from the client file, not from the environment. An
+  // exported ZENDESK_BASE_URL or ZENDESK_SUBDOMAIN names an account for the
+  // connector; following it here would send the client secret to that other
+  // account, which the console has no reason to do.
+  const baseUrl = typeof client.baseUrl === "string" ? client.baseUrl.trim() : "";
+  if (baseUrl) {
+    return validateBaseUrl(baseUrl.replace(/\/+$/, ""));
   }
 
   const subdomain =
-    configValue("ZENDESK_SUBDOMAIN") ??
-    (typeof client.subdomain === "string" ? client.subdomain : "");
+    typeof client.subdomain === "string" ? client.subdomain.trim() : "";
   if (!subdomain) {
     throw new ConsoleError(
-      "The Zendesk account is not configured. Set ZENDESK_BASE_URL or ZENDESK_SUBDOMAIN, or name the account in the OAuth client file.",
+      'The OAuth client file does not name an account. Add a "baseUrl" or a "subdomain" to it.',
     );
   }
   if (subdomain.startsWith("http://") || subdomain.startsWith("https://")) {
     return validateBaseUrl(subdomain.replace(/\/+$/, ""));
   }
   if (!/^[a-z0-9][a-z0-9-]*$/i.test(subdomain)) {
-    throw new ConsoleError("ZENDESK_SUBDOMAIN is not a valid subdomain.");
+    throw new ConsoleError(
+      "The account subdomain in the OAuth client file is not a valid subdomain.",
+    );
   }
   return `https://${subdomain}.zendesk.com`;
 }
@@ -223,7 +236,11 @@ function configValue(name) {
   const raw = process.env[name];
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
-  return trimmed === "" ? undefined : trimmed;
+  if (trimmed === "") return undefined;
+  // A literal placeholder is not a value: the connector reads it the same way,
+  // so a manifest that leaves "${ZENDESK_...}" in place is unset here too.
+  if (/^\$\{[^}]*\}$/.test(trimmed)) return undefined;
+  return trimmed;
 }
 
 // Names the console settings that are missing, in the order they are declared.
@@ -337,7 +354,15 @@ async function requestToken() {
       scope: resolveConsoleScope(client),
     }),
   });
-  if (!response.ok) throw new ConsoleError(`Zendesk OAuth failed (${response.status})`);
+  if (!response.ok) {
+    // The body names why the token was refused — "invalid_scope" for a client
+    // that was not granted the scopes the console asks for — and that is the
+    // difference between a fixable setup and a wrong password.
+    const code = await oauthErrorCode(response);
+    throw new ConsoleError(
+      `Zendesk OAuth failed (${response.status}${code ? ` ${code}` : ""})`,
+    );
+  }
   const payload = await response.json();
   tokenCache = {
     value: payload.access_token,
@@ -345,6 +370,17 @@ async function requestToken() {
     baseUrl,
   };
   return tokenCache;
+}
+
+// The error code of a refused token request, when the body names one.
+async function oauthErrorCode(response) {
+  try {
+    const body = await response.json();
+    const code = body && typeof body.error === "string" ? body.error : "";
+    return /^[a-z][a-z0-9_]{0,31}$/.test(code) ? code : "";
+  } catch {
+    return "";
+  }
 }
 
 export async function zendesk(path) {
