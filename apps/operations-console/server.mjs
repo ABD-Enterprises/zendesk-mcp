@@ -104,16 +104,51 @@ function validateBaseUrl(value) {
   } catch {
     throw new ConsoleError("The Zendesk account URL is not a valid URL.");
   }
+  // `new URL` keeps the brackets of an IPv6 literal, so they come off before
+  // the host is compared.
+  const hostname = url.hostname.replace(/^\[/, "").replace(/\]$/, "");
   const isLocalhost =
-    url.hostname === "127.0.0.1" ||
-    url.hostname === "localhost" ||
-    url.hostname === "::1";
+    hostname === "127.0.0.1" ||
+    hostname === "localhost" ||
+    hostname === "::1";
   if (url.protocol !== "https:" && !(url.protocol === "http:" && isLocalhost)) {
     throw new ConsoleError(
       "The Zendesk account URL must use HTTPS (HTTP is allowed only for localhost).",
     );
   }
   return url.origin;
+}
+
+/**
+ * The account URL, resolved the way the connector resolves it.
+ *
+ * The environment wins over the client file for both halves of the account,
+ * so an operator who points the console at another account with
+ * ZENDESK_BASE_URL or ZENDESK_SUBDOMAIN gets the same account the connector
+ * would use.
+ */
+export function resolveConsoleBaseUrl(client) {
+  const explicit = configValue("ZENDESK_BASE_URL");
+  const configured = explicit ?? (typeof client.baseUrl === "string" ? client.baseUrl : "");
+  if (configured) {
+    return validateBaseUrl(configured.replace(/\/+$/, ""));
+  }
+
+  const subdomain =
+    configValue("ZENDESK_SUBDOMAIN") ??
+    (typeof client.subdomain === "string" ? client.subdomain : "");
+  if (!subdomain) {
+    throw new ConsoleError(
+      "The Zendesk account is not configured. Set ZENDESK_BASE_URL or ZENDESK_SUBDOMAIN, or name the account in the OAuth client file.",
+    );
+  }
+  if (subdomain.startsWith("http://") || subdomain.startsWith("https://")) {
+    return validateBaseUrl(subdomain.replace(/\/+$/, ""));
+  }
+  if (!/^[a-z0-9][a-z0-9-]*$/i.test(subdomain)) {
+    throw new ConsoleError("ZENDESK_SUBDOMAIN is not a valid subdomain.");
+  }
+  return `https://${subdomain}.zendesk.com`;
 }
 
 /**
@@ -128,10 +163,34 @@ function validateBaseUrl(value) {
  */
 export function isLoopbackHost(hostHeader) {
   if (typeof hostHeader !== "string" || hostHeader === "") return false;
-  const host = hostHeader.startsWith("[")
-    ? hostHeader.slice(1, hostHeader.indexOf("]"))
-    : hostHeader.split(":")[0];
-  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  let host = hostHeader;
+  let port = "";
+  if (hostHeader.startsWith("[")) {
+    // An IPv6 literal carries its own brackets.
+    const end = hostHeader.indexOf("]");
+    if (end === -1) return false;
+    host = hostHeader.slice(1, end);
+    const rest = hostHeader.slice(end + 1);
+    if (rest !== "") {
+      if (!rest.startsWith(":")) return false;
+      port = rest.slice(1);
+    }
+  } else if (hostHeader.split(":").length > 2) {
+    // A bare IPv6 literal, which a Host header carries without brackets only
+    // by mistake but which names the loopback interface.
+    host = hostHeader;
+  } else {
+    const colon = hostHeader.lastIndexOf(":");
+    if (colon !== -1) {
+      host = hostHeader.slice(0, colon);
+      port = hostHeader.slice(colon + 1);
+    }
+  }
+  // Anything but a port number after the name means the header names
+  // something else: "127.0.0.1:4177.example.com" is not the console.
+  if (port !== "" && !/^\d+$/.test(port)) return false;
+  const name = host.toLowerCase();
+  return name === "127.0.0.1" || name === "localhost" || name === "::1";
 }
 
 // Refuses a request that was not addressed to the console itself. It runs
@@ -261,14 +320,13 @@ async function requestToken() {
   try {
     client = JSON.parse(await readFile(path, "utf8"));
   } catch (error) {
-    // A parse error carries the file's own bytes — the client id or the
-    // secret — in its text, so the reason is logged and not shown.
+    // A parse error can carry a fragment of the file in its text on some
+    // Node versions — the client id or the secret — so the reason is logged
+    // and not shown.
     console.error(`[operations-console] the client file ${path} could not be read:`, error);
     throw new ConsoleError("The Zendesk OAuth client file could not be read.");
   }
-  const baseUrl = validateBaseUrl(
-    client.baseUrl || `https://${client.subdomain}.zendesk.com`,
-  );
+  const baseUrl = resolveConsoleBaseUrl(client);
   const response = await fetch(`${baseUrl}/oauth/tokens`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

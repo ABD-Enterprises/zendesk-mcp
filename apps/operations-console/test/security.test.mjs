@@ -10,7 +10,13 @@ import assert from "node:assert/strict";
 import { request } from "node:http";
 import { connect } from "node:net";
 import { after, afterEach, before, beforeEach, test } from "node:test";
-import { getOAuthToken, isLoopbackHost, resetCaches, resolveConsoleScope } from "../server.mjs";
+import {
+  getOAuthToken,
+  isLoopbackHost,
+  resetCaches,
+  resolveConsoleBaseUrl,
+  resolveConsoleScope,
+} from "../server.mjs";
 import { startMockZendesk } from "./helpers/mock-zendesk.mjs";
 import {
   applyConsoleConfig,
@@ -41,6 +47,12 @@ after(async () => {
 beforeEach(async () => {
   resetCaches();
   applyConsoleConfig();
+  // The scope and the account are resolved from the environment first, so a
+  // value that happens to be exported on the host would decide what the
+  // console asks for. The suite sets them itself.
+  delete process.env.ZENDESK_OAUTH_SCOPE;
+  delete process.env.ZENDESK_BASE_URL;
+  delete process.env.ZENDESK_SUBDOMAIN;
   // Every test reads its own mock account, so the recording it asserts on
   // holds the requests of that test only.
   mock = await startMockZendesk();
@@ -83,8 +95,14 @@ test("knows the loopback names it answers to", () => {
   assert.equal(isLoopbackHost("127.0.0.1:4177"), true);
   assert.equal(isLoopbackHost("localhost:4177"), true);
   assert.equal(isLoopbackHost("[::1]:4177"), true);
+  assert.equal(isLoopbackHost("::1"), true);
+  assert.equal(isLoopbackHost("LOCALHOST:4177"), true);
   assert.equal(isLoopbackHost("attacker.example.com"), false);
   assert.equal(isLoopbackHost("127.0.0.1.attacker.example.com"), false);
+  // A name that only starts like the console is not the console.
+  assert.equal(isLoopbackHost("127.0.0.1:4177.attacker.example.com"), false);
+  assert.equal(isLoopbackHost("localhost:4177@attacker.example.com"), false);
+  assert.equal(isLoopbackHost("127.0.0.1:not-a-port"), false);
   assert.equal(isLoopbackHost(""), false);
   assert.equal(isLoopbackHost(undefined), false);
 });
@@ -131,12 +149,80 @@ test("refuses an account URL that is not HTTPS", async () => {
     clientSecret: "invented-client-secret",
   });
 
-  await assert.rejects(
-    () => getOAuthToken(),
-    /must use HTTPS/,
-  );
-  // The client secret never leaves the machine.
+  // The client secret must not leave the machine, so the request is watched
+  // at the boundary instead of at the mock account: the refused URL names
+  // another host, and the mock would never see it either way.
+  const requested = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    throw new Error("the console must not reach the account");
+  };
+
+  try {
+    await assert.rejects(
+      () => getOAuthToken(),
+      /must use HTTPS/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requested, []);
   assert.deepEqual(mock.state.tokenRequests, []);
+});
+
+test("takes the account from the environment before the client file", async () => {
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(directory, {
+    baseUrl: "https://file-account.zendesk.com",
+    clientId: "invented-client-id",
+    clientSecret: "invented-client-secret",
+  });
+  process.env.ZENDESK_BASE_URL = "https://example-account.zendesk.com";
+
+  const requested = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    return new Response(
+      JSON.stringify({ access_token: "invented-access-token", expires_in: 3600 }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  try {
+    const token = await getOAuthToken();
+    assert.equal(token.baseUrl, "https://example-account.zendesk.com");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // The environment names the account, so the file's own URL is not used.
+  assert.equal(requested.length, 1);
+  assert.match(requested[0], /^https:\/\/example-account\.zendesk\.com\/oauth\/tokens$/);
+});
+
+test("names the account from the subdomain when no URL is configured", () => {
+  process.env.ZENDESK_SUBDOMAIN = "example-account";
+
+  assert.equal(
+    resolveConsoleBaseUrl({}),
+    "https://example-account.zendesk.com",
+  );
+});
+
+test("names no account when nothing says which one", () => {
+  assert.throws(
+    () => resolveConsoleBaseUrl({}),
+    /account is not configured/,
+  );
+});
+
+test("accepts an IPv6 loopback account URL", () => {
+  assert.equal(
+    resolveConsoleBaseUrl({ baseUrl: "http://[::1]:8080" }),
+    "http://[::1]:8080",
+  );
 });
 
 test("allows a local account URL over plain HTTP", async () => {
