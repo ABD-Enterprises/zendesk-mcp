@@ -481,7 +481,7 @@ async function requestToken() {
     throw new ConsoleError(
       `Zendesk OAuth failed (${response.status}${code ? ` ${code}` : ""})` +
         (code === "invalid_scope"
-          ? `. The console's token needs the ${scope.split(" ").join(" and ")}: allow ${scope.split(" ").length > 1 ? "them" : "it"} on the Zendesk OAuth client.`
+          ? `. The console's token needs the ${scope.split(" ").join(" and ")} scope${scope.split(" ").length > 1 ? "s" : ""}: allow ${scope.split(" ").length > 1 ? "them" : "it"} on the Zendesk OAuth client.`
           : ""),
     );
   }

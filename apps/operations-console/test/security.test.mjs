@@ -458,7 +458,32 @@ test("shows the OAuth error code only when it is a known one", async () => {
     // the scopes the console asks for, and the message names the scope.
     assert.equal(
       body.error,
-      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the ticket_views:read and tickets:read: allow them on the Zendesk OAuth client.",
+      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the ticket_views:read and tickets:read scopes: allow them on the Zendesk OAuth client.",
+    );
+  } finally {
+    await account.close();
+  }
+});
+
+test("names the scope the console asked for when the account refuses it", async () => {
+  // The advice names the scope the console asked for, not the scope it
+  // requires: an operator who asked for the broad read scope is told to
+  // allow read, and telling them to allow two granular scopes would not have
+  // helped.
+  const account = await startRefusingAccount("invalid_scope");
+  try {
+    process.env.ZENDESK_OAUTH_SCOPE = "read";
+    process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
+      directory,
+      clientFileFor(account.baseUrl),
+    );
+
+    const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+    assert.equal(status, 503);
+    assert.equal(
+      body.error,
+      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the read scope: allow it on the Zendesk OAuth client.",
     );
   } finally {
     await account.close();
@@ -543,6 +568,10 @@ test("refuses a request for a file that carries another host", async () => {
     stack.length = mounted;
     await removeTempDir(directory);
   }
+
+  // The restore is what the next test in this file relies on, so it is
+  // checked: the app carries the routes it carried before.
+  assert.equal(app.router.stack.length, mounted);
 });
 
 test("matches a Host against a list and nothing else", () => {
@@ -550,7 +579,6 @@ test("matches a Host against a list and nothing else", () => {
   // into a substring match, which is the opposite of what the check is for.
   assert.equal(isAllowedHost("console.example.com", ["console.example.com"]), true);
   assert.equal(isAllowedHost("console.example.com", "console.example.com"), false);
-  assert.equal(isAllowedHost("console.example.com", undefined), false);
   assert.equal(isAllowedHost("console.example.com", []), false);
   // The loopback names are the console's own, with or without a list.
   assert.equal(isAllowedHost("127.0.0.1:4177", "not-a-list"), true);

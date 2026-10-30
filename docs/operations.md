@@ -193,7 +193,8 @@ Both scopes are required. A scope that cannot read a view, or the ticket
 fields on it, is a configuration error rather than a dashboard that quietly
 shows every ticket as "Unclassified", and the console names what is missing.
 The broad `read` scope covers both of them, because it covers every GET
-endpoint, so a client that grants it needs nothing else.
+endpoint, so a client that grants it needs nothing else: set the scope to
+`read` and the console asks for that.
 
 The scope has to be allowed on the Zendesk OAuth client as well. A client
 that is not granted it answers the token request with `invalid_scope`, and
