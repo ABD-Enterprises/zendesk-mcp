@@ -1089,7 +1089,7 @@ CI's audit step gates at `--audit-level=high`, so a moderate advisory passes **s
 
 I reviewed PR #71 (`fix/s0-runtime-token-leak`) as the fresh-context reviewer required by `AGENTS.md:17`, against its exact head. Two findings, both **reproduced by me** against the built artefact rather than inferred from the diff.
 
-### P1 — High — The retained `error` value was gated by a *shape* check, not the fixed vocabulary the comment claimed *(FIXED at `ecb704e`)*
+### P1 — High — The retained `error` value was gated by a *shape* check, not the fixed vocabulary the comment claimed *(FIXED at `ecb704e`, reviewed at `1111f74`)*
 
 **Confirmed by reproduction at head `1111f743e3b2a7ec499c72961e168134bf8afc0b`.**
 
@@ -1130,7 +1130,7 @@ const OAUTH_ERROR_CODES = new Set([
 
 **Disposition: merged in PR #71.** Re-running my probe against the new head: both leak cases now return `contains secret: false`, and `invalid_client` is still preserved. Covered by issue **#31**; the change is in PR #71.
 
-### P2 — Medium — The field-name rule missed adjacent credential shapes *(FIXED at `ecb704e`)*
+### P2 — Medium — The field-name rule missed adjacent credential shapes *(FIXED at `ecb704e`, reviewed at `1111f74`)*
 
 **Confirmed by reproduction at head `1111f74`.** The rule for keeping a field *name* was:
 
@@ -1166,7 +1166,7 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 ### Review verdict on PR #71 at `c46ef87`
 
 `c46ef87` and `1111f74` are PR #71's own commits. The pull request was squash-merged, so `main`
-carries the merge commit `ecb704e` and neither branch commit; the two are named here because they
+carries the squash commit `ecb704e` and neither branch commit; the two are named here because they
 are the revisions the review was run against.
 
 **Approved.** Verified in an isolated checkout at the exact SHA:
@@ -1243,7 +1243,7 @@ The security and correctness findings of this review are all merged. 7 findings 
 
 | ID | Issue | What is left |
 |---|---|---|
-| M1 | #42 | The tool list is written out by hand in twelve files, and this artifact is a thirteenth. |
+| M1 | #42 | The tool list is written out by hand in twelve files; this artifact names six of the tools, not the whole list. |
 | M2 | #43 | `safeJson`, `errorMessage` and the mode predicates are duplicated. |
 | M6 | #50 | The client casts an unvalidated response to the caller's type. |
 | M7 | #51 | The token exchange calls the global `fetch` instead of an injected one. |
