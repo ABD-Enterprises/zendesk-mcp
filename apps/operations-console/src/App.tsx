@@ -28,7 +28,7 @@ import { formatBrandName, formatCount } from "./lib/format.mjs";
 import { isReviewed, parseReviewed, toggleReviewed, REVIEWED_STORAGE_KEY } from "./lib/knowledge.mjs";
 import { queueBars } from "./lib/metrics.mjs";
 import { matchesQuery, sectionFromHash, sectionLabel } from "./lib/navigation.mjs";
-import { EMPTY_OVERVIEW, connectionStatus, loadOverview, openQueueHref, viewHref } from "./lib/overview.mjs";
+import { EMPTY_OVERVIEW, connectionStatus, createLoadSequence, loadOverview, openQueueHref, viewHref } from "./lib/overview.mjs";
 import { ticketRow } from "./lib/tickets.mjs";
 
 const navigation = [
@@ -207,25 +207,24 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const requestId = useRef(0);
+  const sequence = useRef(createLoadSequence()).current;
 
   const load = async () => {
     // Two loads can overlap — the button is disabled while one runs, but the
     // first load on mount cannot be cancelled — and the older one may settle
     // last. Only the newest load may write, or a stale failure can replace a
     // newer success.
-    const id = requestId.current + 1;
-    requestId.current = id;
+    const id = sequence.begin();
     setLoading(true);
     try {
       // The loader reports a transport failure instead of leaving the
       // dashboard empty: zeros read as a quiet account, and the operator
       // cannot tell the two apart.
       const loaded = await loadOverview();
-      if (id !== requestId.current) return;
+      if (!sequence.isCurrent(id)) return;
       setData(loaded.overview);
       setFailure(loaded.failure);
-    } finally { if (id === requestId.current) setLoading(false); }
+    } finally { if (sequence.isCurrent(id)) setLoading(false); }
   };
   useEffect(() => { load(); }, []);
   useEffect(() => {

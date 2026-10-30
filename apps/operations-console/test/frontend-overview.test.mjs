@@ -11,6 +11,7 @@ import {
   EMPTY_OVERVIEW,
   CONSOLE_UNREACHABLE,
   connectionStatus,
+  createLoadSequence,
   loadOverview,
   openQueueHref,
   toOverviewState,
@@ -97,6 +98,23 @@ test("does not point at the OAuth configuration when the console is the problem"
   assert.equal(status.title, "Zendesk unavailable");
   assert.equal(status.detail, CONSOLE_UNREACHABLE);
   assert.notEqual(status.detail, "Check OAuth configuration");
+});
+
+test("only the newest load may write", () => {
+  // Two loads can overlap, and the older one may settle last. The sequence
+  // hands out a number for each load and says which is still the newest, so
+  // that a stale failure cannot replace a newer success.
+  const sequence = createLoadSequence();
+
+  const first = sequence.begin();
+  assert.equal(sequence.isCurrent(first), true);
+
+  const second = sequence.begin();
+  assert.equal(sequence.isCurrent(first), false);
+  assert.equal(sequence.isCurrent(second), true);
+
+  // A load that never began is not the newest one either.
+  assert.equal(sequence.isCurrent(second + 1), false);
 });
 
 test("the reason of an account the server cannot reach is not a console failure", async () => {

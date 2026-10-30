@@ -120,6 +120,32 @@ export const CONSOLE_UNREACHABLE =
   "The console could not reach its server. Check that it is running, then refresh.";
 
 /**
+ * Sequences the console's loads.
+ *
+ * Two loads can overlap: the refresh button is disabled while one runs, but
+ * the first load on mount cannot be cancelled, and the operator can ask for
+ * another one before the first has settled. The older one may then settle
+ * last, and a failure it reports would replace a success that came after it.
+ *
+ * The sequence hands out a number for every load and says which of them is
+ * still the newest, so that only the newest may write.
+ *
+ * @returns {{begin: () => number, isCurrent: (id: number) => boolean}}
+ */
+export function createLoadSequence() {
+  let current = 0;
+  return {
+    begin() {
+      current += 1;
+      return current;
+    },
+    isCurrent(id) {
+      return id === current;
+    },
+  };
+}
+
+/**
  * Loads the dashboard payload and says why it could not be loaded.
  *
  * A console that cannot reach its server must not answer with zeros: an

@@ -117,14 +117,16 @@ test("the failure reason that is rendered is the console's own message", () => {
 test("the spinner is stopped even when the load failed", () => {
   // The loading state is cleared in a finally, and only by the newest load,
   // so a failed load cannot leave the spinner turning.
-  assert.match(appSource, /finally \{ if \(id === requestId\.current\) setLoading\(false\); \}/);
+  assert.match(appSource, /finally \{ if \(sequence\.isCurrent\(id\)\) setLoading\(false\); \}/);
 });
 
 test("only the newest load may write", () => {
   // Two loads can overlap — the refresh button is disabled while one runs,
   // but the first load on mount cannot be cancelled — and the older one may
-  // settle last. A stale failure must not replace a newer success.
-  assert.match(appSource, /if \(id !== requestId\.current\) return;/);
+  // settle last. The component asks the sequence which load is the newest;
+  // the sequence itself is covered in frontend-overview.test.mjs.
+  assert.match(appSource, /const id = sequence\.begin\(\);/);
+  assert.match(appSource, /if \(!sequence\.isCurrent\(id\)\) return;/);
 });
 
 test("the account blocker is shown only when there are unassigned tickets", () => {
