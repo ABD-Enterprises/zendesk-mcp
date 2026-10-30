@@ -1,13 +1,14 @@
 /**
  * The console's own defences: the Host header it answers to, the scope its
- * token asks for, and the account URL it is willing to post the client secret
- * to.
+ * token asks for, the account URL it is willing to post the client secret to,
+ * the redirect it refuses to follow, and the failure detail it keeps out of
+ * the browser.
  *
  * Every value here is invented. Nothing in this suite reaches a live account
  * or the public internet.
  */
 import assert from "node:assert/strict";
-import { request } from "node:http";
+import { createServer, request } from "node:http";
 import { connect } from "node:net";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import {
@@ -250,6 +251,137 @@ test("allows a local account URL over plain HTTP", async () => {
 
   assert.equal(token.baseUrl, mock.baseUrl);
 });
+
+test("does not follow a redirect that would carry the client secret", async () => {
+  const target = await startRecordingServer();
+  const account = await startRedirectingAccount(target.baseUrl);
+  try {
+    process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
+      directory,
+      clientFileFor(account.baseUrl),
+    );
+
+    await assert.rejects(getOAuthToken(), /redirect/i);
+
+    // The account was validated, so a redirect must not take the secret to a
+    // host the console never looked at.
+    assert.deepEqual(target.state.requests, []);
+  } finally {
+    await account.close();
+    await target.close();
+  }
+});
+
+test("keeps an upstream failure detail out of the browser", async () => {
+  const account = await startBrokenAccount();
+  try {
+    process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
+      directory,
+      clientFileFor(account.baseUrl),
+    );
+
+    const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+    assert.equal(status, 503);
+    // The browser gets the console's own message. The upstream detail quotes
+    // the response the console could not read, so it stays in the log.
+    assert.equal(body.error, "Zendesk is unavailable");
+    assert.ok(
+      !JSON.stringify(body).includes("invented-client-secret"),
+      `the browser must not see the upstream detail: ${JSON.stringify(body)}`,
+    );
+  } finally {
+    await account.close();
+  }
+});
+
+/** A server that records every request it receives. */
+async function startRecordingServer() {
+  const state = { requests: [] };
+  const server = createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      state.requests.push({
+        method: request.method,
+        url: request.url,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ access_token: "invented-access-token" }));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    state,
+    async close() {
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    },
+  };
+}
+
+/** An account that answers every request with a redirect to another host. */
+async function startRedirectingAccount(target) {
+  const server = createServer((request, response) => {
+    response.writeHead(307, { Location: `${target}/oauth/tokens` });
+    response.end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    async close() {
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    },
+  };
+}
+
+/**
+ * An account that hands out a token but answers the view with a body that is
+ * not JSON, so the console's parse error quotes the body it could not read.
+ */
+async function startBrokenAccount() {
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "POST" && url.pathname === "/oauth/tokens") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({ access_token: "invented-access-token", expires_in: 3600 }),
+      );
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end("invented-client-secret is not json");
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    async close() {
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    },
+  };
+}
 
 /** Writes a request by hand and reads the status line of the answer. */
 function rawRequest(port, requestText) {

@@ -347,6 +347,10 @@ async function requestToken() {
   const response = await fetch(`${baseUrl}/oauth/tokens`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    // A redirect is not followed. The account URL was validated before the
+    // request, and a redirect would carry the client secret — and the scopes
+    // it was granted — to a host the console never looked at.
+    redirect: "manual",
     body: JSON.stringify({
       grant_type: "client_credentials",
       client_id: client.clientId,
@@ -354,6 +358,11 @@ async function requestToken() {
       scope: resolveConsoleScope(client),
     }),
   });
+  if (response.status >= 300 && response.status < 400) {
+    throw new ConsoleError(
+      "The account URL redirected the token request. The console does not follow a redirect, because one would carry the client secret to an account it never validated.",
+    );
+  }
   if (!response.ok) {
     // The body names why the token was refused — "invalid_scope" for a client
     // that was not granted the scopes the console asks for — and that is the
@@ -387,7 +396,15 @@ export async function zendesk(path) {
   const token = await getOAuthToken();
   const response = await fetch(`${token.baseUrl}${path}`, {
     headers: { Authorization: `Bearer ${token.value}`, Accept: "application/json" },
+    // A redirect is not followed here either: it would carry the access
+    // token to a host the console never validated.
+    redirect: "manual",
   });
+  if (response.status >= 300 && response.status < 400) {
+    throw new ConsoleError(
+      "The account URL redirected the request. The console does not follow a redirect, because one would carry the access token to an account it never validated.",
+    );
+  }
   if (!response.ok) throw new ConsoleError(`Zendesk request failed (${response.status})`);
   return response.json();
 }
