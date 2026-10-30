@@ -334,7 +334,7 @@ test("prints no stored value that is not a string", async () => {
   const tokenFile = join(directory, "oauth.json");
   await writeFile(
     tokenFile,
-    JSON.stringify({ scope: 42, expires_at: {} }),
+    JSON.stringify({ scope: 42, expires_at: "2026-12-01T00:00:00.000Z" }),
     { mode: 0o600 },
   );
   const out: string[] = [];
@@ -348,8 +348,10 @@ test("prints no stored value that is not a string", async () => {
   });
 
   const printed = out.join("");
+  // The scope is not printed, and the expiry still is: the expiry was read,
+  // and only the scope was refused.
   assert.ok(!printed.includes("Granted scope:"));
-  assert.ok(!printed.includes("Token expires:"));
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z/);
 });
 
 test("prints no stored value that is only whitespace", async () => {
