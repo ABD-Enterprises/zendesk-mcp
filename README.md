@@ -137,6 +137,16 @@ group or organization result no longer gets a ticket URL, so a consumer that
 reads `agent_url` on every result must check `resultType` first. The
 [tool contracts](docs/tool-contracts.md#agent_url) reference has the details.
 
+Two more changes travel with it, and both change what a call does:
+
+- `zendesk_update_ticket` refuses an empty `tags` array. It used to send it,
+  and Zendesk reads that as "remove every tag on the ticket", so a call that
+  succeeded before now fails. Send the tags the ticket should keep.
+- `zendesk_create_ticket` sends its first comment with `public: true`, so the
+  requester sees the ticket's description. The value used to be left to the
+  account's own default, and an account configured for private comments now
+  gets a public one. Pass `public: false` to keep it internal.
+
 ## Requirements
 
 - Node.js 20 or newer

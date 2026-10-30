@@ -18,7 +18,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     { name: "zendesk-mcp", version: PACKAGE_VERSION },
     {
       instructions:
-        "Use read tools to inspect Zendesk before making changes. Treat create, update, and comment tools as external writes. Internal notes default to non-public. Never expose OAuth credentials or raw token files in tool output.",
+        "Use read tools to inspect Zendesk before making changes. Treat create, update, and comment tools as external writes. A comment added to an existing ticket is an internal note unless the call says otherwise; the first comment of a new ticket is public unless the call says otherwise. Never expose OAuth credentials or raw token files in tool output.",
     },
   );
 
@@ -189,7 +189,8 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           commentsNextPage: commentsResponse.next_page ?? null,
           // The page number to read on with. Zendesk's own next_page URL is
           // reported too, but it is a URL and the tool takes a number, so the
-          // number is what a caller can actually use.
+          // number is what a caller can actually use. It is the page after
+          // the one this call asked for.
           commentsNextPageNumber: commentsResponse.next_page
             ? commentPage + 1
             : null,
@@ -633,8 +634,7 @@ function ticketId(ticket: JsonObject): number | string | undefined {
  * name is lower-cased, so a result that says "Ticket" is still a ticket.
  * A result that names no type, or names one that is not a string, is
  * treated as a ticket, which is what the endpoint returned before the type
- * was read. Any other name is passed through as Zendesk wrote it, so a
- * caller sees the truth rather than a guess.
+ * was read.
  */
 function searchResultType(result: JsonObject): string {
   const type = result.result_type;
@@ -658,8 +658,10 @@ function buildTicketPayload(input: {
   if (input.priority) ticket.priority = input.priority;
   if (input.status) ticket.status = input.status;
   if (input.type) ticket.type = input.type;
-  // An empty array would tell Zendesk to remove every tag on the ticket. The
-  // schema rejects it; the builder keeps the guarantee on its own too.
+  // An empty array would tell Zendesk to remove every tag on the ticket, so
+  // the update schema refuses one; the builder keeps the guarantee on its
+  // own too. A new ticket has no tags to remove, so the create tool drops
+  // an empty list rather than sending it.
   if (input.tags && input.tags.length > 0) ticket.tags = input.tags;
   if (input.comment) {
     // The visibility is sent explicitly. The contract says the requester

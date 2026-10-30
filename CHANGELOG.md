@@ -12,11 +12,14 @@
   reports `commentPage`, `commentsTruncated`, `commentsNextPage` and
   `commentsNextPageNumber` so a truncated thread has a continuation the tool
   can actually take.
-- `zendesk_update_ticket` refuses an empty `tags` array instead of sending it
-  to Zendesk, where it would remove every tag on the ticket.
-- `zendesk_create_ticket` takes a `public` flag (default true) and sends it
-  with the ticket's first comment, so the comment's visibility no longer
-  depends on a Zendesk-side default.
+- **Breaking:** `zendesk_update_ticket` refuses an empty `tags` array instead
+  of sending it to Zendesk, where it would remove every tag on the ticket. A
+  call that succeeded before now fails.
+- **Breaking:** `zendesk_create_ticket` sends its first comment with
+  `public: true`, so the requester sees the ticket's description. The value
+  used to be left to the account's own default, and an account configured for
+  private comments now gets a public one. Pass `public: false` to keep it
+  internal.
 - The write tools say what they do: `zendesk_update_ticket` and
   `zendesk_add_ticket_comment` are marked `destructiveHint: true`, and the
   three write-tool descriptions name their result shape, describe their

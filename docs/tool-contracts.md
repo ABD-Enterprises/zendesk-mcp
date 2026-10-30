@@ -90,10 +90,10 @@ of record the search returned — `ticket`, `user`, `group` or `organization` �
 besides Zendesk's own `result_type`, which stays untouched. Zendesk's search
 endpoint is shared, so a query without a `type:` qualifier answers with those
 other kinds too. The name is lower-cased, so a result that says `Ticket` is
-still a ticket; a result that names no type is treated as a ticket, and any
-other name is passed through as Zendesk wrote it. Only a result whose
-`resultType` is `ticket` carries an `agent_url` (see below); a user result is
-not a ticket and gets no ticket URL.
+still a ticket; compare it case-insensitively with `result_type`. A result
+that names no type, or names one that is not a string, is treated as a ticket.
+Only a result whose `resultType` is `ticket` carries an `agent_url` (see
+below); a user result is not a ticket and gets no ticket URL.
 
 ### zendesk_status
 
@@ -125,8 +125,9 @@ carries:
 - `commentsTruncated`: true when more comment pages exist beyond the ones
   returned.
 - `commentsNextPageNumber`: the page number to read on with, or null when the
-  thread ends here. This is the tool's continuation: call it again with
-  `commentPage` set to this number.
+  thread ends here. It is the page after the one this call asked for. This is
+  the tool's continuation: call it again with `commentPage` set to this
+  number.
 - `commentsNextPage`: Zendesk's own URL of the next comment page, or null when
   the thread ends here. It is a URL, so it is reported for reference rather
   than as something to pass back — the tool takes a page number.

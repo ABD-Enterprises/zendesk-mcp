@@ -8,8 +8,10 @@ import { createZendeskServer } from "./server.js";
 const EXAMPLE_TICKET = { id: 42, subject: "Example ticket" };
 const EXAMPLE_COMMENT = { id: 7, body: "Example comment", author_id: 801 };
 const EXAMPLE_COMMENT_USER = { id: 801, name: "Example Comment Author" };
+// The URL Zendesk points at when a thread has more comments. It is the page
+// after the one the call asked for.
 const EXAMPLE_COMMENT_NEXT_PAGE =
-  "https://example.zendesk.com/api/v2/tickets/42/comments.json?page=2";
+  "https://example.zendesk.com/api/v2/tickets/42/comments.json?page=3";
 
 /** One request the connector sent to Zendesk. */
 interface RecordedRequest {
@@ -192,8 +194,8 @@ test("reads the type of a search result the way it is spelled", async () => {
       results[0].agent_url,
       "https://example.zendesk.com/agent/tickets/42",
     );
-    // A name the tool does not know is passed through as Zendesk wrote it,
-    // and it gets no ticket URL.
+    // A name the tool does not know is lower-cased too, and it gets no
+    // ticket URL.
     assert.equal(results[1].resultType, "organization");
     assert.equal(results[1].agent_url, undefined);
   } finally {
@@ -268,6 +270,30 @@ test("sends the first comment's visibility instead of relying on a default", asy
       body: "Example body",
       public: false,
     });
+  } finally {
+    await session.close();
+  }
+});
+
+test("the session instructions name both comment defaults", async () => {
+  const { client } = contractClient(() => ({}));
+  const session = await connectContracts(client);
+
+  try {
+    // The instructions are read by an agent at the start of a session, so
+    // they have to agree with the tools: a comment added to an existing
+    // ticket is internal by default, and the first comment of a new ticket
+    // is public.
+    const instructions = session.client.getInstructions() ?? "";
+    assert.match(
+      instructions,
+      /first comment of a new ticket is public/i,
+      `the instructions should name the create default: ${instructions}`,
+    );
+    assert.ok(
+      !/internal notes default to non-public/i.test(instructions),
+      `the instructions must not claim every comment is internal: ${instructions}`,
+    );
   } finally {
     await session.close();
   }
