@@ -87,6 +87,31 @@ test("reads the comment page it is asked for and reports the next one", async ()
     assert.equal(payload.commentPage, 2);
     assert.equal(payload.commentsTruncated, true);
     assert.equal(payload.commentsNextPage, EXAMPLE_COMMENT_NEXT_PAGE);
+    // The tool takes a page number, so the continuation it reports has to be
+    // a number: the URL Zendesk returned cannot be passed back to it.
+    assert.equal(payload.commentsNextPageNumber, 3);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports no continuation when the thread ends here", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname.endsWith("/comments.json")) {
+      return { comments: [EXAMPLE_COMMENT], users: [EXAMPLE_COMMENT_USER] };
+    }
+    return { ticket: EXAMPLE_TICKET, users: [], organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+      ticketId: 42,
+    });
+
+    assert.equal(payload.commentsTruncated, false);
+    assert.equal(payload.commentsNextPage, null);
+    assert.equal(payload.commentsNextPageNumber, null);
   } finally {
     await session.close();
   }
@@ -139,6 +164,38 @@ test("treats a search result without a type as a ticket", async () => {
       results[0].agent_url,
       "https://example.zendesk.com/agent/tickets/42",
     );
+  } finally {
+    await session.close();
+  }
+});
+
+test("reads the type of a search result the way it is spelled", async () => {
+  const { client } = contractClient(() => ({
+    count: 2,
+    results: [
+      { id: 42, subject: "Example ticket", result_type: "Ticket" },
+      { id: 801, name: "Example User", result_type: "Organization" },
+    ],
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_search_tickets", {
+      query: "type:ticket",
+    });
+    const results = payload.results as Array<Record<string, unknown>>;
+
+    // The name is lower-cased, so a result that says "Ticket" is still a
+    // ticket and still gets its ticket URL.
+    assert.equal(results[0].resultType, "ticket");
+    assert.equal(
+      results[0].agent_url,
+      "https://example.zendesk.com/agent/tickets/42",
+    );
+    // A name the tool does not know is passed through as Zendesk wrote it,
+    // and it gets no ticket URL.
+    assert.equal(results[1].resultType, "organization");
+    assert.equal(results[1].agent_url, undefined);
   } finally {
     await session.close();
   }

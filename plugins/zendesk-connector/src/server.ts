@@ -61,7 +61,8 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       description:
         "Search Zendesk with Zendesk search syntax. Example: type:ticket " +
         "status<solved priority:high. The result is one page: count is the " +
-        "total number of matches, results holds this page, and " +
+        "number of matches Zendesk reports — a search total can be " +
+        "approximate or absent — results holds this page, and " +
         "nextPageAvailable says whether more pages exist — call again with " +
         "page to continue. Without a type: qualifier the search also returns " +
         "users, groups and organizations; every result carries its " +
@@ -133,7 +134,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
         "the page of its comments named by commentPage. Zendesk returns a " +
         "ticket's comments oldest first, so the first page holds the start " +
         "of the thread. commentsTruncated says whether more comment pages " +
-        "exist; call again with the next commentPage to read on.",
+        "exist; call again with commentsNextPageNumber to read on.",
       inputSchema: z.object({
         ticketId: z
           .number()
@@ -186,6 +187,12 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           commentPage,
           commentsTruncated: Boolean(commentsResponse.next_page),
           commentsNextPage: commentsResponse.next_page ?? null,
+          // The page number to read on with. Zendesk's own next_page URL is
+          // reported too, but it is a URL and the tool takes a number, so the
+          // number is what a caller can actually use.
+          commentsNextPageNumber: commentsResponse.next_page
+            ? commentPage + 1
+            : null,
           agent_url: ticketUrl(client, id),
         };
       }),
@@ -198,8 +205,10 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       description:
         "Create a Zendesk ticket. The ticket is customer-visible: it appears " +
         "in the requester's account and, when email notifications are on, it " +
-        "reaches them by email. Only the fields given are set. Returns the " +
-        "created ticket, including its id and agent_url.",
+        "reaches them by email. The fields given are set, and the first " +
+        "comment's visibility is sent with it. This tool cannot set a " +
+        "custom field, a due date or a macro. Returns the created ticket, " +
+        "including its id and agent_url.",
       inputSchema: z.object({
         subject: z
           .string()
@@ -620,13 +629,17 @@ function ticketId(ticket: JsonObject): number | string | undefined {
  * The kind of record a search result carries.
  *
  * Zendesk's search endpoint answers with tickets, users, groups and
- * organizations, and says which is which in the result's result_type. A
- * result that names no type is treated as a ticket, which is what the
- * endpoint returned before the type was read.
+ * organizations, and says which is which in the result's result_type. The
+ * name is lower-cased, so a result that says "Ticket" is still a ticket.
+ * A result that names no type, or names one that is not a string, is
+ * treated as a ticket, which is what the endpoint returned before the type
+ * was read. Any other name is passed through as Zendesk wrote it, so a
+ * caller sees the truth rather than a guess.
  */
 function searchResultType(result: JsonObject): string {
   const type = result.result_type;
-  return typeof type === "string" && type !== "" ? type : "ticket";
+  if (typeof type !== "string" || type === "") return "ticket";
+  return type.toLowerCase();
 }
 
 function buildTicketPayload(input: {

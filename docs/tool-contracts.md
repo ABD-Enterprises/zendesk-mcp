@@ -89,9 +89,11 @@ Each search result additionally gains a `resultType` field that names the kind
 of record the search returned — `ticket`, `user`, `group` or `organization` —
 besides Zendesk's own `result_type`, which stays untouched. Zendesk's search
 endpoint is shared, so a query without a `type:` qualifier answers with those
-other kinds too. Only a result whose `resultType` is `ticket` carries an
-`agent_url` (see below); a user result is not a ticket and gets no ticket
-URL.
+other kinds too. The name is lower-cased, so a result that says `Ticket` is
+still a ticket; a result that names no type is treated as a ticket, and any
+other name is passed through as Zendesk wrote it. Only a result whose
+`resultType` is `ticket` carries an `agent_url` (see below); a user result is
+not a ticket and gets no ticket URL.
 
 ### zendesk_status
 
@@ -122,9 +124,12 @@ carries:
 - `commentPage`: the page of comments the call returned.
 - `commentsTruncated`: true when more comment pages exist beyond the ones
   returned.
+- `commentsNextPageNumber`: the page number to read on with, or null when the
+  thread ends here. This is the tool's continuation: call it again with
+  `commentPage` set to this number.
 - `commentsNextPage`: Zendesk's own URL of the next comment page, or null when
-  the thread ends here. The tool's continuation is `commentPage`: call it again
-  with the next page number.
+  the thread ends here. It is a URL, so it is reported for reference rather
+  than as something to pass back — the tool takes a page number.
 
 Zendesk returns a ticket's comments oldest first, so the first page holds the
 start of the thread rather than its most recent replies.

@@ -9,17 +9,18 @@
   `resultType` first.
 - `zendesk_get_ticket` now asks Zendesk for the comment authors it always
   promised, returns the comment page named by the new `commentPage` input, and
-  reports `commentPage`, `commentsTruncated` and `commentsNextPage` so a
-  truncated thread has a continuation.
+  reports `commentPage`, `commentsTruncated`, `commentsNextPage` and
+  `commentsNextPageNumber` so a truncated thread has a continuation the tool
+  can actually take.
 - `zendesk_update_ticket` refuses an empty `tags` array instead of sending it
   to Zendesk, where it would remove every tag on the ticket.
 - `zendesk_create_ticket` takes a `public` flag (default true) and sends it
   with the ticket's first comment, so the comment's visibility no longer
   depends on a Zendesk-side default.
 - The write tools say what they do: `zendesk_update_ticket` and
-  `zendesk_add_ticket_comment` are marked `destructiveHint: true`, and all
-  three write-tool descriptions name their fields, their result shape and what
-  the tool cannot do.
+  `zendesk_add_ticket_comment` are marked `destructiveHint: true`, and the
+  three write-tool descriptions name their result shape, describe their
+  fields, and say what the tool cannot do.
 
 ## 0.6.1
 

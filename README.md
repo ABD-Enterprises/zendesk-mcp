@@ -125,8 +125,10 @@ events, the allowlist, and the versioning policy — is in the
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
 
-Internal notes are the default for comments. Write tools are marked explicitly
-in their MCP annotations.
+Internal notes are the default for `zendesk_add_ticket_comment`. A new
+ticket's first comment is public unless `public: false` is passed, because it
+is the ticket's description. Write tools are marked explicitly in their MCP
+annotations.
 
 **Breaking in the unreleased version:** `zendesk_search_tickets` now labels
 every result with a `resultType` (`ticket`, `user`, `group` or
