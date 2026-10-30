@@ -238,6 +238,88 @@ test("keeps a stored value on one line", async () => {
   assert.equal(lines.filter((line) => line.startsWith("Granted scope:")).length, 1);
   assert.ok(!lines.some((line) => line.startsWith("Injected:")));
   assert.match(printed, /Granted scope: tickets:read Injected: line/);
+  // A carriage return does not make a second line, but it overwrites the
+  // line it is on, so the output carries none.
+  assert.ok(!printed.includes("\r"));
+});
+
+test("keeps a stored value on one line when it carries a carriage return", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "tickets:read\rInjected: line" }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("\r"));
+  assert.match(printed, /Granted scope: tickets:read Injected: line/);
+});
+
+test("keeps a stored expiry on one line too", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      scope: "tickets:read",
+      expires_at: "2026-12-01T00:00:00.000Z\r\nInjected: line",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  const lines = printed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  assert.equal(lines.filter((line) => line.startsWith("Token expires:")).length, 1);
+  assert.ok(!lines.some((line) => line.startsWith("Injected:")));
+});
+
+test("prints no stored value that is only whitespace", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "  \r  ", expires_at: "2026-12-01T00:00:00.000Z" }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z/);
 });
 
 test("prints no granted scope for a token that carries none", async () => {
@@ -289,6 +371,7 @@ test("prints no granted scope when the token file is the OAuth client file", asy
   const previous = process.env.ZENDESK_OAUTH_CLIENT_FILE;
   process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
   const out: string[] = [];
+  const errors: string[] = [];
 
   try {
     await runDoctor({
@@ -300,7 +383,7 @@ test("prints no granted scope when the token file is the OAuth client file", asy
         }),
       tools: true,
       writeOut: (line) => out.push(line),
-      writeError: () => {},
+      writeError: (line) => errors.push(line),
     });
   } finally {
     if (previous === undefined) delete process.env.ZENDESK_OAUTH_CLIENT_FILE;
@@ -310,6 +393,9 @@ test("prints no granted scope when the token file is the OAuth client file", asy
   const printed = out.join("");
   assert.ok(!printed.includes("Granted scope:"));
   assert.ok(!printed.includes("Token expires:"));
+  // The problem is still reported: the inventory stays quiet about a token
+  // that was never issued, and the checks say what is wrong.
+  assert.match(errors.join(""), /is the OAuth client file/);
 });
 
 test("names the read-only tool set in the inventory", async () => {
