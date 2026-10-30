@@ -175,10 +175,25 @@ test("prints the granted scope and the expiry of the stored token", async () => 
 });
 
 test("prints no token lines when there is no stored token", async () => {
+  // The client-credentials mode stores no token — it asks the account for
+  // one per request — so a token file left over from another mode says
+  // nothing about the live configuration.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      scope: "tickets:read",
+      expires_at: "2026-12-01T00:00:00.000Z",
+    }),
+    { mode: 0o600 },
+  );
   const out: string[] = [];
 
   await runDoctor({
-    loadConfig: () => config({ mode: "client_credentials" }),
+    loadConfig: () => config({ mode: "client_credentials", tokenFile }),
     tools: true,
     writeOut: (line) => out.push(line),
     writeError: () => {},
@@ -186,6 +201,113 @@ test("prints no token lines when there is no stored token", async () => {
 
   const printed = out.join("");
   assert.match(printed, /Scope: read write/);
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.ok(!printed.includes("Token expires:"));
+});
+
+test("keeps a stored value on one line", async () => {
+  // The doctor prints one fact per line, so a value that carried a line
+  // break would print as two, and the second would read as a fact of its own.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      scope: "tickets:read\nInjected: line",
+      expires_at: "2026-12-01T00:00:00.000Z",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  const lines = printed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  // One line for the scope, and no line of its own for the rest of it.
+  assert.equal(lines.filter((line) => line.startsWith("Granted scope:")).length, 1);
+  assert.ok(!lines.some((line) => line.startsWith("Injected:")));
+  assert.match(printed, /Granted scope: tickets:read Injected: line/);
+});
+
+test("prints no granted scope for a token that carries none", async () => {
+  // A token without a scope says nothing about what it may do, and the
+  // access token beside it must never be printed under any label.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.ok(!printed.includes("invented-access-token"));
+  assert.ok(!printed.includes("invented-refresh-token"));
+});
+
+test("prints no granted scope when the token file is the OAuth client file", async () => {
+  // The client file holds the scope the connector asks for. Printing it
+  // under "granted" would say a token was granted something no token was
+  // ever granted.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-client-"));
+  tempDirs.push(directory);
+  const clientFile = join(directory, "client.json");
+  await writeFile(
+    clientFile,
+    JSON.stringify({
+      clientId: "invented-client-id",
+      clientSecret: "invented-client-secret",
+      scope: "tickets:read tickets:write",
+    }),
+    { mode: 0o600 },
+  );
+  const previous = process.env.ZENDESK_OAUTH_CLIENT_FILE;
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = clientFile;
+  const out: string[] = [];
+
+  try {
+    await runDoctor({
+      loadConfig: () =>
+        config({
+          mode: "authorization_code",
+          tokenFile: clientFile,
+          scope: "tickets:read tickets:write",
+        }),
+      tools: true,
+      writeOut: (line) => out.push(line),
+      writeError: () => {},
+    });
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_OAUTH_CLIENT_FILE;
+    else process.env.ZENDESK_OAUTH_CLIENT_FILE = previous;
+  }
+
+  const printed = out.join("");
   assert.ok(!printed.includes("Granted scope:"));
   assert.ok(!printed.includes("Token expires:"));
 });

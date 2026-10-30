@@ -217,19 +217,35 @@ function storedTokenDetails(config: DoctorConfig): {
   expiresAt?: string;
 } {
   if (config.mode !== "authorization_code") return {};
+  // The OAuth client file is not a token file. Its scope is the scope the
+  // connector asks for, so printing it under "granted" would say a token was
+  // granted something that no token was ever granted.
+  if (sameFilePath(config.tokenFile, oauthClientFilePath())) return {};
   try {
     const payload = JSON.parse(readFileSync(config.tokenFile, "utf8")) as {
       scope?: unknown;
       expires_at?: unknown;
     };
     return {
-      scope: typeof payload.scope === "string" ? payload.scope : undefined,
+      scope: typeof payload.scope === "string" ? oneLine(payload.scope) : undefined,
       expiresAt:
-        typeof payload.expires_at === "string" ? payload.expires_at : undefined,
+        typeof payload.expires_at === "string"
+          ? oneLine(payload.expires_at)
+          : undefined,
     };
   } catch {
     return {};
   }
+}
+
+/**
+ * A value on one line.
+ *
+ * The doctor prints one fact per line, so a value that carried a line break
+ * would print as two, and the second would read as a fact of its own.
+ */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
 }
 
 /** The token file of a configuration that passed the checks, if it has one. */

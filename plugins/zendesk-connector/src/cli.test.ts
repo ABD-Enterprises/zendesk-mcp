@@ -27,9 +27,12 @@ test("names the flags it does not understand", () => {
 test("the usage text names every flag and what it does", () => {
   const text = usage();
   // The list is driven by the flags the connector accepts, so a flag that is
-  // added and not documented is a failure here rather than a surprise.
+  // added and not documented is a failure here rather than a surprise. The
+  // flags are compared as whole words, so a flag that is the beginning of
+  // another one is not counted as documented.
+  const words = new Set(text.replace(/[.,]/g, " ").split(/\s+/));
   for (const flag of [...KNOWN_FLAGS, ...HELP_FLAGS]) {
-    assert.ok(text.includes(flag), `the usage should name ${flag}`);
+    assert.ok(words.has(flag), `the usage should name ${flag}`);
   }
   // The text says what each mode does, not only that it exists.
   assert.match(text, /Check the configuration/);
@@ -52,7 +55,7 @@ test("accepts the stdio flag without changing what the connector does", async ()
 
   // The doctor ran, so the flag was not a refusal and not a mode of its own.
   assert.equal(result.code, 0);
-  assert.ok(!result.stderr.includes("Unknown option"));
+  assert.match(result.stdout, /Zendesk connector doctor: all checks passed/);
 });
 
 test("--help wins over an unknown flag", async () => {
