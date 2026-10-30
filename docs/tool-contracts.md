@@ -19,7 +19,7 @@ envelope.
 | --- | --- | --- | --- | --- |
 | `zendesk_status` | Read | Verify OAuth and identify the authenticated user | None | Yes |
 | `zendesk_search_tickets` | Read | Search tickets with Zendesk search syntax | `query` string (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
-| `zendesk_get_ticket` | Read | Read a ticket with users, organization, and comments | `ticketId` int (required); `includeComments` bool (default true) | Yes |
+| `zendesk_get_ticket` | Read | Read a ticket with users, organization, and comments | `ticketId` int (required); `includeComments` bool (default true); `commentPage` int (default 1) | Yes |
 | `zendesk_list_brands` | Read | List brands with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_groups` | Read | List groups with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_users` | Read | List users with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
@@ -27,7 +27,7 @@ envelope.
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of strings (optional) | Yes |
-| `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of strings (optional); at least one update field required | Yes |
+| `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one string (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
 
 Notes on the inputs:
@@ -38,6 +38,10 @@ Notes on the inputs:
   creates an internal note.
 - `zendesk_update_ticket` rejects a call whose update fields are all absent
   with the error `No update fields were provided.`
+- `zendesk_update_ticket` sets `tags` to exactly the list it is given: it
+  replaces every tag the ticket has. An empty array is refused, because Zendesk
+  reads it as "remove every tag" — so a caller cannot clear a ticket's tags
+  with this tool.
 - `page` starts at 1 and `perPage` is capped at 100 for every paginated tool.
 - Input is validated against the tool's schema before the call runs. A call
   that fails validation is refused by the MCP SDK and never reaches Zendesk or
@@ -76,7 +80,12 @@ The six list tools and `zendesk_search_tickets` return a shared envelope:
   `organizations`, `ticket_fields`, `ticket_forms`, or `results` for search.
 
 Each search result additionally gains an `agent_url` field (see below) when
-the result carries a ticket id.
+the result carries a ticket id, and a `resultType` field that names the kind of
+record the search returned — `ticket`, `user`, `group` or `organization`.
+Zendesk's search endpoint is shared, so a query without a `type:` qualifier
+answers with those other kinds too. Only a result whose `resultType` is
+`ticket` carries an `agent_url`; a user result is not a ticket and gets no
+ticket URL.
 
 ### zendesk_status
 
@@ -101,10 +110,16 @@ with `users` and `organizations` present when Zendesk side-loads them — plus
 `agent_url`. When `includeComments` is true (the default), the payload also
 carries:
 
-- `comments`: the first page of the ticket's comments.
+- `comments`: the page of the ticket's comments named by `commentPage`.
 - `commentUsers`: the users referenced by that page of comments.
+- `commentPage`: the page of comments the call returned.
 - `commentsTruncated`: true when more comment pages exist beyond the ones
   returned.
+- `commentsNextPage`: the URL of the next comment page, or null when the
+  thread ends here.
+
+Zendesk returns a ticket's comments oldest first, so the first page holds the
+start of the thread rather than its most recent replies.
 
 With `includeComments` false, the comment fields are absent.
 
@@ -178,13 +193,17 @@ Every read tool — `zendesk_status`, `zendesk_search_tickets`,
 { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
 ```
 
-Every write tool is marked `readOnlyHint: false`, `destructiveHint: false`,
-`openWorldHint: true`, with the idempotency hint set per tool:
+Every write tool is marked `readOnlyHint: false` and `openWorldHint: true`, with
+the idempotency and destructiveness hints set per tool:
 
 - `zendesk_update_ticket`: `idempotentHint: true` — repeating an update with
-  the same field values leaves the ticket in the same state.
-- `zendesk_create_ticket` and `zendesk_add_ticket_comment`:
-  `idempotentHint: false` — each call creates a new ticket or a new comment.
+  the same field values leaves the ticket in the same state — and
+  `destructiveHint: true`, because it overwrites fields that already exist.
+- `zendesk_add_ticket_comment`: `idempotentHint: false` — each call adds a new
+  comment — and `destructiveHint: true`, because a public reply cannot be
+  withdrawn.
+- `zendesk_create_ticket`: `idempotentHint: false` and `destructiveHint: false`
+  — it adds a record without changing one that exists.
 
 Annotations are advisory hints for clients deciding how to present or
 re-execute a call. They are not access control: the allowlist and the OAuth

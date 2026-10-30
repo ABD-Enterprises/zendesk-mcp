@@ -59,19 +59,35 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     {
       title: "Search Zendesk tickets",
       description:
-        "Search Zendesk tickets with Zendesk search syntax. Example: type:ticket status<solved priority:high.",
+        "Search Zendesk with Zendesk search syntax. Example: type:ticket " +
+        "status<solved priority:high. The result is one page: count is the " +
+        "total number of matches, results holds this page, and " +
+        "nextPageAvailable says whether more pages exist — call again with " +
+        "page to continue. Without a type: qualifier the search also returns " +
+        "users, groups and organizations; every result carries its " +
+        "resultType, and only a ticket result carries an agent_url. Pass a " +
+        "ticket's id to zendesk_get_ticket for the full record.",
       inputSchema: z.object({
         query: z
           .string()
           .min(1)
-          .describe("Zendesk search query. Include type:ticket unless searching broadly."),
-        page: z.number().int().positive().default(1),
+          .describe(
+            "Zendesk search query. Include type:ticket unless searching " +
+              "broadly.",
+          ),
+        page: z
+          .number()
+          .int()
+          .positive()
+          .default(1)
+          .describe("Page of results to return, starting at 1."),
         perPage: z
           .number()
           .int()
           .positive()
           .max(MAX_PAGE_SIZE)
-          .default(DEFAULT_PAGE_SIZE),
+          .default(DEFAULT_PAGE_SIZE)
+          .describe("How many results one page holds, up to 100."),
       }),
       annotations: readAnnotations,
     },
@@ -91,11 +107,17 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           page,
           perPage,
           nextPageAvailable: Boolean(response.next_page),
-          results: response.results.map((ticket) => {
-            const id = ticketId(ticket);
+          results: response.results.map((result) => {
+            // The search endpoint is shared: without a type: qualifier it
+            // answers with users, groups and organizations too, and each
+            // result says what it is in result_type.
+            const resultType = searchResultType(result);
+            const id = ticketId(result);
             return {
-              ...ticket,
-              agent_url: id ? ticketUrl(client, id) : undefined,
+              ...result,
+              resultType,
+              agent_url:
+                resultType === "ticket" && id ? ticketUrl(client, id) : undefined,
             };
           }),
         };
@@ -107,14 +129,31 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     {
       title: "Get Zendesk ticket",
       description:
-        "Get a Zendesk ticket with requester, assignee, organization, and recent comments.",
+        "Get a Zendesk ticket with requester, assignee, organization, and " +
+        "the first page of its comments. Zendesk returns a ticket's comments " +
+        "oldest first, so the page holds the start of the thread. " +
+        "commentsTruncated says whether more comments exist; call again with " +
+        "commentPage to read the next page.",
       inputSchema: z.object({
-        ticketId: z.number().int().positive(),
-        includeComments: z.boolean().default(true),
+        ticketId: z
+          .number()
+          .int()
+          .positive()
+          .describe("Id of the ticket to read."),
+        includeComments: z
+          .boolean()
+          .default(true)
+          .describe("Whether to read the ticket's comments at all."),
+        commentPage: z
+          .number()
+          .int()
+          .positive()
+          .default(1)
+          .describe("Page of comments to return, starting at 1."),
       }),
       annotations: readAnnotations,
     },
-    async ({ ticketId: id, includeComments }) =>
+    async ({ ticketId: id, includeComments, commentPage }) =>
       runTool("zendesk_get_ticket", "read", actorId, async () => {
         guard("zendesk_get_ticket");
         const ticketResponse = await client.request<{
@@ -129,17 +168,24 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           return { ...ticketResponse, agent_url: ticketUrl(client, id) };
         }
 
+        // The side-load is asked for on the comments endpoint itself: the
+        // ticket's own side-load does not reach this one, so without it the
+        // comment authors would never resolve.
         const commentsResponse = await client.request<{
           comments: JsonObject[];
           users?: JsonObject[];
           next_page?: string | null;
-        }>(`/tickets/${id}/comments.json`);
+        }>(`/tickets/${id}/comments.json`, {
+          query: { include: "users", page: commentPage },
+        });
 
         return {
           ...ticketResponse,
           comments: commentsResponse.comments,
           commentUsers: commentsResponse.users,
+          commentPage,
           commentsTruncated: Boolean(commentsResponse.next_page),
+          commentsNextPage: commentsResponse.next_page ?? null,
           agent_url: ticketUrl(client, id),
         };
       }),
@@ -149,18 +195,46 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     "zendesk_create_ticket",
     {
       title: "Create Zendesk ticket",
-      description: "Create a Zendesk ticket.",
+      description:
+        "Create a Zendesk ticket. The ticket is customer-visible: it appears " +
+        "in the requester's account and, when email notifications are on, it " +
+        "reaches them by email. Only the fields given are set. Returns the " +
+        "created ticket, including its id and agent_url.",
       inputSchema: z.object({
-        subject: z.string().min(1),
-        comment: z.string().min(1),
-        requesterEmail: z.string().email().optional(),
-        requesterName: z.string().optional(),
-        priority: TicketPriority.optional(),
-        status: TicketStatus.optional(),
-        type: TicketType.optional(),
-        tags: z.array(z.string()).optional(),
+        subject: z
+          .string()
+          .min(1)
+          .describe("Short title of the ticket, shown in the queue."),
+        comment: z
+          .string()
+          .min(1)
+          .describe(
+            "Body of the first comment on the ticket. It is sent as a public " +
+              "comment, so the requester sees it.",
+          ),
+        requesterEmail: z
+          .string()
+          .email()
+          .optional()
+          .describe(
+            "Email address of the requester. Without it the ticket is " +
+              "created for the authenticated agent.",
+          ),
+        requesterName: z
+          .string()
+          .optional()
+          .describe(
+            "Name of the requester. Defaults to the requester email address.",
+          ),
+        priority: TicketPriority.optional().describe("Priority of the ticket."),
+        status: TicketStatus.optional().describe("Status of the ticket."),
+        type: TicketType.optional().describe("Type of the ticket."),
+        tags: z
+          .array(z.string().min(1))
+          .optional()
+          .describe("Tags to set on the new ticket."),
       }),
-      annotations: writeAnnotations(false),
+      annotations: writeAnnotations({ idempotent: false, destructive: false }),
     },
     async (input) =>
       runTool("zendesk_create_ticket", "write", actorId, async () => {
@@ -182,16 +256,40 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     {
       title: "Update Zendesk ticket",
       description:
-        "Update common Zendesk ticket fields. Provide only fields that should change.",
+        "Update a Zendesk ticket. Only the fields given change; every other " +
+        "field is left as it is. The updatable fields are subject, priority, " +
+        "status, type and tags — this tool cannot reassign a ticket, change " +
+        "its requester or edit its comment. tags replaces every tag the " +
+        "ticket has, so it needs at least one tag. Returns the updated " +
+        "ticket.",
       inputSchema: z.object({
-        ticketId: z.number().int().positive(),
-        subject: z.string().min(1).optional(),
-        priority: TicketPriority.optional(),
-        status: TicketStatus.optional(),
-        type: TicketType.optional(),
-        tags: z.array(z.string()).optional(),
+        ticketId: z
+          .number()
+          .int()
+          .positive()
+          .describe("Id of the ticket to update."),
+        subject: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("New title of the ticket."),
+        priority: TicketPriority.optional().describe("New priority."),
+        status: TicketStatus.optional().describe("New status."),
+        type: TicketType.optional().describe("New type."),
+        tags: z
+          .array(z.string().min(1))
+          .min(1, {
+            error:
+              "tags must name at least one tag. This tool replaces every tag " +
+              "on the ticket, so it cannot remove them all.",
+          })
+          .optional()
+          .describe(
+            "The tags the ticket should carry. This replaces every tag the " +
+              "ticket has, so at least one tag is required.",
+          ),
       }),
-      annotations: writeAnnotations(true),
+      annotations: writeAnnotations({ idempotent: true, destructive: true }),
     },
     async ({ ticketId: id, ...updates }) =>
       runTool("zendesk_update_ticket", "write", actorId, async () => {
@@ -211,16 +309,30 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
     "zendesk_add_ticket_comment",
     {
       title: "Comment on Zendesk ticket",
-      description: "Add a public reply or internal note to a Zendesk ticket.",
+      description:
+        "Add a comment to a Zendesk ticket. The comment is an internal note " +
+        "by default. A public reply is irreversible: it reaches the customer " +
+        "by email, and it cannot be unsent from here. Returns the updated " +
+        "ticket. This tool cannot edit or delete a comment.",
       inputSchema: z.object({
-        ticketId: z.number().int().positive(),
-        body: z.string().min(1),
+        ticketId: z
+          .number()
+          .int()
+          .positive()
+          .describe("Id of the ticket to comment on."),
+        body: z
+          .string()
+          .min(1)
+          .describe("The comment's text. It is sent as given."),
         public: z
           .boolean()
           .default(false)
-          .describe("False creates an internal note."),
+          .describe(
+            "False creates an internal note. True sends a public reply to " +
+              "the customer, which cannot be withdrawn.",
+          ),
       }),
-      annotations: writeAnnotations(false),
+      annotations: writeAnnotations({ idempotent: false, destructive: true }),
     },
     async ({ ticketId: id, body, public: isPublic }) =>
       runTool("zendesk_add_ticket_comment", "write", actorId, async () => {
@@ -464,11 +576,23 @@ const readAnnotations = {
   openWorldHint: true,
 } as const;
 
-function writeAnnotations(idempotent: boolean) {
+/**
+ * The annotations of a write tool.
+ *
+ * `destructive` says whether the tool may overwrite something that already
+ * exists. It is not a read-only flag: a tool that only adds records is
+ * additive, while one that replaces a ticket's fields or sends a public reply
+ * destroys something — and a host that trusts the hint would otherwise skip
+ * the confirmation prompt for exactly those two.
+ */
+function writeAnnotations(options: {
+  idempotent: boolean;
+  destructive: boolean;
+}) {
   return {
     readOnlyHint: false,
-    destructiveHint: false,
-    idempotentHint: idempotent,
+    destructiveHint: options.destructive,
+    idempotentHint: options.idempotent,
     openWorldHint: true,
   } as const;
 }
@@ -481,6 +605,19 @@ function ticketId(ticket: JsonObject): number | string | undefined {
   return typeof ticket.id === "number" || typeof ticket.id === "string"
     ? ticket.id
     : undefined;
+}
+
+/**
+ * The kind of record a search result carries.
+ *
+ * Zendesk's search endpoint answers with tickets, users, groups and
+ * organizations, and says which is which in the result's result_type. A
+ * result that names no type is treated as a ticket, which is what the
+ * endpoint returned before the type was read.
+ */
+function searchResultType(result: JsonObject): string {
+  const type = result.result_type;
+  return typeof type === "string" && type !== "" ? type : "ticket";
 }
 
 function buildTicketPayload(input: {
@@ -498,7 +635,9 @@ function buildTicketPayload(input: {
   if (input.priority) ticket.priority = input.priority;
   if (input.status) ticket.status = input.status;
   if (input.type) ticket.type = input.type;
-  if (input.tags) ticket.tags = input.tags;
+  // An empty array would tell Zendesk to remove every tag on the ticket. The
+  // schema rejects it; the builder keeps the guarantee on its own too.
+  if (input.tags && input.tags.length > 0) ticket.tags = input.tags;
   if (input.comment) ticket.comment = { body: input.comment };
   if (input.requesterEmail) {
     ticket.requester = {
