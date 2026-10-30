@@ -326,7 +326,7 @@ test("prints no expiry that is only whitespace", async () => {
   assert.match(printed, /Granted scope: tickets:read/);
 });
 
-test("prints no stored value that is not a string", async () => {
+test("prints no scope that is not a string", async () => {
   // A token file that holds a number where a scope belongs is not a token
   // the doctor can read, and it must not print a line for it.
   const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
@@ -352,6 +352,34 @@ test("prints no stored value that is not a string", async () => {
   // and only the scope was refused.
   assert.ok(!printed.includes("Granted scope:"));
   assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z/);
+});
+
+test("prints no expiry that is not a string", async () => {
+  // The same rule on the other value: a token file that holds a number
+  // where an expiry belongs is not a token the doctor can read.
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({ scope: "tickets:read", expires_at: 42 }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  // The expiry is not printed, and the scope still is: the file was read,
+  // and only the expiry was refused.
+  assert.ok(!printed.includes("Token expires:"));
+  assert.match(printed, /Granted scope: tickets:read/);
 });
 
 test("prints no stored value that is only whitespace", async () => {
