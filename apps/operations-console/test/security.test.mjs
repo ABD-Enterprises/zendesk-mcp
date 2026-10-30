@@ -490,6 +490,30 @@ test("names the scope the console asked for when the account refuses it", async 
   }
 });
 
+test("names the scope the console asked for, not the one the operator set", async () => {
+  // The console drops the write scopes, so it asks for "read" and the advice
+  // has to say "read". Naming the scope the operator configured would name a
+  // scope the console never asked for.
+  const account = await startRefusingAccount("invalid_scope");
+  try {
+    process.env.ZENDESK_OAUTH_SCOPE = "read write";
+    process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
+      directory,
+      clientFileFor(account.baseUrl),
+    );
+
+    const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+    assert.equal(status, 503);
+    assert.equal(
+      body.error,
+      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the read scope: allow it on the Zendesk OAuth client.",
+    );
+  } finally {
+    await account.close();
+  }
+});
+
 test("does not show an error code the console did not write", async () => {
   const account = await startRefusingAccount("sk_not_a_code_the_console_knows");
   try {
@@ -569,7 +593,7 @@ test("refuses a request for a file that carries another host", async () => {
     await removeTempDir(directory);
   }
 
-  // The restore is what the next test in this file relies on, so it is
+  // The restore is easy to drop and nothing else would notice, so it is
   // checked: the app carries the routes it carried before.
   assert.equal(app.router.stack.length, mounted);
 });
