@@ -48,10 +48,10 @@ Two settings read their value differently:
   `npm run oauth:setup` stops with that error. `npm run doctor` reports the
   same error when it checks the setup callback; both read the value through
   one parser, so the two commands cannot disagree about the port.
-- `ZENDESK_MAX_RETRIES` and `ZENDESK_MAX_RETRY_DELAY_MS` are read without
-  trimming. A value that is not an integer inside the allowed range falls back
-  to the default, and a value of only whitespace counts as 0 rather than as
-  unset.
+- `ZENDESK_MAX_RETRIES` and `ZENDESK_MAX_RETRY_DELAY_MS` are read as numbers,
+  and whitespace around a number is ignored. A value that is not an integer
+  inside the allowed range falls back to the default, and a value of only
+  whitespace counts as 0 rather than as unset.
 
 ### The client file
 
