@@ -303,8 +303,8 @@ test("falls back to the next page when the URL cannot be read", async () => {
   try {
     const payload = await contractPayload(session.client, "zendesk_get_ticket", {
       ticketId: 42,
-      // A page other than the one the other fallback tests use, so the
-      // fallback is the page after this one and not a fixed number.
+      // A page none of the other fallback tests use, so the fallback is the
+      // page after this one and not a fixed number.
       commentPage: 7,
     });
 
@@ -330,8 +330,8 @@ test("falls back to the next page when the URL names none", async () => {
   try {
     const payload = await contractPayload(session.client, "zendesk_get_ticket", {
       ticketId: 42,
-      // A page other than the one the other fallback tests use, so the
-      // fallback is the page after this one and not a fixed number.
+      // A page none of the other fallback tests use, so the fallback is the
+      // page after this one and not a fixed number.
       commentPage: 5,
     });
 
