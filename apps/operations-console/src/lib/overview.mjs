@@ -126,8 +126,9 @@ export const CONSOLE_UNREACHABLE =
  * load twice, and the older of the two may settle last. A failure the older
  * one reports would then replace a success that came after it, and the
  * console would show a failure for an account that is reachable. The refresh
- * button is disabled while a load runs, so this is the only way two loads
- * can be in flight at once.
+ * button is disabled while the newest load runs, so a refresh starts a load
+ * only after the newest has settled; a superseded load can still be in
+ * flight at that moment, and the double-mount is what put it there.
  *
  * The sequence hands out a number for every load and says which of them is
  * still the newest, so that only the newest may write.

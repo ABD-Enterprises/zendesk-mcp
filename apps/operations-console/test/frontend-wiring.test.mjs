@@ -14,6 +14,35 @@ import { ticketRow } from "../src/lib/tickets.mjs";
 
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 
+/**
+ * The source of the load function of the console.
+ *
+ * The suite cannot render the components, so it reads their source. The load
+ * is read on its own, so that a change around it cannot hide a change to it.
+ *
+ * @returns {string}
+ */
+function loadSource() {
+  const start = appSource.indexOf("const load = async () => {");
+  assert.notEqual(start, -1, "the console must have a load function");
+  const end = appSource.indexOf("\n  };", start);
+  assert.notEqual(end, -1, "the load function must end");
+  return appSource.slice(start, end);
+}
+
+/**
+ * The source with its comments removed.
+ *
+ * The suite counts calls in the source, and a comment that names a call
+ * would be counted as one.
+ *
+ * @param {string} source
+ * @returns {string}
+ */
+function withoutComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+}
+
 const TICKET = {
   id: 900000000101,
   subject: "invented subject one",
@@ -124,18 +153,29 @@ test("only the newest load may write", () => {
   // Two loads can overlap, and the older one may settle last. The component
   // asks the sequence which load is the newest; the sequence itself is
   // covered in frontend-overview.test.mjs.
-  assert.match(appSource, /const id = sequence\.begin\(\);/);
-  assert.match(appSource, /if \(!sequence\.isCurrent\(id\)\) return;/);
+  const raw = loadSource();
+  const load = withoutComments(raw);
+  assert.match(load, /const id = sequence\.begin\(\);/);
+  assert.match(load, /if \(!sequence\.isCurrent\(id\)\) return;/);
   // One load begins one sequence entry: two calls would make every load a
-  // no-op, and the suite would stay green.
-  assert.equal((appSource.match(/sequence\.begin\(\)/g) ?? []).length, 1);
-  // And the guard has to run before the load writes, or a superseded load
-  // can overwrite a newer success.
+  // no-op, and the suite would stay green. The entry is begun inside the
+  // load, so a render cannot take one in the load's place.
+  assert.equal((load.match(/sequence\.begin\s*\(\s*\)/g) ?? []).length, 1);
   assert.ok(
-    appSource.indexOf("if (!sequence.isCurrent(id)) return;") <
-      appSource.indexOf("setData(loaded.overview)"),
-    "the guard must run before the load writes",
+    !withoutComments(appSource.replace(raw, "")).includes("sequence.begin"),
+    "only the load may begin a sequence entry",
   );
+  // The guard runs where the load settles, after the wait, and before either
+  // write. A guard that ran before the wait would always be true, and a
+  // superseded load would write; a load that wrote a failure without asking
+  // would show a failure for an account that is reachable.
+  const guard = load.indexOf("if (!sequence.isCurrent(id)) return;");
+  assert.ok(
+    guard > load.indexOf("await loadOverview()"),
+    "the guard must run where the load settles",
+  );
+  assert.ok(guard < load.indexOf("setData("), "the guard must run before the overview is written");
+  assert.ok(guard < load.indexOf("setFailure("), "the guard must run before the failure is written");
 });
 
 test("the account blocker is shown only when there are unassigned tickets", () => {
