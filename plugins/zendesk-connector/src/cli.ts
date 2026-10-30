@@ -19,7 +19,7 @@ export const KNOWN_FLAGS = [
 ] as const;
 
 /** The flags that ask for the usage text. */
-const HELP_FLAGS = ["--help", "-h"];
+export const HELP_FLAGS = ["--help", "-h"];
 
 /** Reports whether the process was asked to print the usage. */
 export function isHelpRequested(
@@ -70,7 +70,8 @@ export function usage(): string {
     "  zendesk-mcp --tools        Print the configuration and the tools the agent will receive.",
     "  zendesk-mcp --healthcheck  Print one health line and exit.",
     "  zendesk-mcp --logout       Revoke the OAuth token and remove the token file.",
-    "  zendesk-mcp --help         Print this message.",
+    "  zendesk-mcp --stdio        Accepted and ignored; the connector always speaks stdio.",
+    "  zendesk-mcp --help, -h     Print this message.",
     "",
     "--doctor, --tools and --healthcheck never contact Zendesk, so they are",
     "safe to run without an account. `npm run doctor` runs the preflight.",

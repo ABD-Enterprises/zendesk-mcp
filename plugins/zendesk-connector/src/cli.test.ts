@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { isHelpRequested, unknownFlags, usage } from "./cli.js";
+import { HELP_FLAGS, KNOWN_FLAGS, isHelpRequested, unknownFlags, usage } from "./cli.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -26,13 +26,9 @@ test("names the flags it does not understand", () => {
 
 test("the usage text names every flag and what it does", () => {
   const text = usage();
-  for (const flag of [
-    "--doctor",
-    "--tools",
-    "--healthcheck",
-    "--logout",
-    "--help",
-  ]) {
+  // The list is driven by the flags the connector accepts, so a flag that is
+  // added and not documented is a failure here rather than a surprise.
+  for (const flag of [...KNOWN_FLAGS, ...HELP_FLAGS]) {
     assert.ok(text.includes(flag), `the usage should name ${flag}`);
   }
   // The text says what each mode does, not only that it exists.
@@ -40,6 +36,23 @@ test("the usage text names every flag and what it does", () => {
   assert.match(text, /the tools the agent will receive/);
   assert.match(text, /Revoke the OAuth token/);
   assert.match(text, /never contact Zendesk/);
+});
+
+test("accepts the stdio flag without changing what the connector does", async () => {
+  // The connector always speaks stdio, so the flag says nothing. It must not
+  // be refused, and it must not change the mode that runs.
+  assert.deepEqual(unknownFlags(["--stdio"]), []);
+
+  const result = await runCli(["--stdio", "--doctor"], {
+    ZENDESK_OAUTH_MODE: "client_credentials",
+    ZENDESK_SUBDOMAIN: "example",
+    ZENDESK_OAUTH_CLIENT_ID: "invented-client-id",
+    ZENDESK_OAUTH_CLIENT_SECRET: "invented-client-secret",
+  });
+
+  // The doctor ran, so the flag was not a refusal and not a mode of its own.
+  assert.equal(result.code, 0);
+  assert.ok(!result.stderr.includes("Unknown option"));
 });
 
 test("--help wins over an unknown flag", async () => {

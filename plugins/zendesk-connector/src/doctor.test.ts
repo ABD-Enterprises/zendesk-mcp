@@ -121,6 +121,75 @@ test("the inventory still prints the configuration when the tool policy is broke
   assert.match(printed, /The enabled tools could not be resolved\./);
 });
 
+test("says the configuration failed when the configuration cannot be loaded", async () => {
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () => {
+      throw new Error("the configuration is not usable");
+    },
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  // The tools are not what failed, so the message must not say they were.
+  assert.match(printed, /The configuration could not be resolved\./);
+  assert.ok(!printed.includes("The enabled tools could not be resolved."));
+});
+
+test("prints the granted scope and the expiry of the stored token", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-doctor-token-"));
+  tempDirs.push(directory);
+  const tokenFile = join(directory, "oauth.json");
+  await writeFile(
+    tokenFile,
+    JSON.stringify({
+      access_token: "invented-access-token",
+      refresh_token: "invented-refresh-token",
+      scope: "tickets:read",
+      expires_at: "2026-12-01T00:00:00.000Z",
+    }),
+    { mode: 0o600 },
+  );
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () =>
+      config({ mode: "authorization_code", tokenFile, scope: "tickets:read tickets:write" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  // The scope above is what the connector asks for; the stored one is what
+  // the account granted, and only the stored one says what the token can do.
+  assert.match(printed, /Scope: tickets:read tickets:write/);
+  assert.match(printed, /Granted scope: tickets:read/);
+  assert.match(printed, /Token expires: 2026-12-01T00:00:00\.000Z/);
+  // Nothing printed carries a credential.
+  assert.ok(!printed.includes("invented-access-token"));
+  assert.ok(!printed.includes("invented-refresh-token"));
+});
+
+test("prints no token lines when there is no stored token", async () => {
+  const out: string[] = [];
+
+  await runDoctor({
+    loadConfig: () => config({ mode: "client_credentials" }),
+    tools: true,
+    writeOut: (line) => out.push(line),
+    writeError: () => {},
+  });
+
+  const printed = out.join("");
+  assert.match(printed, /Scope: read write/);
+  assert.ok(!printed.includes("Granted scope:"));
+  assert.ok(!printed.includes("Token expires:"));
+});
+
 test("names the read-only tool set in the inventory", async () => {
   const previous = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_READ_ONLY = "1";

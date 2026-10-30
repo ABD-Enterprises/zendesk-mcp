@@ -177,13 +177,21 @@ function writeInventory(
   try {
     loaded = (options.loadConfig ?? getConfig)();
   } catch {
-    // The checks already reported what is wrong with the configuration.
-    writeOut("The enabled tools could not be resolved.\n");
+    // The checks already reported what is wrong with the configuration, so
+    // the inventory says what it could not do — the configuration, not the
+    // tools.
+    writeOut("The configuration could not be resolved.\n");
     return;
   }
   writeOut(`Base URL: ${loaded.baseUrl}\n`);
   writeOut(`OAuth mode: ${loaded.mode}\n`);
   writeOut(`Scope: ${loaded.scope}\n`);
+  // The scope the account granted and the token's expiry. The scope above is
+  // the one the connector asks for; only the stored token says what it was
+  // given, and reading it asks the account nothing.
+  const stored = storedTokenDetails(loaded);
+  if (stored.scope) writeOut(`Granted scope: ${stored.scope}\n`);
+  if (stored.expiresAt) writeOut(`Token expires: ${stored.expiresAt}\n`);
   try {
     const enabled = [...configuredTools()].sort();
     writeOut(
@@ -193,6 +201,34 @@ function writeInventory(
     // The tool policy is broken, but the configuration above is what the
     // operator asked for, so it is printed anyway.
     writeOut("The enabled tools could not be resolved.\n");
+  }
+}
+
+/**
+ * The granted scope and the expiry of the stored token.
+ *
+ * The client-credentials mode stores no token — it asks the account for one
+ * per request — so there is nothing to report for it. A token file that
+ * cannot be read is reported by the checks, and the inventory leaves the
+ * lines out rather than repeating the problem.
+ */
+function storedTokenDetails(config: DoctorConfig): {
+  scope?: string;
+  expiresAt?: string;
+} {
+  if (config.mode !== "authorization_code") return {};
+  try {
+    const payload = JSON.parse(readFileSync(config.tokenFile, "utf8")) as {
+      scope?: unknown;
+      expires_at?: unknown;
+    };
+    return {
+      scope: typeof payload.scope === "string" ? payload.scope : undefined,
+      expiresAt:
+        typeof payload.expires_at === "string" ? payload.expires_at : undefined,
+    };
+  } catch {
+    return {};
   }
 }
 

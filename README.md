@@ -349,8 +349,10 @@ node plugins/zendesk-connector/dist/index.js --doctor
 ```
 
 With `--tools` the doctor also prints what the agent will receive: the
-resolved base URL, the OAuth mode, the effective scope, and the enabled tool
-names.
+resolved base URL, the OAuth mode, the requested scope, and the enabled tool
+names. When a token is stored, it also prints the scope the account granted
+and the token's expiry, so the scope the connector asks for and the scope it
+was given can be compared. Nothing it prints contacts Zendesk.
 
 ```sh
 npm run doctor -- --tools
