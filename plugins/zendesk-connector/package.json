@@ -37,6 +37,8 @@
     "check": "npm run typecheck && npm test",
     "start": "node ./dist/index.js",
     "doctor": "tsc -p tsconfig.build.json && node ./dist/index.js --doctor",
+    "logout": "node ./dist/index.js --logout",
+    "healthcheck": "node ./dist/index.js --healthcheck",
     "e2e": "node ./e2e/run-e2e.mjs",
     "e2e:mock": "node --test ./e2e/mock.test.mjs",
     "oauth:setup": "npm run build && node ./dist/oauth-setup.js",

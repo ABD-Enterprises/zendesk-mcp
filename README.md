@@ -421,6 +421,11 @@ without serving when it is started with `--healthcheck`, or with
 node plugins/zendesk-connector/dist/index.js --healthcheck
 ```
 
+The same check runs as `npm run healthcheck` from `plugins/zendesk-connector`,
+and the logout that revokes the token and removes the stored credentials runs
+as `npm run logout` there. Both run the built output, so a checkout needs
+`npm run build` first; an installed package already ships `dist`.
+
 A valid configuration prints `{"healthcheck":"ok"}` on stdout and exits 0. A
 missing or invalid one prints `{"healthcheck":"fail","error":"..."}` on stderr
 and exits 1. The check never contacts Zendesk and never prints credential
@@ -446,7 +451,7 @@ server writes `server_start` and `server_shutdown` events to stderr.
 | `ZENDESK_OAUTH_SCOPE` | Least-privilege ticket scopes | Space-separated Zendesk scopes |
 | `ZENDESK_OAUTH_CALLBACK_PORT` | `3219` | Local setup callback port |
 | `ZENDESK_MAX_RETRIES` | `2` | Automatic `429` retries, from 0 to 5 |
-| `ZENDESK_MAX_RETRY_DELAY_MS` | `10000` | Maximum automatic rate-limit wait |
+| `ZENDESK_MAX_RETRY_DELAY_MS` | `10000` | Maximum automatic rate-limit wait, from 0 to 60000 |
 | `ZENDESK_HEALTHCHECK` | | Set to `1` or `true` to validate the configuration and exit instead of serving |
 | `ZENDESK_ALLOWED_TOOLS` | All compiled tools | Comma-separated subset of tool names to serve |
 | `ZENDESK_READ_ONLY` | | Set to `1` or `true` to serve only the nine read tools; a `ZENDESK_ALLOWED_TOOLS` value naming a write tool is then rejected at startup |
