@@ -363,8 +363,12 @@ running with loose permissions. The token file
 is not checked when it is read: the connector writes it with the owner-only
 mode and replaces it atomically, so it repairs the mode on the next write,
 but until then it keeps whatever the restore left behind. The console reads
-the same client file without checking its mode, so the owner-only mode is
-the only protection there.
+the same client file and applies the same rule: it refuses to start when the
+file is readable by its group or by others — except on Windows, where Node
+reports synthetic permission bits regardless of the file's ACLs and the check
+is skipped — so a console on a client file with loose permissions fails
+closed at startup with "The Zendesk OAuth client file must be readable only
+by its owner (chmod 600)".
 
 In a container deployment the client file also has to be readable by the
 container's unprivileged `node` user. Align the owner with that user rather
