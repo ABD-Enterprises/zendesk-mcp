@@ -79,13 +79,13 @@ The six list tools and `zendesk_search_tickets` return a shared envelope:
 - The items follow under a tool-specific key: `brands`, `groups`, `users`,
   `organizations`, `ticket_fields`, `ticket_forms`, or `results` for search.
 
-Each search result additionally gains an `agent_url` field (see below) when
-the result carries a ticket id, and a `resultType` field that names the kind of
-record the search returned — `ticket`, `user`, `group` or `organization`.
-Zendesk's search endpoint is shared, so a query without a `type:` qualifier
-answers with those other kinds too. Only a result whose `resultType` is
-`ticket` carries an `agent_url`; a user result is not a ticket and gets no
-ticket URL.
+Each search result additionally gains a `resultType` field that names the kind
+of record the search returned — `ticket`, `user`, `group` or `organization` —
+besides Zendesk's own `result_type`, which stays untouched. Zendesk's search
+endpoint is shared, so a query without a `type:` qualifier answers with those
+other kinds too. Only a result whose `resultType` is `ticket` carries an
+`agent_url` (see below); a user result is not a ticket and gets no ticket
+URL.
 
 ### zendesk_status
 
@@ -115,8 +115,9 @@ carries:
 - `commentPage`: the page of comments the call returned.
 - `commentsTruncated`: true when more comment pages exist beyond the ones
   returned.
-- `commentsNextPage`: the URL of the next comment page, or null when the
-  thread ends here.
+- `commentsNextPage`: Zendesk's own URL of the next comment page, or null when
+  the thread ends here. The tool's continuation is `commentPage`: call it again
+  with the next page number.
 
 Zendesk returns a ticket's comments oldest first, so the first page holds the
 start of the thread rather than its most recent replies.
@@ -134,9 +135,9 @@ new ticket's id.
 ### agent_url
 
 Tools that return a single ticket add `agent_url`, the agent-interface URL for
-that ticket: `<baseUrl>/agent/tickets/<id>`. Search results carry the same
-field per item when the item has an id. It is a convenience link, not an API
-endpoint; the tools never call it.
+that ticket: `<baseUrl>/agent/tickets/<id>`. A search result carries the same
+field when it is a ticket result with an id. It is a convenience link, not an
+API endpoint; the tools never call it.
 
 ## Error contract
 

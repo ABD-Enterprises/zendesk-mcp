@@ -61,7 +61,7 @@ test("surfaces the first search page and reports that another page exists", asyn
     assert.equal(payload.perPage, 25);
     assert.equal(payload.count, 42);
     // Ticket fields are passed through untouched and keep their order; only
-    // `agent_url` is added.
+    // `resultType` and `agent_url` are added.
     assert.deepEqual(payload.results, [
       { ...EXAMPLE_TICKET, resultType: "ticket", agent_url: EXAMPLE_AGENT_URL },
       { ...SECOND_EXAMPLE_TICKET, resultType: "ticket", agent_url: SECOND_EXAMPLE_AGENT_URL },

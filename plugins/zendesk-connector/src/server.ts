@@ -130,10 +130,10 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       title: "Get Zendesk ticket",
       description:
         "Get a Zendesk ticket with requester, assignee, organization, and " +
-        "the first page of its comments. Zendesk returns a ticket's comments " +
-        "oldest first, so the page holds the start of the thread. " +
-        "commentsTruncated says whether more comments exist; call again with " +
-        "commentPage to read the next page.",
+        "the page of its comments named by commentPage. Zendesk returns a " +
+        "ticket's comments oldest first, so the first page holds the start " +
+        "of the thread. commentsTruncated says whether more comment pages " +
+        "exist; call again with the next commentPage to read on.",
       inputSchema: z.object({
         ticketId: z
           .number()
