@@ -248,6 +248,9 @@ test("falls back to the next page when the URL names no usable page", async () =
   // A page of zero, or of half a page, or of a word, is not a page a caller
   // could read, so the number the tool reports is the page after the one it
   // asked for rather than the one the URL names.
+  // Every case is checked, and every case is reported: a loop that stopped
+  // at the first failure would name one of them.
+  const wrong: string[] = [];
   for (const page of ["0", "-1", "1.5", "abc", ""]) {
     const { client } = contractClient((url) => {
       if (url.pathname.endsWith("/comments.json")) {
@@ -267,10 +270,41 @@ test("falls back to the next page when the URL names no usable page", async () =
         commentPage: 2,
       });
 
-      assert.equal(payload.commentsNextPageNumber, 3, `page=${page}`);
+      if (payload.commentsNextPageNumber !== 3) {
+        wrong.push(`page=${page} gave ${payload.commentsNextPageNumber}`);
+      }
     } finally {
       await session.close();
     }
+  }
+
+  assert.deepEqual(wrong, []);
+});
+
+test("falls back to the next page when the URL cannot be read", async () => {
+  // A next-page URL the parser refuses carries no page, so the tool falls
+  // back to the page after the one it asked for.
+  const { client } = contractClient((url) => {
+    if (url.pathname.endsWith("/comments.json")) {
+      return {
+        comments: [EXAMPLE_COMMENT],
+        users: [EXAMPLE_COMMENT_USER],
+        next_page: "http://[",
+      };
+    }
+    return { ticket: EXAMPLE_TICKET, users: [], organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+      ticketId: 42,
+      commentPage: 2,
+    });
+
+    assert.equal(payload.commentsNextPageNumber, 3);
+  } finally {
+    await session.close();
   }
 });
 
