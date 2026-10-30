@@ -188,8 +188,13 @@ What the error payload never contains: OAuth credentials, access or refresh
 tokens, or token-file contents. The payload is passed through a redaction step
 that replaces any value whose key contains `token`, `secret`, `password`,
 `authorization`, or `cookie` (case-insensitive) with `[REDACTED]`, recursively.
-The `details.response` body is whatever Zendesk's own error response said; it
-does not echo the connector's credentials.
+A string is scrubbed as a second layer, because a credential can sit in the
+value of an innocuous name: the value that follows a name marking one —
+`client_secret`, `api key` — and a separator is masked whatever it looks
+like, and a value that merely stands next to such a name is masked when it
+has the shape of a credential. The `details.response` body is whatever
+Zendesk's own error response said; it does not echo the connector's
+credentials.
 
 ## Annotations contract
 
