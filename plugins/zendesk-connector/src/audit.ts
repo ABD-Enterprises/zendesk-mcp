@@ -134,39 +134,11 @@ const SENSITIVE_KEY = /token|secret|password|authorization|cookie/i;
  * field name — `credential`, `api_key` and `api-key` — to the names the key
  * filter knows.
  */
-const SENSITIVE_NAME = "token|secret|password|authorization|cookie|credential|api[-_]?key";
+const SENSITIVE_NAME =
+  /token|secret|password|authorization|cookie|credential|api[-_]?key/i;
 
-/** A name and its quoted value: `"access_token": "<credential>"`. */
-const QUOTED_VALUE = new RegExp(
-  `(["']?)([A-Za-z0-9_.-]*(?:${SENSITIVE_NAME})[A-Za-z0-9_.-]*)` +
-    `(["']?\\s*[:=]\\s*)("[^"]*"|'[^']*')`,
-  "gi",
-);
-
-/** A name and its bare value: `access_token=<credential>`. */
-const BARE_VALUE = new RegExp(
-  `([A-Za-z0-9_.-]*(?:${SENSITIVE_NAME})[A-Za-z0-9_.-]*\\s*[:=]\\s*)` +
-    `([^\\s"',;&}\\]]+)`,
-  "gi",
-);
-
-/** A name and a neighbouring credential: `client_secret <credential>`. */
-const NEIGHBOUR_VALUE = new RegExp(
-  `([A-Za-z0-9_.-]*(?:${SENSITIVE_NAME})[A-Za-z0-9_.-]*\\s+)` +
-    `([^\\s"',;&}\\]]{12,})`,
-  "gi",
-);
-
-/**
- * True when a value carries the marks of a credential rather than a word: a
- * digit, a separator, or a change of case.
- */
-function looksLikeToken(value: string): boolean {
-  return (
-    /[0-9._~+/=-]/.test(value) ||
-    (/[a-z]/.test(value) && /[A-Z]/.test(value))
-  );
-}
+/** A word that can be part of a name. */
+const NAME_TOKEN = /[A-Za-z0-9_.-]+/g;
 
 /**
  * True when a value has the shape of a credential: opaque characters, a
@@ -174,7 +146,9 @@ function looksLikeToken(value: string): boolean {
  */
 function looksLikeCredential(value: string): boolean {
   if (!/^[A-Za-z0-9._~+/=-]{12,}$/.test(value)) return false;
-  return looksLikeToken(value);
+  return (
+    /[0-9._~+/=-]/.test(value) || (/[a-z]/.test(value) && /[A-Z]/.test(value))
+  );
 }
 
 export function redact(value: unknown): unknown {
@@ -205,20 +179,87 @@ export function redact(value: unknown): unknown {
  * the value to be a credential. A value that merely stands next to a name is
  * masked only when it has the shape of a credential, so prose around a name
  * ("the password was rejected") survives.
+ *
+ * The scan walks the names in the text instead of matching a name anywhere in
+ * it. A pattern would backtrack quadratically over a long string that holds no
+ * credential, and the strings that reach here can be a whole error body from a
+ * remote server — which is exactly the input an attacker chooses.
  */
 function scrubText(value: string): string {
-  return value
-    // The Authorization header's own spelling.
-    .replace(
-      /\b(Bearer)\s+([^\s"',;]{4,})/gi,
-      (match, prefix: string, candidate: string) =>
-        looksLikeToken(candidate) ? `${prefix} [REDACTED]` : match,
-    )
-    .replace(QUOTED_VALUE, '$1$2$3"[REDACTED]"')
-    .replace(BARE_VALUE, "$1[REDACTED]")
-    .replace(NEIGHBOUR_VALUE, (match, prefix: string, candidate: string) =>
-      looksLikeCredential(candidate) ? `${prefix}[REDACTED]` : match,
-    );
+  // The Authorization header's own spelling. The keyword declares the value to
+  // be a credential, so it is masked whatever it looks like.
+  const scrubbed = value.replace(
+    /\b(Bearer|Basic)\s+([^\s"',;]{4,})/gi,
+    "$1 [REDACTED]",
+  );
+
+  const separator = /["']?[ \t]*[:=][ \t]*/y;
+  const quotedValue = /"[^"]*"|'[^']*'/y;
+  const bareValue = /[^\s"',;&}\]]+/y;
+  const space = /[ \t]+/y;
+
+  const names = [...scrubbed.matchAll(NAME_TOKEN)];
+  let result = "";
+  let copied = 0;
+
+  for (let index = 0; index < names.length; index += 1) {
+    const match = names[index];
+    const name = match[0];
+    // "api key" is one name written with a space.
+    const next = names[index + 1];
+    const isApiKey =
+      name.toLowerCase() === "api" &&
+      next !== undefined &&
+      next[0].toLowerCase() === "key";
+    if (!SENSITIVE_NAME.test(name) && !isApiKey) continue;
+
+    const nameEnd = match.index + name.length;
+    const searchFrom = isApiKey ? next.index + next[0].length : nameEnd;
+
+    // A name and a separator: the value that follows is a credential.
+    separator.lastIndex = searchFrom;
+    const afterSeparator = separator.exec(scrubbed);
+    if (afterSeparator) {
+      const valueStart = searchFrom + afterSeparator[0].length;
+      quotedValue.lastIndex = valueStart;
+      const quoted = quotedValue.exec(scrubbed);
+      bareValue.lastIndex = valueStart;
+      const bare = quoted ?? bareValue.exec(scrubbed);
+      if (!bare) continue;
+      // A quoted value keeps its quotes: only the credential inside is masked.
+      const maskedStart = quoted ? valueStart + 1 : valueStart;
+      const maskedEnd = quoted ? valueStart + bare[0].length - 1 : valueStart + bare[0].length;
+      result += scrubbed.slice(copied, maskedStart) + "[REDACTED]";
+      copied = maskedEnd;
+      // The names inside the masked value are gone with it.
+      while (index + 1 < names.length && names[index + 1].index < copied) {
+        index += 1;
+      }
+      continue;
+    }
+
+    // A name and a neighbouring credential: "client_secret <credential>". The
+    // credential can stand one word further off ("the api key is <value>"),
+    // so two words are looked at.
+    let position = searchFrom;
+    for (let word = 0; word < 2; word += 1) {
+      space.lastIndex = position;
+      const afterSpace = space.exec(scrubbed);
+      if (!afterSpace) break;
+      const valueStart = position + afterSpace[0].length;
+      bareValue.lastIndex = valueStart;
+      const bare = bareValue.exec(scrubbed);
+      if (!bare) break;
+      if (looksLikeCredential(bare[0])) {
+        result += scrubbed.slice(copied, valueStart) + "[REDACTED]";
+        copied = valueStart + bare[0].length;
+        break;
+      }
+      position = valueStart + bare[0].length;
+    }
+  }
+
+  return result + scrubbed.slice(copied);
 }
 
 function writeEvent(payload: unknown, sink: LogSink): void {

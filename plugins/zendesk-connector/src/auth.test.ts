@@ -329,7 +329,7 @@ test("removeTokenFile removes the stored token and tolerates a missing file", as
   assert.equal(await removeTokenFile(tokenFile), false);
 });
 
-test("writeTokenFile does not follow a link left at the temporary path", async (t) => {
+test("writeTokenFile writes the token through no link", async (t) => {
   // Creating a link needs a privilege Windows does not grant by default.
   if (process.platform === "win32") {
     t.skip("symlinks need a privilege this host does not grant");
@@ -339,31 +339,35 @@ test("writeTokenFile does not follow a link left at the temporary path", async (
   const tokenFile = join(directory, "oauth.json");
   const captured = join(directory, "captured.json");
   await writeFile(captured, "");
-  // The temporary name is predictable, so a link may already sit there.
+  // A link at the token file's own path would be written through by a plain
+  // write, and a link at the temporary path would be written through by a
+  // write that follows it. The temporary name carries random bytes, so no
+  // local user can guess where the token lands on its way there.
+  await symlink(captured, tokenFile);
   await symlink(captured, `${tokenFile}.${process.pid}.tmp`);
 
   await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
 
-  // The link was replaced rather than followed: the file it pointed at still
+  // The links were replaced, not followed: the file they pointed at still
   // holds nothing, and the token file holds the token.
   assert.equal(await readFile(captured, "utf8"), "");
   const written = JSON.parse(await readFile(tokenFile, "utf8"));
   assert.equal(written.access_token, "invented-access-token");
 });
 
-test("writeTokenFile replaces a stale temporary file", async () => {
+test("writeTokenFile writes twice in a row", async () => {
   const directory = await mkdtemp(join(tmpdir(), "zendesk-token-stale-test-"));
   const tokenFile = join(directory, "oauth.json");
-  // A temporary file of our own may survive a run that was killed.
-  await writeFile(`${tokenFile}.${process.pid}.tmp`, "stale");
 
   await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+  await writeTokenFile(tokenFile, { access_token: "invented-second-token" });
 
+  // Neither write may trip over the other's temporary file.
   const written = JSON.parse(await readFile(tokenFile, "utf8"));
-  assert.equal(written.access_token, "invented-access-token");
+  assert.equal(written.access_token, "invented-second-token");
 });
 
-test("writeTokenFile tightens a shared token directory", async (t) => {
+test("writeTokenFile refuses a shared token directory", async (t) => {
   // Node reports synthetic permission bits on Windows, so the check is skipped
   // there instead of failing every run.
   if (process.platform === "win32") {
@@ -375,11 +379,17 @@ test("writeTokenFile tightens a shared token directory", async (t) => {
   // keeps its own permissions.
   await chmod(directory, 0o777);
 
-  await writeTokenFile(join(directory, "oauth.json"), {
-    access_token: "invented-access-token",
-  });
-
-  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  // Another local user could replace the token file in a directory they can
+  // write to, so the write is refused rather than the directory tightened:
+  // the directory may be one the operator shares, and changing its
+  // permissions behind their back is not the connector's call.
+  await assert.rejects(
+    () => writeTokenFile(join(directory, "oauth.json"), {
+      access_token: "invented-access-token",
+    }),
+    /writable by other users/,
+  );
+  assert.equal((await stat(directory)).mode & 0o777, 0o777);
 });
 
 test("the tool status omits the token file's path", () => {

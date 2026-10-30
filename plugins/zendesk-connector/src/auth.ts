@@ -3,11 +3,11 @@ import {
   mkdir,
   readFile,
   rename,
-  rm,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -617,24 +617,21 @@ export async function writeTokenFile(
   await mkdir(directory, { recursive: true, mode: 0o700 });
   // mkdir's mode applies only to a directory it creates. An existing one keeps
   // its own permissions, and a group- or world-writable directory would let
-  // another local user replace what is written into it, so the directory is
-  // tightened to owner-only before the token is written.
+  // another local user replace what is written into it. The directory is not
+  // tightened here — it may be one the operator shares — so the write is
+  // refused instead, and the operator is told what to fix.
   if ((statSync(directory).mode & 0o022) !== 0) {
-    await chmod(directory, 0o700);
+    throw new ZendeskAuthError(
+      "The OAuth token directory is writable by other users, so another local user could replace the token file. Make it owner-only (chmod 700) and try again.",
+    );
   }
-  const temporary = `${tokenFile}.${process.pid}.tmp`;
+  // The name carries random bytes, so no second writer and no local user can
+  // guess where the token lands on its way to the token file.
+  const temporary = `${tokenFile}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
   const body = `${JSON.stringify(token, null, 2)}\n`;
-  // The temporary name is predictable, so a link may already sit there. The
-  // exclusive flag fails instead of following the link, and the retry removes
-  // a stale file of our own and writes again with the same flag — so a link
-  // planted in between fails the write instead of capturing the token.
-  try {
-    await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
-  } catch (error) {
-    if (!isAlreadyExists(error)) throw error;
-    await rm(temporary, { force: true });
-    await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
-  }
+  // The exclusive flag fails instead of following a link left at the
+  // temporary path, so the token never reaches a file somebody else owns.
+  await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
   // rename replaces the destination rather than writing through it, so a link
   // left at the token file's own path is replaced by the token file.
   await rename(temporary, tokenFile);
@@ -779,15 +776,5 @@ function isMissingFile(error: unknown): boolean {
     error !== null &&
     "code" in error &&
     (error as { code?: unknown }).code === "ENOENT"
-  );
-}
-
-/** True when a write failed because the path already exists. */
-function isAlreadyExists(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "EEXIST"
   );
 }

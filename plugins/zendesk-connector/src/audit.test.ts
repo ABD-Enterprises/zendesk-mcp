@@ -75,10 +75,39 @@ test("scrubs a credential that is assigned to a sensitive name", () => {
     "access_token=AT-111 raw body",
     '{"access_token":"AT-111"}',
     "Bearer AT-111",
+    "Basic dXNlcjpwYXNzd29yZA==",
+    "Bearer abcdefghijklmnopqrst",
   ]) {
     const scrubbed = redact(text) as string;
     assert.ok(!scrubbed.includes("AT-111"), `not scrubbed: ${text}`);
   }
+});
+
+test("scrubs a credential that stands next to a sensitive name", () => {
+  for (const [text, secret] of [
+    ["client_secret super-secret-value rejected", "super-secret-value"],
+    ["the api key is AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"],
+  ]) {
+    const scrubbed = redact(text) as string;
+    assert.ok(!scrubbed.includes(secret), `not scrubbed: ${text}`);
+  }
+});
+
+test("scrubs a long body in time", () => {
+  // The strings that reach the filter can be a whole error body from a remote
+  // server. A pattern that searches for a name anywhere in the text
+  // backtracks quadratically over such a body, which lets a remote server
+  // wedge the server with a large answer.
+  const body = "a".repeat(100_000);
+  const started = Date.now();
+
+  const scrubbed = redact(body) as string;
+
+  assert.equal(scrubbed, body);
+  assert.ok(
+    Date.now() - started < 5_000,
+    "scrubbing a large body must not take seconds",
+  );
 });
 
 test("keeps ordinary text and prose around a sensitive name", () => {

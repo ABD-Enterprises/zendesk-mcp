@@ -97,10 +97,12 @@ the doctor skips the check there.
 - By default, tokens are stored outside the repository, in the user's
   configuration directory.
 - No tool result and no console response contains credential material.
-  `zendesk_status` reports the base URL, the OAuth mode, the scope, the token
-  file path in `authorization_code` mode, the refresh capability, the expiry,
-  and the authenticated user, and the operations console never returns
-  credentials to the browser.
+  `zendesk_status` reports the base URL, the OAuth mode, the scope, the
+  refresh capability, the expiry, and the authenticated user — not the token
+  file's path, which is filesystem information the agent would only repeat.
+  The operator learns the path from `npm run doctor`, which names the file it
+  checked, and the operations console never returns credentials to the
+  browser.
 
 The operations console reads the same client file, from
 `ZENDESK_OAUTH_CLIENT_FILE` or from the default path, and uses the

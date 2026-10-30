@@ -70,6 +70,7 @@ test("prints one all-clear line to stdout and exits zero", async () => {
   });
 
   assert.equal(code, 0);
+  // The access-token mode has no token file, so there is no path to name.
   assert.deepEqual(out, ["Zendesk connector doctor: all checks passed.\n"]);
   assert.deepEqual(err, []);
 });
@@ -735,7 +736,12 @@ test("passes against a real authorization-code configuration", async () => {
   });
 
   assert.equal(code, 0);
-  assert.deepEqual(out, ["Zendesk connector doctor: all checks passed.\n"]);
+  // The doctor names the token file, so the operator can find the token the
+  // tool result no longer points at.
+  assert.deepEqual(out, [
+    "Zendesk connector doctor: all checks passed.\n",
+    `OAuth token file: ${files.tokenFile}\n`,
+  ]);
   assert.deepEqual(err, []);
 });
 
