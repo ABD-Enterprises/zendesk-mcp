@@ -421,6 +421,10 @@ without serving when it is started with `--healthcheck`, or with
 node plugins/zendesk-connector/dist/index.js --healthcheck
 ```
 
+The same check runs as `npm run healthcheck` from `plugins/zendesk-connector`,
+and the logout that revokes the token and removes the stored credentials runs
+as `npm run logout` there.
+
 A valid configuration prints `{"healthcheck":"ok"}` on stdout and exits 0. A
 missing or invalid one prints `{"healthcheck":"fail","error":"..."}` on stderr
 and exits 1. The check never contacts Zendesk and never prints credential

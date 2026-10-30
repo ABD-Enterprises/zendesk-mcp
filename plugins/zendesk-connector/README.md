@@ -169,6 +169,27 @@ npm install
 npm run build
 ```
 
+### How the server is started
+
+The plugin manifest of this directory, `.mcp.json`, starts the built server
+with `node ./dist/index.js`. The path is relative to the plugin root: a host
+that loads the plugin resolves the manifest and the entrypoint against the
+directory the plugin was installed in, and starts the server from there. A
+host that resolves the entrypoint against its own working directory instead
+would not find it — so a manual MCP configuration names the absolute path of
+the built file, as the repository README shows:
+
+```json
+{
+  "mcpServers": {
+    "zendesk": {
+      "command": "node",
+      "args": ["/absolute/path/to/zendesk-mcp/plugins/zendesk-connector/dist/index.js"]
+    }
+  }
+}
+```
+
 ### Container
 
 ```sh
