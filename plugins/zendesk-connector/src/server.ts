@@ -48,7 +48,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
         return {
           configured: true,
           baseUrl: client.baseUrl,
-          oauth: client.auth.status(),
+          oauth: client.auth.toolStatus(),
           user: response.user,
         };
       }),

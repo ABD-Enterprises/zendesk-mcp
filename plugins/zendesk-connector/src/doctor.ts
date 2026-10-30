@@ -115,7 +115,7 @@ export async function checkDoctor(
 
 /**
  * Runs the doctor preflight: one line per failing check on stderr and exit 1,
- * or a single all-clear line on stdout and exit 0. The configuration messages
+ * or an all-clear line on stdout and exit 0. The configuration messages
  * and the token file's missing/unparseable/incomplete messages reuse the exact
  * error strings startup produces; the port and the token file-state messages
  * are the doctor's own. None of them carry credential material.
@@ -135,10 +135,26 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
   const problems = await checkDoctor(options);
   if (problems.length === 0) {
     writeOut("Zendesk connector doctor: all checks passed.\n");
+    // The tool result does not name the token file any more, so the doctor is
+    // where the operator learns where the token lives. The path is filesystem
+    // information for the person running it, never credential material.
+    const tokenFile = tokenFileOf(options);
+    if (tokenFile) writeOut(`OAuth token file: ${tokenFile}\n`);
     return 0;
   }
   for (const problem of problems) writeError(`${problem}\n`);
   return 1;
+}
+
+/** The token file of a configuration that passed the checks, if it has one. */
+function tokenFileOf(options: DoctorOptions): string | undefined {
+  try {
+    const loaded = (options.loadConfig ?? getConfig)();
+    return loaded.mode === "authorization_code" ? loaded.tokenFile : undefined;
+  } catch {
+    // The problems already say what is wrong with the configuration.
+    return undefined;
+  }
 }
 
 /**

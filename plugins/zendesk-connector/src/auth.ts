@@ -7,6 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -380,6 +381,24 @@ export class ZendeskOAuth {
     };
   }
 
+  /**
+   * The status the MCP tool reports.
+   *
+   * It is the same status without the token file's path. A tool result reaches
+   * the agent, and a filesystem path is information the agent would only
+   * repeat — while the operator still gets the path from the doctor and the
+   * logout, which print it for the person running them.
+   */
+  toolStatus() {
+    const status = this.status();
+    return {
+      mode: status.mode,
+      scope: status.scope,
+      refreshEnabled: status.refreshEnabled,
+      expiresAt: status.expiresAt,
+    };
+  }
+
   private async refresh(): Promise<StoredToken> {
     if (!this.refreshInFlight) {
       this.refreshInFlight = this.requestNewToken().finally(() => {
@@ -596,10 +615,25 @@ export async function writeTokenFile(
 ): Promise<void> {
   const directory = dirname(tokenFile);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const temporary = `${tokenFile}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(token, null, 2)}\n`, {
-    mode: 0o600,
-  });
+  // mkdir's mode applies only to a directory it creates. An existing one keeps
+  // its own permissions, and a group- or world-writable directory would let
+  // another local user replace what is written into it. The directory is not
+  // tightened here — it may be one the operator shares — so the write is
+  // refused instead, and the operator is told what to fix.
+  if ((statSync(directory).mode & 0o022) !== 0) {
+    throw new ZendeskAuthError(
+      "The OAuth token directory is writable by other users, so another local user could replace the token file. Make it owner-only (chmod 700) and try again.",
+    );
+  }
+  // The name carries random bytes, so no second writer and no local user can
+  // guess where the token lands on its way to the token file.
+  const temporary = `${tokenFile}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+  const body = `${JSON.stringify(token, null, 2)}\n`;
+  // The exclusive flag fails instead of following a link left at the
+  // temporary path, so the token never reaches a file somebody else owns.
+  await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
+  // rename replaces the destination rather than writing through it, so a link
+  // left at the token file's own path is replaced by the token file.
   await rename(temporary, tokenFile);
   await chmod(tokenFile, 0o600);
 }
