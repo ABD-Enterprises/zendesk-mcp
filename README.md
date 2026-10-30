@@ -90,10 +90,14 @@ the same build works against any account:
 | `ZENDESK_CONSOLE_BRAND_ID` | Brand the console is scoped to |
 | `ZENDESK_CONSOLE_REQUEST_TYPE_FIELD_ID` | Ticket field that carries the request type |
 | `ZENDESK_CONSOLE_SYSTEM_FIELD_ID` | Ticket field that carries the system |
-| `ZENDESK_CONSOLE_VIEW_OPEN_ID` | View id for the open queue |
 | `ZENDESK_CONSOLE_VIEW_UNTRIAGED_ID` | View id for the untriaged queue |
 | `ZENDESK_CONSOLE_VIEW_AGING_ID` | View id for the aging report |
-| `ZENDESK_CONSOLE_VIEW_REQUEST_TYPE_ID` | View id for the request-type report |
+| `ZENDESK_CONSOLE_VIEW_OPEN_ID` | View id for the open queue — optional, only builds a link |
+| `ZENDESK_CONSOLE_VIEW_REQUEST_TYPE_ID` | View id for the request-type report — optional, only builds a link |
+
+The first five are required: without one of them the console cannot read the
+dashboard. The last two only build a link into the account, so the dashboard
+is read without them and the status endpoint names them as missing.
 
 See [`apps/operations-console/.env.example`](apps/operations-console/.env.example)
 for a template. When a variable is missing, the console reports the missing

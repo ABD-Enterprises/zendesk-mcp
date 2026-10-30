@@ -6,6 +6,8 @@ import { resetCaches } from "../server.mjs";
 import { startMockZendesk } from "./helpers/mock-zendesk.mjs";
 import {
   CONFIG_ENV,
+  LINK_CONFIG_ENV,
+  REQUIRED_CONFIG_ENV,
   applyConsoleConfig,
   clearConsoleConfig,
   getJson,
@@ -49,7 +51,7 @@ test("reports a configured console", async () => {
 
   assert.equal(status, 200);
   assert.match(contentType, /application\/json/);
-  assert.deepEqual(body, { ok: true, configured: true, missing: [] });
+  assert.deepEqual(body, { ok: true, configured: true, missing: [], missingLinks: [] });
 });
 
 test("names the settings a console is missing", async () => {
@@ -60,7 +62,8 @@ test("names the settings a console is missing", async () => {
   assert.equal(status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.configured, false);
-  assert.deepEqual(body.missing, Object.keys(CONFIG_ENV));
+  assert.deepEqual(body.missing, REQUIRED_CONFIG_ENV);
+  assert.deepEqual(body.missingLinks, LINK_CONFIG_ENV);
 });
 
 test("reports a partially configured console", async () => {
@@ -71,6 +74,7 @@ test("reports a partially configured console", async () => {
   assert.equal(status, 200);
   assert.equal(body.configured, false);
   assert.deepEqual(body.missing, ["ZENDESK_CONSOLE_VIEW_AGING_ID"]);
+  assert.deepEqual(body.missingLinks, []);
 });
 
 test("does not call the account to report its status", async () => {

@@ -28,7 +28,7 @@ import { formatBrandName, formatCount } from "./lib/format.mjs";
 import { isReviewed, parseReviewed, toggleReviewed, REVIEWED_STORAGE_KEY } from "./lib/knowledge.mjs";
 import { queueBars } from "./lib/metrics.mjs";
 import { matchesQuery, sectionFromHash, sectionLabel } from "./lib/navigation.mjs";
-import { EMPTY_OVERVIEW, connectionStatus, openQueueHref, toOverviewState, viewHref } from "./lib/overview.mjs";
+import { EMPTY_OVERVIEW, connectionStatus, createLoadSequence, loadOverview, measurementIsWhole, measurementNote, openQueueHref, viewHref } from "./lib/overview.mjs";
 import { ticketRow } from "./lib/tickets.mjs";
 
 const navigation = [
@@ -68,13 +68,24 @@ function BarList({ data, color = "teal" }: { data: QueueMetric[]; color?: "teal"
   ))}</div>;
 }
 
+function MeasurementNote({ note }: { note: string }) {
+  return note ? <p className="metric-note">{note}</p> : null;
+}
+
 function OverviewPage({ data }: { data: Overview }) {
   const oldest = data.tickets[0] ? ticketRow(data.tickets[0]) : undefined;
+  const note = measurementNote(data.measured, data.connected);
+  // The band's count sentence states a fact about the queue, so it may only
+  // do so when the dashboard describes the whole queue. The heading above it
+  // is static copy.
+  const whole = measurementIsWhole(data.measured);
   return <>
     <section className="page-heading">
       <div><p className="eyebrow">Service desk command center</p><h1>Today’s operating picture</h1><p>Live queue health, workflow readiness, and the next actions that need ownership.</p></div>
       <ExternalLink href={openQueueHref(data)} className="primary-action">Open Zendesk queue</ExternalLink>
     </section>
+
+    <MeasurementNote note={note} />
 
     <section className="metric-grid" aria-label="Queue metrics">
       <MetricCard label="Active tickets" value={data.metrics.active} note="Service desk" />
@@ -83,15 +94,15 @@ function OverviewPage({ data }: { data: Overview }) {
       <MetricCard label="Oldest active" value={data.metrics.oldestDays} note="Calendar days" tone="blue" />
     </section>
 
-    <section className="alert-band">
+    {data.metrics.unassigned > 0 && <section className="alert-band">
       <AlertTriangle size={20} />
-      <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} active tickets are currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
+      <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} {whole ? "active tickets are" : "of the tickets the console read are"} currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
       <button onClick={() => location.hash = "controls"}>Review blocker<ChevronRight size={16} /></button>
-    </section>
+    </section>}
 
     <div className="two-column">
       <section className="panel">
-        <div className="panel-header"><div><h2>Workstream readiness</h2><p>Configuration work grouped by operational outcome.</p></div><ListChecks size={19} /></div>
+        <div className="panel-header"><div><h2>Workstream readiness</h2><p>Illustrative example of configuration work — these statuses are not measured from the account.</p></div><ListChecks size={19} /></div>
         <div className="workstreams">
           {[
             ["Service intake", "Email-first form, routing, and views", "Configured", "good"],
@@ -140,8 +151,10 @@ function IntakePage({ data }: { data: Overview }) {
 }
 
 function ReportsPage({ data }: { data: Overview }) {
+  const note = measurementNote(data.measured, data.connected);
   return <>
     <section className="page-heading"><div><p className="eyebrow">Native Zendesk reporting</p><h1>Queue reports that stay current</h1><p>Operational views update from live ticket data. Explore remains the destination for historical dashboards and scheduled delivery.</p></div></section>
+    <MeasurementNote note={note} />
     <div className="report-grid">
       <section className="panel report-panel"><div className="panel-header"><div><h2>Aging report</h2><p>Oldest active requests surface first.</p></div><ExternalLink href={viewHref(data.views, "aging")}>Open in Zendesk</ExternalLink></div><BarList data={data.aging} color="blue" /></section>
       <section className="panel report-panel"><div className="panel-header"><div><h2>Request-type report</h2><p>Active volume grouped by classification.</p></div><ExternalLink href={viewHref(data.views, "requestType")}>Open in Zendesk</ExternalLink></div><BarList data={data.requestTypes} /></section>
@@ -205,15 +218,23 @@ export function App() {
   const [section, setSection] = useState<Section>(() => sectionFromHash(location.hash) as Section);
   const [data, setData] = useState<Overview>(EMPTY_OVERVIEW);
   const [loading, setLoading] = useState(true);
+  const [failure, setFailure] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [sequence] = useState(createLoadSequence);
 
   const load = async () => {
+    // Only the newest load may write; the sequence owns that rule.
+    const id = sequence.begin();
     setLoading(true);
     try {
-      const response = await fetch("/api/overview");
-      const payload = await response.json();
-      setData(toOverviewState(payload));
-    } finally { setLoading(false); }
+      // The loader reports a transport failure instead of leaving the
+      // dashboard empty without saying so: zeros read as a quiet account,
+      // and the operator cannot tell the two apart.
+      const loaded = await loadOverview();
+      if (!sequence.isCurrent(id)) return;
+      setData(loaded.overview);
+      setFailure(loaded.failure);
+    } finally { if (sequence.isCurrent(id)) setLoading(false); }
   };
   useEffect(() => { load(); }, []);
   useEffect(() => {
@@ -221,7 +242,7 @@ export function App() {
     window.addEventListener("hashchange", handler); return () => window.removeEventListener("hashchange", handler);
   }, []);
   const visibleNav = useMemo(() => navigation.filter((item) => matchesQuery(item.label, query)), [query]);
-  const connection = connectionStatus(data);
+  const connection = connectionStatus(data, failure);
 
   const go = (id: Section) => { location.hash = id; setSection(id); };
   return <div className="app-shell">
@@ -235,7 +256,8 @@ export function App() {
       <header className="topbar"><div className="mobile-brand"><div className="logo">SO</div><strong>Service Operations</strong></div><div className="topbar-context"><LifeBuoy size={17}/><span>Service desk</span><i>/</i><strong>{sectionLabel(navigation, section)}</strong></div><button className="icon-button" title="Refresh live Zendesk data" aria-label="Refresh live Zendesk data" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? "spin" : ""}/></button></header>
       <div className="mobile-nav">{navigation.map((item) => <button aria-label={item.label} className={section === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><item.icon size={18}/></button>)}</div>
       <div className="page-content">
-        {section === "overview" && <OverviewPage data={data}/>} {section === "intake" && <IntakePage data={data}/>} {section === "reports" && <ReportsPage data={data}/>} {section === "knowledge" && <KnowledgePage/>} {section === "controls" && <ControlsPage data={data}/>} 
+        {failure && <div className="failure-band" role="alert"><AlertTriangle size={19}/><div><strong>{failure}</strong></div></div>}
+        {section === "overview" && <OverviewPage data={data}/>} {section === "intake" && <IntakePage data={data}/>} {section === "reports" && <ReportsPage data={data}/>} {section === "knowledge" && <KnowledgePage/>} {section === "controls" && <ControlsPage data={data}/>}
       </div>
     </main>
   </div>;

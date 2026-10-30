@@ -278,7 +278,7 @@ curl -fsS http://127.0.0.1:4177/api/status
 A configured console answers `200` with:
 
 ```json
-{"ok":true,"configured":true,"missing":[]}
+{"ok":true,"configured":true,"missing":[],"missingLinks":[]}
 ```
 
 The endpoint answers `200` even when the console is missing configuration, so
@@ -286,6 +286,15 @@ a check that looks only at the status code cannot see a misconfigured
 console. The body is the signal: `configured` must be `true` and `missing`
 must be empty. When configuration is missing, `missing` names the variables
 that are absent.
+
+`missingLinks` names the settings that only build a link into the account —
+the open queue and the request-type report. They are not required: the
+dashboard is read without them. The open-queue button then opens the
+account's ticket list instead of the queue; the request-type report has no
+view to open, and its button has nowhere to go: it shows the overview again
+rather than a report. A name in `missingLinks` is therefore not a
+misconfiguration, and a check that treats it as one will fail a console that
+is working.
 
 The endpoint is the health check for the console only. The connector's
 health check is a command that validates the OAuth configuration and tool
@@ -300,6 +309,32 @@ node plugins/zendesk-connector/dist/index.js --healthcheck
 A proxy that needs its own health path can forward one, but keep it restricted
 to the monitoring address — the response body names the configuration
 variables the console is missing.
+
+### What the dashboard shows when it cannot be read
+
+The dashboard page reads the account through `GET /api/overview`. There are
+two failures, and they look different.
+
+**The console cannot reach its own server** — the server is not running, or
+the answer is not JSON. The page shows a red band above the dashboard,
+carrying the console's own message, and the band is announced to assistive
+technology. The sidebar shows the same reason. The dashboard below the band
+is empty — zero tickets, no blockers, no ageing — because there is nothing
+to measure. The band is what tells the operator that those zeros are the
+console's answer and not the account's.
+
+**The console reaches its server, and the account is the unreachable party**
+— the account refuses the request, or the OAuth client file is not
+owner-only. The server answers `503` with an `error` field, the page loads
+normally, and the reason appears in the sidebar. Below 760 px the sidebar is
+hidden, so the page carries no sign of that failure and the console's log is
+where the reason is recorded.
+
+Neither failure is answered with a zero-filled payload: the console answers
+the account-side failure with `503` and a reason, and the console-side
+failure never reaches the account at all. The page does render zeros in both
+cases. The band, or the sidebar, is what says that they are the console's
+answer.
 
 ## Backup and recovery
 

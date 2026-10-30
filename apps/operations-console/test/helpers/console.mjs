@@ -25,6 +25,23 @@ export const CONFIG_ENV = {
 
 export const AGING_VIEW_ID = CONFIG_ENV.ZENDESK_CONSOLE_VIEW_AGING_ID;
 export const UNTRIAGED_VIEW_ID = CONFIG_ENV.ZENDESK_CONSOLE_VIEW_UNTRIAGED_ID;
+
+// The settings the dashboard itself needs. A missing one of these makes the
+// dashboard unavailable.
+export const REQUIRED_CONFIG_ENV = [
+  "ZENDESK_CONSOLE_BRAND_ID",
+  "ZENDESK_CONSOLE_REQUEST_TYPE_FIELD_ID",
+  "ZENDESK_CONSOLE_SYSTEM_FIELD_ID",
+  "ZENDESK_CONSOLE_VIEW_UNTRIAGED_ID",
+  "ZENDESK_CONSOLE_VIEW_AGING_ID",
+];
+
+// The settings that only build a link into the account. A missing one of
+// these costs a link, not the dashboard.
+export const LINK_CONFIG_ENV = [
+  "ZENDESK_CONSOLE_VIEW_OPEN_ID",
+  "ZENDESK_CONSOLE_VIEW_REQUEST_TYPE_ID",
+];
 export const REQUEST_TYPE_FIELD_ID = CONFIG_ENV.ZENDESK_CONSOLE_REQUEST_TYPE_FIELD_ID;
 export const SYSTEM_FIELD_ID = CONFIG_ENV.ZENDESK_CONSOLE_SYSTEM_FIELD_ID;
 

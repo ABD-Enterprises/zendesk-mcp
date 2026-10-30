@@ -5,12 +5,9 @@
  * can import it directly and check how a ticket is named.
  */
 import { formatAgeDays } from "./format.mjs";
+import { UNCLASSIFIED_REQUEST_TYPE, UNSPECIFIED_SYSTEM } from "./domain.mjs";
 
-/** The request type a ticket carries when the console cannot read one. */
-export const UNCLASSIFIED_REQUEST_TYPE = "Unclassified";
-
-/** The system a ticket belongs to when the console cannot read one. */
-export const UNSPECIFIED_SYSTEM = "Not specified";
+export { UNCLASSIFIED_REQUEST_TYPE, UNSPECIFIED_SYSTEM };
 
 /**
  * Names the request type of a ticket.

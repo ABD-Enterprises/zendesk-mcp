@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { missingConfigNames, readConfig } from "../server.mjs";
+import { missingConfigNames, missingLinkNames, readConfig } from "../server.mjs";
 import {
   CONFIG_ENV,
+  LINK_CONFIG_ENV,
+  REQUIRED_CONFIG_ENV,
   applyConsoleConfig,
   clearConsoleConfig,
   setConsoleEnv,
@@ -25,13 +27,16 @@ afterEach(() => {
 test("names every console setting that is missing", () => {
   clearConsoleConfig();
 
-  // The console reports the name of every setting it is missing.
-  assert.deepEqual(missingConfigNames(), Object.keys(CONFIG_ENV));
+  // The console reports the name of every setting it is missing. The ones
+  // that only build a link are reported apart: they do not stop the
+  // dashboard.
+  assert.deepEqual(missingConfigNames(), REQUIRED_CONFIG_ENV);
+  assert.deepEqual(missingLinkNames(), LINK_CONFIG_ENV);
   assert.throws(
     () => readConfig(),
     (error) => {
       assert.match(error.message, /^Missing console configuration: /);
-      for (const name of Object.keys(CONFIG_ENV)) {
+      for (const name of REQUIRED_CONFIG_ENV) {
         assert.ok(error.message.includes(name), `expected the error to name ${name}`);
       }
       return true;
@@ -45,7 +50,7 @@ test("names only the settings that are missing", () => {
 
   assert.deepEqual(
     missingConfigNames(),
-    Object.keys(CONFIG_ENV).filter((name) => name !== "ZENDESK_CONSOLE_VIEW_AGING_ID"),
+    REQUIRED_CONFIG_ENV.filter((name) => name !== "ZENDESK_CONSOLE_VIEW_AGING_ID"),
   );
   assert.throws(() => readConfig(), /Missing console configuration/);
 });
@@ -55,11 +60,25 @@ test("treats an empty or blank setting as missing", () => {
   process.env.ZENDESK_CONSOLE_BRAND_ID = "";
   process.env.ZENDESK_CONSOLE_VIEW_OPEN_ID = "   ";
 
-  assert.deepEqual(missingConfigNames(), [
-    "ZENDESK_CONSOLE_BRAND_ID",
-    "ZENDESK_CONSOLE_VIEW_OPEN_ID",
-  ]);
+  assert.deepEqual(missingConfigNames(), ["ZENDESK_CONSOLE_BRAND_ID"]);
+  assert.deepEqual(missingLinkNames(), ["ZENDESK_CONSOLE_VIEW_OPEN_ID"]);
   assert.throws(() => readConfig(), /Missing console configuration/);
+});
+
+test("reads the dashboard without the settings that only build a link", () => {
+  applyConsoleConfig({
+    ZENDESK_CONSOLE_VIEW_OPEN_ID: undefined,
+    ZENDESK_CONSOLE_VIEW_REQUEST_TYPE_ID: undefined,
+  });
+
+  // The dashboard reads without them; only the links into the account are
+  // missing.
+  assert.deepEqual(missingConfigNames(), []);
+  assert.deepEqual(missingLinkNames(), LINK_CONFIG_ENV);
+  const config = readConfig();
+  assert.equal(config.views.open, undefined);
+  assert.equal(config.views.requestType, undefined);
+  assert.equal(config.views.aging, CONFIG_ENV.ZENDESK_CONSOLE_VIEW_AGING_ID);
 });
 
 test("trims the configured values", () => {
