@@ -127,7 +127,8 @@ carries:
 - `commentsNextPageNumber`: the page number to read on with, or null when the
   thread ends here. It is the page number in Zendesk's own next-page URL, so
   the continuation is the page the account itself points at; when that URL
-  names no page, it is the page after the one this call asked for. This is
+  names no usable page number, it is the page after the one this call asked
+  for. This is
   the tool's continuation: call it again with `commentPage` set to this number.
 - `commentsNextPage`: Zendesk's own URL of the next comment page, or null when
   the thread ends here. It is a URL, so it is reported for reference rather

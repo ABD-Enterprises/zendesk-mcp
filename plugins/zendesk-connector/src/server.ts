@@ -188,7 +188,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           commentUsers: commentsResponse.users,
           commentPage,
           commentsTruncated: Boolean(commentsResponse.next_page),
-          commentsNextPage: commentsResponse.next_page ?? null,
+          commentsNextPage: commentsResponse.next_page || null,
           // The page number to read on with. Zendesk's own next_page URL is
           // reported too, but it is a URL and the tool takes a number, so the
           // number is what a caller can actually use. It is the number

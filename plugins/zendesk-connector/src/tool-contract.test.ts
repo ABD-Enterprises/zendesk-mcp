@@ -119,6 +119,34 @@ test("reports no continuation when the thread ends here", async () => {
   }
 });
 
+test("treats an empty next-page URL as the end of the thread", async () => {
+  // The contract says the next-page URL is null when the thread ends here,
+  // so an empty string reads as the end of the thread too.
+  const { client } = contractClient((url) => {
+    if (url.pathname.endsWith("/comments.json")) {
+      return {
+        comments: [EXAMPLE_COMMENT],
+        users: [EXAMPLE_COMMENT_USER],
+        next_page: "",
+      };
+    }
+    return { ticket: EXAMPLE_TICKET, users: [], organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+      ticketId: 42,
+    });
+
+    assert.equal(payload.commentsNextPage, null);
+    assert.equal(payload.commentsNextPageNumber, null);
+    assert.equal(payload.commentsTruncated, false);
+  } finally {
+    await session.close();
+  }
+});
+
 test("reads the first comment page when none is named", async () => {
   // The default is part of the promise the contract makes about the inputs,
   // so it is pinned: a default that moved would start the thread in the
@@ -468,9 +496,27 @@ test("the session instructions name both comment defaults", async () => {
   }
 });
 
-test("marks the write tools that overwrite or send as destructive", async () => {
+test("marks the write tools that overwrite or send as destructive, and pins the hints of both kinds", async () => {
   const { client } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
-  const session = await connectContracts(client);
+  // Every tool the connector offers, so a hint added to one of them is
+  // caught rather than passed unnoticed.
+  const session = await connectContracts(
+    client,
+    [
+      "zendesk_status",
+      "zendesk_search_tickets",
+      "zendesk_get_ticket",
+      "zendesk_create_ticket",
+      "zendesk_update_ticket",
+      "zendesk_add_ticket_comment",
+      "zendesk_list_brands",
+      "zendesk_list_groups",
+      "zendesk_list_users",
+      "zendesk_list_organizations",
+      "zendesk_list_ticket_fields",
+      "zendesk_list_ticket_forms",
+    ].join(","),
+  );
 
   try {
     const tools = await session.client.listTools();
@@ -508,18 +554,30 @@ test("marks the write tools that overwrite or send as destructive", async () => 
     // The read tools carry the other set of hints, and the whole object is
     // pinned there too: a read tool that claimed to be destructive, or that
     // claimed not to be idempotent, would change what a host does with it.
-    assert.deepEqual(annotation("zendesk_get_ticket"), {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
-    });
-    assert.deepEqual(annotation("zendesk_search_tickets"), {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
-    });
+    // Every read tool is named, so a hint added to one of them would fail
+    // here rather than pass unnoticed.
+    for (const name of [
+      "zendesk_status",
+      "zendesk_search_tickets",
+      "zendesk_get_ticket",
+      "zendesk_list_brands",
+      "zendesk_list_groups",
+      "zendesk_list_users",
+      "zendesk_list_organizations",
+      "zendesk_list_ticket_fields",
+      "zendesk_list_ticket_forms",
+    ]) {
+      assert.deepEqual(
+        annotation(name),
+        {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+        `${name} should carry the read hints`,
+      );
+    }
   } finally {
     await session.close();
   }
@@ -573,8 +631,11 @@ function contractClient(
 }
 
 /** Connects an MCP client to a server exposing the tested tools. */
-async function connectContracts(zendesk: ZendeskClient) {
-  const server = createContractServer(zendesk);
+async function connectContracts(
+  zendesk: ZendeskClient,
+  allowedTools?: string,
+) {
+  const server = createContractServer(zendesk, allowedTools);
   const client = new Client({ name: "tool-contract-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([
@@ -619,10 +680,14 @@ async function contractPayload(
 }
 
 /** Creates a server that exposes the tested tools whatever the policy is. */
-function createContractServer(zendesk: ZendeskClient) {
+function createContractServer(
+  zendesk: ZendeskClient,
+  allowedTools?: string,
+) {
   const original = process.env.ZENDESK_ALLOWED_TOOLS;
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
+    allowedTools ??
     "zendesk_get_ticket,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
