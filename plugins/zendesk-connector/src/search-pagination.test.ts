@@ -61,10 +61,10 @@ test("surfaces the first search page and reports that another page exists", asyn
     assert.equal(payload.perPage, 25);
     assert.equal(payload.count, 42);
     // Ticket fields are passed through untouched and keep their order; only
-    // `agent_url` is added.
+    // `resultType` and `agent_url` are added.
     assert.deepEqual(payload.results, [
-      { ...EXAMPLE_TICKET, agent_url: EXAMPLE_AGENT_URL },
-      { ...SECOND_EXAMPLE_TICKET, agent_url: SECOND_EXAMPLE_AGENT_URL },
+      { ...EXAMPLE_TICKET, resultType: "ticket", agent_url: EXAMPLE_AGENT_URL },
+      { ...SECOND_EXAMPLE_TICKET, resultType: "ticket", agent_url: SECOND_EXAMPLE_AGENT_URL },
     ]);
     // The raw `next_page` URL stays on the Zendesk side: the caller advances by
     // passing the next `page`, so the tool only reports that one exists.
@@ -93,7 +93,7 @@ test("reports no further page when the last search page has no next_page", async
       assert.equal(payload.perPage, 25);
       assert.equal(payload.count, 2);
       assert.deepEqual(payload.results, [
-        { ...EXAMPLE_TICKET, agent_url: EXAMPLE_AGENT_URL },
+        { ...EXAMPLE_TICKET, resultType: "ticket", agent_url: EXAMPLE_AGENT_URL },
       ]);
     } finally {
       await session.close();
@@ -178,7 +178,7 @@ test("handles an absent or malformed next_page without failing the search", asyn
       assert.equal(payload.count, 1, label);
       assert.deepEqual(
         payload.results,
-        [{ ...EXAMPLE_TICKET, agent_url: EXAMPLE_AGENT_URL }],
+        [{ ...EXAMPLE_TICKET, resultType: "ticket", agent_url: EXAMPLE_AGENT_URL }],
         label,
       );
     } finally {

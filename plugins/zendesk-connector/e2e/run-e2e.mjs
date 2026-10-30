@@ -232,6 +232,9 @@ function buildSteps(ticketId) {
         const results = expectArray(data, "results");
         for (const [index, record] of results.entries()) {
           expectPresent(record?.id, `results[${index}].id`);
+          // Every result says what kind of record it is, so a consumer can
+          // tell a ticket from a user or an organization.
+          expectPresent(record?.resultType, `results[${index}].resultType`);
         }
         // With a ticket id configured the sandbox holds at least that
         // ticket, so the search must find records; without one an empty

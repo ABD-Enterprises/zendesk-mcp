@@ -270,7 +270,12 @@ async function startMockZendesk(overrides = {}) {
       count: 1,
       next_page: null,
       results: [
-        { id: 601, type: "ticket", subject: "Example ticket", status: "open" },
+        {
+          id: 601,
+          result_type: "ticket",
+          subject: "Example ticket",
+          status: "open",
+        },
       ],
     }),
     "GET /api/v2/tickets/601.json": () => ({
