@@ -149,7 +149,12 @@ test("reads the longest wait the way the example environment file says", async (
   // ten thousand milliseconds, so the request is not retried; the maximum is
   // sixty thousand, and a wait inside it is slept out.
   const previous = process.env.ZENDESK_MAX_RETRY_DELAY_MS;
+  const previousCount = process.env.ZENDESK_MAX_RETRIES;
   try {
+    // The count of retries is read from the environment as well, and the
+    // sends below assume its default of two: an operator who exports it must
+    // not change what the suite measures.
+    delete process.env.ZENDESK_MAX_RETRIES;
     delete process.env.ZENDESK_MAX_RETRY_DELAY_MS;
     assert.equal(await rateLimitedCalls({ "retry-after": "30" }), 1);
 
@@ -163,6 +168,8 @@ test("reads the longest wait the way the example environment file says", async (
   } finally {
     if (previous === undefined) delete process.env.ZENDESK_MAX_RETRY_DELAY_MS;
     else process.env.ZENDESK_MAX_RETRY_DELAY_MS = previous;
+    if (previousCount === undefined) delete process.env.ZENDESK_MAX_RETRIES;
+    else process.env.ZENDESK_MAX_RETRIES = previousCount;
   }
 });
 
