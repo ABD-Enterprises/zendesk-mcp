@@ -129,6 +129,15 @@ permissions) are the doctor's, and nothing printed carries credential values.
 An explicit `--doctor` or `--logout` flag wins over the `ZENDESK_HEALTHCHECK`
 environment-variable shortcut.
 
+`--help` prints the usage of the command line. A flag the connector does not
+know is refused with exit code 2 instead of starting the server: an unknown
+flag used to fall through to the server, which then waited on stdin forever
+and printed nothing, so a typo read as a broken install.
+
+```sh
+node dist/index.js --help
+```
+
 ## Healthcheck and shutdown
 
 Validate the OAuth configuration and tool policy without contacting Zendesk
