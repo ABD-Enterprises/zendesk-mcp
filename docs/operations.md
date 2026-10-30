@@ -318,10 +318,10 @@ two failures, and they look different.
 **The console cannot reach its own server** — the server is not running, or
 the answer is not JSON. The page shows a red band above the dashboard,
 carrying the console's own message, and the band is announced to assistive
-technology. The sidebar shows the same reason. The numbers below the band
-are the last ones the page read, so they are last-known rather than current;
-on a first load that fails there are none, and the band sits above an empty
-dashboard.
+technology. The sidebar shows the same reason. The dashboard below the band
+is empty — zero tickets, no blockers, no ageing — because there is nothing
+to measure. The band is what tells the operator that those zeros are the
+console's answer and not the account's.
 
 **The console reaches its server, and the account is the unreachable party**
 — the account refuses the request, or the OAuth client file is not
@@ -330,9 +330,11 @@ normally, and the reason appears in the sidebar. Below 760 px the sidebar is
 hidden, so the page carries no sign of that failure and the console's log is
 where the reason is recorded.
 
-Neither failure answers with zeros. A dashboard of zero tickets, no blockers
-and no ageing reads as a quiet account, and that is the one answer the
-console does not give.
+Neither failure is answered with a zero-filled payload: the console answers
+the account-side failure with `503` and a reason, and the console-side
+failure never reaches the account at all. The page does render zeros in both
+cases. The band, or the sidebar, is what says that they are the console's
+answer.
 
 ## Backup and recovery
 

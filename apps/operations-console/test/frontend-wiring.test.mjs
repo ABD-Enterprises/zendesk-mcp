@@ -261,9 +261,9 @@ test("the sidebar is told why the console could not reach its server", () => {
   // builder, so the sidebar shows the reason the console wrote. What the
   // builder does with that reason is covered in frontend-overview.test.mjs;
   // what is held here is that the component passes it on.
-  assert.match(appSource, /connectionStatus\(data, failure\)/);
+  assert.match(withoutComments(appSource), /connectionStatus\(data, failure\)/);
   assert.ok(
-    !/connectionStatus\(data\)/.test(appSource),
+    !/connectionStatus\(data\)/.test(withoutComments(appSource)),
     "the component must not drop the failure it was given",
   );
 });

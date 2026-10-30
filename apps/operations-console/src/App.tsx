@@ -228,8 +228,8 @@ export function App() {
     setLoading(true);
     try {
       // The loader reports a transport failure instead of leaving the
-      // dashboard empty: zeros read as a quiet account, and the operator
-      // cannot tell the two apart.
+      // dashboard empty without saying so: zeros read as a quiet account,
+      // and the operator cannot tell the two apart.
       const loaded = await loadOverview();
       if (!sequence.isCurrent(id)) return;
       setData(loaded.overview);
