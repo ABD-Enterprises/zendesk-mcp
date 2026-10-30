@@ -24,7 +24,7 @@ test("names the flags it does not understand", () => {
   assert.deepEqual(unknownFlags(["--doctor", "-x"]), ["-x"]);
 });
 
-test("the usage text names every flag", () => {
+test("the usage text names every flag and what it does", () => {
   const text = usage();
   for (const flag of [
     "--doctor",
@@ -35,6 +35,51 @@ test("the usage text names every flag", () => {
   ]) {
     assert.ok(text.includes(flag), `the usage should name ${flag}`);
   }
+  // The text says what each mode does, not only that it exists.
+  assert.match(text, /Check the configuration/);
+  assert.match(text, /the tools the agent will receive/);
+  assert.match(text, /Revoke the OAuth token/);
+  assert.match(text, /never contact Zendesk/);
+});
+
+test("--help wins over an unknown flag", async () => {
+  // Asking for the usage is asking for the usage, whatever else is on the
+  // command line.
+  const result = await runCli(["--help", "--nonsense"]);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /zendesk-mcp --doctor/);
+  assert.equal(result.stderr, "");
+});
+
+test("an unknown flag is refused before any mode runs", async () => {
+  // A typo must not silently start the server or run a mode the operator
+  // did not ask for.
+  for (const mode of ["--doctor", "--tools", "--healthcheck", "--logout"]) {
+    const result = await runCli([mode, "--nonsense"]);
+    assert.equal(result.code, 2, `${mode} should not run`);
+    assert.match(result.stderr, /Unknown option: --nonsense/);
+    assert.equal(result.stdout, "");
+  }
+});
+
+test("an argument that is not a flag is refused", async () => {
+  const result = await runCli(["doctro"]);
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /Unexpected argument: doctro/);
+});
+
+test("a bare -- is not a flag the connector refuses", async () => {
+  const result = await runCli(["--", "--doctor"], {
+    ZENDESK_OAUTH_MODE: "client_credentials",
+    ZENDESK_SUBDOMAIN: "example",
+    ZENDESK_OAUTH_CLIENT_ID: "invented-client-id",
+    ZENDESK_OAUTH_CLIENT_SECRET: "invented-client-secret",
+  });
+
+  // The end-of-options marker carries no meaning here, so the flag after it
+  // is still a flag.
+  assert.equal(result.code, 0);
+  assert.ok(!result.stderr.includes("Unknown option"));
 });
 
 test("--help prints the usage and exits", async () => {

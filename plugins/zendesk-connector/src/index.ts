@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logServerShutdown, logServerStart } from "./audit.js";
-import { isHelpRequested, unknownFlags, usage } from "./cli.js";
+import { isHelpRequested, unknownFlags, unexpectedArguments, usage } from "./cli.js";
 import { isDoctorRequested, isToolsRequested, runDoctor } from "./doctor.js";
 import {
   isHealthCheckFlag,
@@ -19,6 +19,7 @@ const wantsTools = isToolsRequested(argv);
 const wantsDoctor = isDoctorRequested(argv) || wantsTools;
 const wantsLogout = isLogoutRequested(argv);
 const unknown = unknownFlags(argv);
+const unexpected = unexpectedArguments(argv);
 
 // An explicit command-line flag wins over the environment-variable shortcut:
 // a host that exports ZENDESK_HEALTHCHECK=1 still gets the mode its command
@@ -33,6 +34,11 @@ if (isHelpRequested(argv)) {
 } else if (unknown.length > 0) {
   process.stderr.write(
     `Unknown option${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}\n\n${usage()}`,
+  );
+  process.exitCode = 2;
+} else if (unexpected.length > 0) {
+  process.stderr.write(
+    `Unexpected argument${unexpected.length > 1 ? "s" : ""}: ${unexpected.join(", ")}\n\n${usage()}`,
   );
   process.exitCode = 2;
 } else if (

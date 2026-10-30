@@ -173,17 +173,25 @@ function writeInventory(
   options: DoctorOptions,
   writeOut: (line: string) => void,
 ): void {
+  let loaded;
   try {
-    const loaded = (options.loadConfig ?? getConfig)();
+    loaded = (options.loadConfig ?? getConfig)();
+  } catch {
+    // The checks already reported what is wrong with the configuration.
+    writeOut("The enabled tools could not be resolved.\n");
+    return;
+  }
+  writeOut(`Base URL: ${loaded.baseUrl}\n`);
+  writeOut(`OAuth mode: ${loaded.mode}\n`);
+  writeOut(`Scope: ${loaded.scope}\n`);
+  try {
     const enabled = [...configuredTools()].sort();
-    writeOut(`Base URL: ${loaded.baseUrl}\n`);
-    writeOut(`OAuth mode: ${loaded.mode}\n`);
-    writeOut(`Scope: ${loaded.scope}\n`);
     writeOut(
       `Enabled tools (${enabled.length} of ${toolNames().length}): ${enabled.join(", ")}\n`,
     );
   } catch {
-    // The checks already reported what is wrong with the configuration.
+    // The tool policy is broken, but the configuration above is what the
+    // operator asked for, so it is printed anyway.
     writeOut("The enabled tools could not be resolved.\n");
   }
 }

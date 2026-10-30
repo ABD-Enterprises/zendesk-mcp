@@ -89,7 +89,36 @@ test("prints the resolved configuration and the enabled tools on request", async
   assert.match(printed, /Scope: read write/);
   // The operator can see what the agent will receive without starting it.
   assert.match(printed, /Enabled tools \(12 of 12\): zendesk_add_ticket_comment/);
+  // Nothing printed carries a credential, on this surface as on the others.
+  assert.ok(!printed.includes("invented-access-token"));
+  assert.ok(!printed.includes("invented-client-secret"));
+  assert.ok(!printed.includes("invented-client-id"));
   assert.deepEqual(err, []);
+});
+
+test("the inventory still prints the configuration when the tool policy is broken", async () => {
+  const previous = process.env.ZENDESK_ALLOWED_TOOLS;
+  process.env.ZENDESK_ALLOWED_TOOLS = "zendesk_not_a_tool";
+  const out: string[] = [];
+  const err: string[] = [];
+
+  try {
+    await runDoctor({
+      loadConfig: () => config(),
+      tools: true,
+      writeOut: (line) => out.push(line),
+      writeError: (line) => err.push(line),
+    });
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_ALLOWED_TOOLS;
+    else process.env.ZENDESK_ALLOWED_TOOLS = previous;
+  }
+
+  const printed = out.join("");
+  // The tool policy is broken, but the configuration is what the operator
+  // asked for, so it is printed anyway.
+  assert.match(printed, /Base URL: https:\/\/example\.zendesk\.com/);
+  assert.match(printed, /The enabled tools could not be resolved\./);
 });
 
 test("names the read-only tool set in the inventory", async () => {
