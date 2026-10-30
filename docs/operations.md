@@ -366,11 +366,12 @@ but until then it keeps whatever the restore left behind. The console reads
 the same client file and applies the same rule: it refuses to use a file
 that is accessible to its group or by others — except on Windows, where Node
 reports synthetic permission bits regardless of the file's ACLs and the check
-is skipped — so a console on a client file with loose permissions does not
-serve the dashboard. `/api/overview` answers `503` with "The Zendesk OAuth
+is skipped — so a console on a client file with loose permissions answers its
+dashboard request with `503`. `/api/overview` returns "The Zendesk OAuth
 client file must be readable only by its owner (chmod 600)" and the console
-logs the reason; the console process itself keeps running, and the secret is
-never read into memory and never posted to the account.
+logs the reason; the page itself still loads and shows "Zendesk unavailable"
+with that reason beside it, the console process keeps running, and the secret
+is never read into memory and never posted to the account.
 
 In a container deployment the client file also has to be readable by the
 container's unprivileged `node` user. Align the owner with that user rather

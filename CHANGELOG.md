@@ -35,10 +35,10 @@
   `403`. Its token asks for `ticket_views:read` and `tickets:read` instead of
   a broad `read write`, so the Zendesk OAuth client has to allow both scopes.
   The console takes its account from the OAuth client file alone, refuses to
-  use a client file that is accessible to group or others, refuses an account
-  URL that is not HTTPS (except on the loopback interface), refuses a redirect
-  rather than following it, and only shows the browser a message the console
-  wrote itself.
+  use a client file that is accessible to group or others (except on
+  Windows), refuses an account URL that is not HTTPS (except on the loopback
+  interface), refuses a redirect rather than following it, and only shows the
+  browser a message the console wrote itself.
 
 ## 0.6.1
 

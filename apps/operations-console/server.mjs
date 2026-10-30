@@ -426,7 +426,8 @@ async function requestToken() {
   try {
     // The file holds the client secret, and the console posts that secret to
     // the account the file names, so the file has to be one only its owner
-    // can write — the rule the connector already applies to it.
+    // can access — the rule the connector already applies to it. The mask
+    // below covers every group and other bit, read, write or execute.
     const stats = await stat(path);
     if (!stats.isFile()) {
       throw new ConsoleError(
