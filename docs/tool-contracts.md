@@ -18,7 +18,7 @@ envelope.
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
 | `zendesk_status` | Read | Verify OAuth and identify the authenticated user | None | Yes |
-| `zendesk_search_tickets` | Read | Search tickets with Zendesk search syntax | `query` string (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_search_tickets` | Read | Search Zendesk with Zendesk search syntax | `query` string (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_ticket` | Read | Read a ticket with users, organization, and comments | `ticketId` int (required); `includeComments` bool (default true); `commentPage` int (default 1) | Yes |
 | `zendesk_list_brands` | Read | List brands with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_groups` | Read | List groups with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
@@ -26,8 +26,8 @@ envelope.
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
-| `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of strings (optional) | Yes |
-| `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one string (optional); at least one update field required | Yes |
+| `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `public` bool (default true); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of non-empty strings (optional) | Yes |
+| `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one non-empty string (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
 
 Notes on the inputs:
@@ -36,6 +36,12 @@ Notes on the inputs:
   then defaults to the email address.
 - `zendesk_add_ticket_comment` defaults `public` to false, so an omitted value
   creates an internal note.
+- `zendesk_create_ticket` defaults `public` to true, so the ticket's first
+  comment is visible to the requester; pass `public: false` to keep it an
+  internal note. The value is sent with the request rather than left to a
+  Zendesk-side default.
+- `zendesk_create_ticket` ignores an empty `tags` array: a new ticket starts
+  with no tags.
 - `zendesk_update_ticket` rejects a call whose update fields are all absent
   with the error `No update fields were provided.`
 - `zendesk_update_ticket` sets `tags` to exactly the list it is given: it

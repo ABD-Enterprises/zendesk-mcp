@@ -211,7 +211,7 @@ part of `npm run check` or CI.
 ## Tools
 
 - `zendesk_status`: validates configuration and returns the authenticated user.
-- `zendesk_search_tickets`: searches tickets with Zendesk search syntax.
+- `zendesk_search_tickets`: searches Zendesk with Zendesk search syntax.
 - `zendesk_get_ticket`: reads a ticket with users, organization, and comments.
 - `zendesk_list_brands`: lists brands with page-based pagination.
 - `zendesk_list_groups`: lists groups with page-based pagination.

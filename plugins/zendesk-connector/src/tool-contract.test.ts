@@ -181,6 +181,41 @@ test("sends the tags it is given", async () => {
   }
 });
 
+test("sends the first comment's visibility instead of relying on a default", async () => {
+  const { client, requests } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
+  const session = await connectContracts(client);
+
+  try {
+    await contractPayload(session.client, "zendesk_create_ticket", {
+      subject: "Example subject",
+      comment: "Example body",
+    });
+
+    // The contract says the requester sees this comment, so the visibility
+    // travels with the request instead of being left to a server default.
+    assert.equal(requests.length, 1);
+    const body = requests[0].body as {
+      ticket: { comment: { body: string; public: boolean } };
+    };
+    assert.deepEqual(body.ticket.comment, { body: "Example body", public: true });
+
+    await contractPayload(session.client, "zendesk_create_ticket", {
+      subject: "Example subject",
+      comment: "Example body",
+      public: false,
+    });
+    const internal = requests[1].body as {
+      ticket: { comment: { body: string; public: boolean } };
+    };
+    assert.deepEqual(internal.ticket.comment, {
+      body: "Example body",
+      public: false,
+    });
+  } finally {
+    await session.close();
+  }
+});
+
 test("marks the write tools that overwrite or send as destructive", async () => {
   const { client } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
   const session = await connectContracts(client);

@@ -2,7 +2,24 @@
 
 ## Unreleased
 
-No changes recorded yet.
+- **Breaking:** `zendesk_search_tickets` now labels every result with a
+  `resultType` field (`ticket`, `user`, `group` or `organization`), and only a
+  ticket result carries an `agent_url`. A non-ticket result no longer gets a
+  ticket URL, so a consumer that reads `agent_url` on every result must check
+  `resultType` first.
+- `zendesk_get_ticket` now asks Zendesk for the comment authors it always
+  promised, returns the comment page named by the new `commentPage` input, and
+  reports `commentPage`, `commentsTruncated` and `commentsNextPage` so a
+  truncated thread has a continuation.
+- `zendesk_update_ticket` refuses an empty `tags` array instead of sending it
+  to Zendesk, where it would remove every tag on the ticket.
+- `zendesk_create_ticket` takes a `public` flag (default true) and sends it
+  with the ticket's first comment, so the comment's visibility no longer
+  depends on a Zendesk-side default.
+- The write tools say what they do: `zendesk_update_ticket` and
+  `zendesk_add_ticket_comment` are marked `destructiveHint: true`, and all
+  three write-tool descriptions name their fields, their result shape and what
+  the tool cannot do.
 
 ## 0.6.1
 

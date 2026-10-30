@@ -113,8 +113,8 @@ events, the allowlist, and the versioning policy — is in the
 | Tool | Access | Purpose |
 | --- | --- | --- |
 | `zendesk_status` | Read | Verify OAuth and identify the authenticated user |
-| `zendesk_search_tickets` | Read | Search tickets with Zendesk search syntax |
-| `zendesk_get_ticket` | Read | Read a ticket, users, organization, and comments |
+| `zendesk_search_tickets` | Read | Search Zendesk with Zendesk search syntax |
+| `zendesk_get_ticket` | Read | Read a ticket with users, organization, and comments |
 | `zendesk_list_brands` | Read | List brands with page-based pagination |
 | `zendesk_list_groups` | Read | List groups with page-based pagination |
 | `zendesk_list_users` | Read | List users with page-based pagination |
@@ -127,6 +127,13 @@ events, the allowlist, and the versioning policy — is in the
 
 Internal notes are the default for comments. Write tools are marked explicitly
 in their MCP annotations.
+
+**Breaking in the unreleased version:** `zendesk_search_tickets` now labels
+every result with a `resultType` (`ticket`, `user`, `group` or
+`organization`), and only a ticket result carries an `agent_url`. A user,
+group or organization result no longer gets a ticket URL, so a consumer that
+reads `agent_url` on every result must check `resultType` first. The
+[tool contracts](docs/tool-contracts.md#agent_url) reference has the details.
 
 ## Requirements
 

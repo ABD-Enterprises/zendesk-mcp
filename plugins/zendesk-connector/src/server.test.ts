@@ -270,8 +270,29 @@ test("the write tools send the request bodies Zendesk expects", async (t) => {
         ticket: {
           subject: "Example subject",
           priority: "high",
-          comment: { body: "Example body" },
+          // The comment's visibility is sent, not left to a default.
+          comment: { body: "Example body", public: true },
           requester: { email: "person@example.com", name: "person@example.com" },
+        },
+      },
+    });
+
+    const createdInternal = await client.callTool({
+      name: "zendesk_create_ticket",
+      arguments: {
+        subject: "Example subject",
+        comment: "Example body",
+        public: false,
+      },
+    });
+    assert.equal(createdInternal.isError, undefined);
+    assert.deepEqual(requests.at(-1), {
+      url: "https://example.zendesk.com/api/v2/tickets.json",
+      method: "POST",
+      body: {
+        ticket: {
+          subject: "Example subject",
+          comment: { body: "Example body", public: false },
         },
       },
     });

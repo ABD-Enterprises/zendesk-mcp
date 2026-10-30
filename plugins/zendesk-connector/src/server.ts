@@ -209,8 +209,17 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           .string()
           .min(1)
           .describe(
-            "Body of the first comment on the ticket. It is sent as a public " +
-              "comment, so the requester sees it.",
+            "Body of the first comment on the ticket. It is public unless " +
+              "public is false, so the requester sees it.",
+          ),
+        public: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe(
+            "Whether the first comment is public. True (the default) sends " +
+              "it to the requester; false keeps it an internal note that the " +
+              "requester cannot see.",
           ),
         requesterEmail: z
           .string()
@@ -623,6 +632,7 @@ function searchResultType(result: JsonObject): string {
 function buildTicketPayload(input: {
   subject?: string;
   comment?: string;
+  public?: boolean;
   requesterEmail?: string;
   requesterName?: string;
   priority?: string;
@@ -638,7 +648,12 @@ function buildTicketPayload(input: {
   // An empty array would tell Zendesk to remove every tag on the ticket. The
   // schema rejects it; the builder keeps the guarantee on its own too.
   if (input.tags && input.tags.length > 0) ticket.tags = input.tags;
-  if (input.comment) ticket.comment = { body: input.comment };
+  if (input.comment) {
+    // The visibility is sent explicitly. The contract says the requester
+    // sees this comment, and a field the connector leaves out is a field
+    // whose behaviour it does not control.
+    ticket.comment = { body: input.comment, public: input.public ?? true };
+  }
   if (input.requesterEmail) {
     ticket.requester = {
       email: input.requesterEmail,
