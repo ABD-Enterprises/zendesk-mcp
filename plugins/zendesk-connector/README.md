@@ -169,6 +169,37 @@ npm install
 npm run build
 ```
 
+### How the server is started
+
+The plugin manifest of this directory, `.mcp.json`, starts the built server
+with `node ./dist/index.js`. The path is relative to the plugin root, so it
+resolves only if the host runs the server with the plugin's installed
+directory as its working directory. MCP hosts resolve relative paths against
+their own working directory, not the plugin directory, so whether the plugin
+starts depends on the host, and this repository has not verified the
+behaviour against any host. If your host does not start the plugin this way,
+name the built file by its absolute path instead, as the repository README
+shows:
+
+```json
+{
+  "mcpServers": {
+    "zendesk": {
+      "command": "node",
+      "args": ["/absolute/path/to/zendesk-mcp/plugins/zendesk-connector/dist/index.js"]
+    }
+  }
+}
+```
+
+The manifest also forwards thirteen of the sixteen `ZENDESK_*` variables
+through its `env` block — the three it leaves out, the OAuth callback port,
+the shutdown timeout and the healthcheck shortcut, all have defaults. A
+manual configuration has to set the variables in the client's own
+environment. The block uses `${VAR}` placeholders, which the host is expected
+to substitute; a placeholder the host leaves unsubstituted is read as an
+unset variable, not as a literal value.
+
 ### Container
 
 ```sh
