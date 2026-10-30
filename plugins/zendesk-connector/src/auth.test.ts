@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -327,6 +327,75 @@ test("removeTokenFile removes the stored token and tolerates a missing file", as
 
   assert.equal(await removeTokenFile(tokenFile), true);
   assert.equal(await removeTokenFile(tokenFile), false);
+});
+
+test("writeTokenFile does not follow a link left at the temporary path", async (t) => {
+  // Creating a link needs a privilege Windows does not grant by default.
+  if (process.platform === "win32") {
+    t.skip("symlinks need a privilege this host does not grant");
+    return;
+  }
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-token-link-test-"));
+  const tokenFile = join(directory, "oauth.json");
+  const captured = join(directory, "captured.json");
+  await writeFile(captured, "");
+  // The temporary name is predictable, so a link may already sit there.
+  await symlink(captured, `${tokenFile}.${process.pid}.tmp`);
+
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+
+  // The link was replaced rather than followed: the file it pointed at still
+  // holds nothing, and the token file holds the token.
+  assert.equal(await readFile(captured, "utf8"), "");
+  const written = JSON.parse(await readFile(tokenFile, "utf8"));
+  assert.equal(written.access_token, "invented-access-token");
+});
+
+test("writeTokenFile replaces a stale temporary file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-token-stale-test-"));
+  const tokenFile = join(directory, "oauth.json");
+  // A temporary file of our own may survive a run that was killed.
+  await writeFile(`${tokenFile}.${process.pid}.tmp`, "stale");
+
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+
+  const written = JSON.parse(await readFile(tokenFile, "utf8"));
+  assert.equal(written.access_token, "invented-access-token");
+});
+
+test("writeTokenFile tightens a shared token directory", async (t) => {
+  // Node reports synthetic permission bits on Windows, so the check is skipped
+  // there instead of failing every run.
+  if (process.platform === "win32") {
+    t.skip("file mode bits are not reported the same way on Windows");
+    return;
+  }
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-token-dir-test-"));
+  // mkdir's mode applies only to a directory it creates, so an existing one
+  // keeps its own permissions.
+  await chmod(directory, 0o777);
+
+  await writeTokenFile(join(directory, "oauth.json"), {
+    access_token: "invented-access-token",
+  });
+
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+});
+
+test("the tool status omits the token file's path", () => {
+  const auth = new ZendeskOAuth({
+    baseUrl: "https://example.zendesk.com",
+    mode: "authorization_code",
+    clientId: "invented-client-id",
+    clientSecret: "invented-client-secret",
+    tokenFile: "/unused/oauth.json",
+    scope: "tickets:read",
+  });
+
+  // The operator still gets the path from the doctor and the logout.
+  assert.equal(auth.status().tokenFile, "/unused/oauth.json");
+  assert.equal("tokenFile" in auth.toolStatus(), false);
+  assert.equal(auth.toolStatus().mode, "authorization_code");
 });
 
 test("resolveCallbackPort reads only trimmed decimal digits", () => {

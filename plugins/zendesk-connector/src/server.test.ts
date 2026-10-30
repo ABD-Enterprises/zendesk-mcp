@@ -156,6 +156,14 @@ test("publishes twelve annotated tools and serves status over MCP", async (t) =>
       const payload = JSON.parse(content.text);
       assert.equal(payload.user.name, "Test Agent");
       assert.equal(payload.oauth.mode, "access_token");
+      // The token file's path is filesystem information the agent would only
+      // repeat, so it is not part of the tool result.
+      assert.equal("tokenFile" in payload.oauth, false);
+      assert.ok(
+        Object.keys(payload.oauth).every((key) =>
+          ["mode", "scope", "refreshEnabled", "expiresAt"].includes(key),
+        ),
+      );
     }
   } finally {
     await client.close();

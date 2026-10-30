@@ -46,6 +46,53 @@ test("keeps the tool call event shape", () => {
   });
 });
 
+test("runs the tool call event through the house filter", () => {
+  const lines = captureStderr(() => {
+    audit({
+      tool: "zendesk_search_tickets",
+      operation: "read",
+      outcome: "success",
+      actorId: "access_token=AT-111",
+    });
+  });
+
+  assert.equal(lines.length, 1);
+  assert.ok(!lines[0].includes("AT-111"));
+  assert.ok(lines[0].includes("[REDACTED]"));
+});
+
+test("scrubs a credential parked in the value of an innocuous name", () => {
+  const scrubbed = redact(
+    "client_secret super-secret-value rejected by the token endpoint",
+  ) as string;
+
+  assert.ok(!scrubbed.includes("super-secret-value"));
+  assert.ok(scrubbed.includes("[REDACTED]"));
+});
+
+test("scrubs a credential that is assigned to a sensitive name", () => {
+  for (const text of [
+    "access_token=AT-111 raw body",
+    '{"access_token":"AT-111"}',
+    "Bearer AT-111",
+  ]) {
+    const scrubbed = redact(text) as string;
+    assert.ok(!scrubbed.includes("AT-111"), `not scrubbed: ${text}`);
+  }
+});
+
+test("keeps ordinary text and prose around a sensitive name", () => {
+  for (const text of [
+    "Request failed",
+    "Zendesk API request failed: HTTP 403 Forbidden",
+    "No refresh token found in /tmp/oauth.json. Run npm run oauth:setup.",
+    "the password was rejected",
+    "token rotation is overdue",
+  ]) {
+    assert.equal(redact(text), text);
+  }
+});
+
 test("logs a server start event with the package version", () => {
   const lines: string[] = [];
 

@@ -3,6 +3,7 @@ import {
   mkdir,
   readFile,
   rename,
+  rm,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -380,6 +381,24 @@ export class ZendeskOAuth {
     };
   }
 
+  /**
+   * The status the MCP tool reports.
+   *
+   * It is the same status without the token file's path. A tool result reaches
+   * the agent, and a filesystem path is information the agent would only
+   * repeat — while the operator still gets the path from the doctor and the
+   * logout, which print it for the person running them.
+   */
+  toolStatus() {
+    const status = this.status();
+    return {
+      mode: status.mode,
+      scope: status.scope,
+      refreshEnabled: status.refreshEnabled,
+      expiresAt: status.expiresAt,
+    };
+  }
+
   private async refresh(): Promise<StoredToken> {
     if (!this.refreshInFlight) {
       this.refreshInFlight = this.requestNewToken().finally(() => {
@@ -596,10 +615,28 @@ export async function writeTokenFile(
 ): Promise<void> {
   const directory = dirname(tokenFile);
   await mkdir(directory, { recursive: true, mode: 0o700 });
+  // mkdir's mode applies only to a directory it creates. An existing one keeps
+  // its own permissions, and a group- or world-writable directory would let
+  // another local user replace what is written into it, so the directory is
+  // tightened to owner-only before the token is written.
+  if ((statSync(directory).mode & 0o022) !== 0) {
+    await chmod(directory, 0o700);
+  }
   const temporary = `${tokenFile}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(token, null, 2)}\n`, {
-    mode: 0o600,
-  });
+  const body = `${JSON.stringify(token, null, 2)}\n`;
+  // The temporary name is predictable, so a link may already sit there. The
+  // exclusive flag fails instead of following the link, and the retry removes
+  // a stale file of our own and writes again with the same flag — so a link
+  // planted in between fails the write instead of capturing the token.
+  try {
+    await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
+  } catch (error) {
+    if (!isAlreadyExists(error)) throw error;
+    await rm(temporary, { force: true });
+    await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
+  }
+  // rename replaces the destination rather than writing through it, so a link
+  // left at the token file's own path is replaced by the token file.
   await rename(temporary, tokenFile);
   await chmod(tokenFile, 0o600);
 }
@@ -742,5 +779,15 @@ function isMissingFile(error: unknown): boolean {
     error !== null &&
     "code" in error &&
     (error as { code?: unknown }).code === "ENOENT"
+  );
+}
+
+/** True when a write failed because the path already exists. */
+function isAlreadyExists(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "EEXIST"
   );
 }

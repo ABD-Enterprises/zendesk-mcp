@@ -85,9 +85,10 @@ Returns `configured` (always true on success), `baseUrl`, `oauth`, and `user`:
 - `baseUrl` is the resolved Zendesk base URL.
 - `oauth` summarizes the session: `mode` (`authorization_code`,
   `client_credentials`, or `access_token`), `scope`, `refreshEnabled`, and
-  `expiresAt` while an access token is held in memory. In
-  `authorization_code` mode it also names the token file's path — never the
-  file's contents.
+  `expiresAt` while an access token is held in memory. The token file's path
+  is not part of the tool result — a tool result reaches the agent, and the
+  path is filesystem information the agent would only repeat. The operator
+  still gets it from `npm run doctor` and `npm run logout`.
 - `user` is the authenticated user object as Zendesk returns it from the
   current-user endpoint.
 
