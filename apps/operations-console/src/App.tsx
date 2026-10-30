@@ -28,7 +28,7 @@ import { formatBrandName, formatCount } from "./lib/format.mjs";
 import { isReviewed, parseReviewed, toggleReviewed, REVIEWED_STORAGE_KEY } from "./lib/knowledge.mjs";
 import { queueBars } from "./lib/metrics.mjs";
 import { matchesQuery, sectionFromHash, sectionLabel } from "./lib/navigation.mjs";
-import { EMPTY_OVERVIEW, connectionStatus, createLoadSequence, loadOverview, openQueueHref, viewHref } from "./lib/overview.mjs";
+import { EMPTY_OVERVIEW, connectionStatus, createLoadSequence, loadOverview, measurementIsWhole, measurementNote, openQueueHref, viewHref } from "./lib/overview.mjs";
 import { ticketRow } from "./lib/tickets.mjs";
 
 const navigation = [
@@ -68,13 +68,24 @@ function BarList({ data, color = "teal" }: { data: QueueMetric[]; color?: "teal"
   ))}</div>;
 }
 
+function MeasurementNote({ note }: { note: string }) {
+  return note ? <p className="metric-note">{note}</p> : null;
+}
+
 function OverviewPage({ data }: { data: Overview }) {
   const oldest = data.tickets[0] ? ticketRow(data.tickets[0]) : undefined;
+  const note = measurementNote(data.measured, data.connected);
+  // The band's count sentence states a fact about the queue, so it may only
+  // do so when the dashboard describes the whole queue. The heading above it
+  // is static copy.
+  const whole = measurementIsWhole(data.measured);
   return <>
     <section className="page-heading">
       <div><p className="eyebrow">Service desk command center</p><h1>Today’s operating picture</h1><p>Live queue health, workflow readiness, and the next actions that need ownership.</p></div>
       <ExternalLink href={openQueueHref(data)} className="primary-action">Open Zendesk queue</ExternalLink>
     </section>
+
+    <MeasurementNote note={note} />
 
     <section className="metric-grid" aria-label="Queue metrics">
       <MetricCard label="Active tickets" value={data.metrics.active} note="Service desk" />
@@ -85,7 +96,7 @@ function OverviewPage({ data }: { data: Overview }) {
 
     {data.metrics.unassigned > 0 && <section className="alert-band">
       <AlertTriangle size={20} />
-      <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} active tickets are currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
+      <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} {whole ? "active tickets are" : "of the tickets the console read are"} currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
       <button onClick={() => location.hash = "controls"}>Review blocker<ChevronRight size={16} /></button>
     </section>}
 
@@ -140,8 +151,10 @@ function IntakePage({ data }: { data: Overview }) {
 }
 
 function ReportsPage({ data }: { data: Overview }) {
+  const note = measurementNote(data.measured, data.connected);
   return <>
     <section className="page-heading"><div><p className="eyebrow">Native Zendesk reporting</p><h1>Queue reports that stay current</h1><p>Operational views update from live ticket data. Explore remains the destination for historical dashboards and scheduled delivery.</p></div></section>
+    <MeasurementNote note={note} />
     <div className="report-grid">
       <section className="panel report-panel"><div className="panel-header"><div><h2>Aging report</h2><p>Oldest active requests surface first.</p></div><ExternalLink href={viewHref(data.views, "aging")}>Open in Zendesk</ExternalLink></div><BarList data={data.aging} color="blue" /></section>
       <section className="panel report-panel"><div className="panel-header"><div><h2>Request-type report</h2><p>Active volume grouped by classification.</p></div><ExternalLink href={viewHref(data.views, "requestType")}>Open in Zendesk</ExternalLink></div><BarList data={data.requestTypes} /></section>

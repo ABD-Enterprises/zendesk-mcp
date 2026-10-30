@@ -67,11 +67,18 @@ export async function startMockZendesk() {
       state.viewRequests.push({
         id,
         path: url.pathname,
+        query: url.search,
         authorization: request.headers.authorization,
         accept: request.headers.accept,
       });
       const configured = state.views.get(id) ?? state.defaultView;
-      send(response, configured.status, configured.body);
+      // A body may be a function of the request, so a test can answer a
+      // paged view differently per page.
+      const body =
+        typeof configured.body === "function"
+          ? configured.body(url)
+          : configured.body;
+      send(response, configured.status, body);
       return;
     }
 

@@ -277,7 +277,7 @@ curl -fsS http://127.0.0.1:4177/api/status
 A configured console answers `200` with:
 
 ```json
-{"ok":true,"configured":true,"missing":[]}
+{"ok":true,"configured":true,"missing":[],"missingLinks":[]}
 ```
 
 The endpoint answers `200` even when the console is missing configuration, so
@@ -285,6 +285,15 @@ a check that looks only at the status code cannot see a misconfigured
 console. The body is the signal: `configured` must be `true` and `missing`
 must be empty. When configuration is missing, `missing` names the variables
 that are absent.
+
+`missingLinks` names the settings that only build a link into the account —
+the open queue and the request-type report. They are not required: the
+dashboard is read without them. The open-queue button then opens the
+account's ticket list instead of the queue; the request-type report has no
+view to open, and its button has nowhere to go: it shows the overview again
+rather than a report. A name in `missingLinks` is therefore not a
+misconfiguration, and a check that treats it as one will fail a console that
+is working.
 
 The endpoint is the health check for the console only. The connector's
 health check is a command that validates the OAuth configuration and tool

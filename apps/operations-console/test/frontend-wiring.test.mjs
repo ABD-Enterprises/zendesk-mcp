@@ -43,6 +43,23 @@ function withoutComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
 }
 
+ /**
+ * The source of one page component of the console.
+ *
+ * The suite cannot render the components, so it reads their source. Each page
+ * is read on its own, so that a change to one of them cannot be masked by a
+ * change to another.
+ *
+ * @param {string} name the name of the page component
+ * @returns {string}
+ */
+function pageSource(name) {
+  const start = appSource.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} must be a component of the console`);
+  const end = appSource.indexOf("\nfunction ", start + 1);
+  return appSource.slice(start, end === -1 ? appSource.length : end);
+}
+
 const TICKET = {
   id: 900000000101,
   subject: "invented subject one",
@@ -183,4 +200,42 @@ test("the account blocker is shown only when there are unassigned tickets", () =
   // queue has no assigned agent would turn a failure into a claim about the
   // account. The band is only true when the count is.
   assert.match(appSource, /data\.metrics\.unassigned > 0 && <section className="alert-band">/);
+});
+
+test("the alert band states a fact about the queue only when the dashboard describes it whole", () => {
+  const overview = pageSource("OverviewPage");
+  // The band keys on the measurement itself, not on the note. The note is
+  // empty whenever the whole view was read and the account agrees, but the
+  // band has to know that rather than infer it: a band that claims "0 active
+  // tickets are currently unassigned" over a queue of five thousand tickets
+  // the console never read says something the console cannot support.
+  assert.match(overview, /measurementIsWhole\(data\.measured\)/);
+  assert.match(overview, /whole \? "active tickets are"/);
+});
+
+test("both pages that show a breakdown say how much of the view was measured", () => {
+  // The note is built by the module, and it is rendered on the dashboard and
+  // on the queue reports: the request-type breakdown exists only on the
+  // reports page, so a note that was only on the dashboard would leave that
+  // breakdown undisclosed. Counting the render sites is not enough: two
+  // notes on one page would satisfy a count, so each page is checked on its
+  // own.
+  const overview = pageSource("OverviewPage");
+  const reports = pageSource("ReportsPage");
+
+  assert.match(overview, /measurementNote\(data\.measured, data\.connected\)/);
+  assert.match(reports, /measurementNote\(data\.measured, data\.connected\)/);
+  assert.match(overview, /<MeasurementNote note=\{note\} \/>/);
+  assert.match(reports, /<MeasurementNote note=\{note\} \/>/);
+  // Each page shows the note above the breakdown it describes, so a note that
+  // moved below it would read as a footnote of a breakdown the operator has
+  // already taken for a whole one.
+  assert.ok(
+    overview.indexOf("<MeasurementNote note={note} />") < overview.indexOf('className="metric-grid"'),
+    "the overview shows the note above the metrics",
+  );
+  assert.ok(
+    reports.indexOf("<MeasurementNote note={note} />") < reports.indexOf('className="report-grid"'),
+    "the reports show the note above the breakdowns",
+  );
 });

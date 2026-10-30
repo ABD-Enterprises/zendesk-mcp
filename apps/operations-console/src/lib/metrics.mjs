@@ -17,7 +17,9 @@
  */
 export function queueBars(data) {
   const rows = Array.isArray(data) ? data : [];
-  const max = Math.max(1, ...rows.map((item) => item.count));
+  // The rows are reduced instead of spread: spreading them as arguments
+  // overflows the stack on a long queue.
+  const max = rows.reduce((largest, item) => Math.max(largest, item.count), 1);
   return rows.map((item) => ({
     name: item.name,
     count: item.count,
