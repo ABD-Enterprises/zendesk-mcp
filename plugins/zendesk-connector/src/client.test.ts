@@ -132,6 +132,10 @@ test("reads the retry limit the way the example environment file says", async ()
     process.env.ZENDESK_MAX_RETRIES = "abc";
     assert.equal(await rateLimitedCalls(), 3);
 
+    // Six is outside the range of the count, so the default of two is used.
+    process.env.ZENDESK_MAX_RETRIES = "6";
+    assert.equal(await rateLimitedCalls(), 3);
+
     process.env.ZENDESK_MAX_RETRIES = " ";
     assert.equal(await rateLimitedCalls(), 1);
   } finally {
@@ -140,12 +144,34 @@ test("reads the retry limit the way the example environment file says", async ()
   }
 });
 
-/** The number of times a rate-limited request is sent, with the limit read from the environment. */
-async function rateLimitedCalls(): Promise<number> {
+test("reads the longest wait the way the example environment file says", async () => {
+  // The wait of a 429 is thirty seconds. That is longer than the default of
+  // ten thousand milliseconds, so the request is not retried; the maximum is
+  // sixty thousand, and a wait inside it is slept out.
+  const previous = process.env.ZENDESK_MAX_RETRY_DELAY_MS;
+  try {
+    delete process.env.ZENDESK_MAX_RETRY_DELAY_MS;
+    assert.equal(await rateLimitedCalls({ "retry-after": "30" }), 1);
+
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "60000";
+    assert.equal(await rateLimitedCalls({ "retry-after": "30" }), 3);
+
+    // Sixty thousand and one is outside the range, so the default of ten
+    // thousand is used and the wait is too long again.
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "60001";
+    assert.equal(await rateLimitedCalls({ "retry-after": "30" }), 1);
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_MAX_RETRY_DELAY_MS;
+    else process.env.ZENDESK_MAX_RETRY_DELAY_MS = previous;
+  }
+});
+
+/** The number of times a rate-limited request is sent, with the limits read from the environment. */
+async function rateLimitedCalls(headers: Record<string, string> = {}): Promise<number> {
   let calls = 0;
   const fetcher: typeof fetch = async () => {
     calls += 1;
-    return Response.json({ error: "rate_limited" }, { status: 429 });
+    return Response.json({ error: "rate_limited" }, { status: 429, headers });
   };
   const client = new ZendeskClient(
     accessTokenConfig(),
