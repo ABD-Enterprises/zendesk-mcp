@@ -13,6 +13,63 @@ Sections 3–5 below are this agent's findings. **Section 6** adds the findings 
 
 ---
 
+## 0. Quick reference — paste-ready
+
+Copy this block on its own; the full evidence for every finding is in sections 3–7.
+
+**44 findings — 4 High, 21 Medium, 18 Low, 1 Info.** One fixed and merged, four fixed in an open PR, one closed by decision, **39 open**, each with a filed issue.
+
+**Do first.** 1. Merge **#71** — it closes **S0**, the runtime token leak that is still live on `main`, plus **P1**, **P2** and **M12**. 2. **U1** (#56) — `commentUsers` is always `undefined` and the tool contract promises otherwise. 3. **M4** (#45) — `tags: []` silently clears every tag on a ticket. 4. **M3** (#44) — all three write tools are annotated `destructiveHint: false`, including the irreversible public reply. 5. **S2** (#32) — the token file write follows a pre-planted symlink; the client-secret write already hardens this, the token write does not.
+
+| ID | Sev | Area | Finding | Location | Issue | Disposition |
+|---|---|---|---|---|---|---|
+| S0 | **High** | Security | Runtime token-exchange failure hands the raw body to the agent | `auth.ts:421-437` | #31 | **Fixed** in PR #71 (`c46ef87`) |
+| S1 | **High** | Security | Token-exchange failure prints the raw access token to stderr | `oauth-setup.ts:597-601` | #30 | **Merged** — PR #29 (`89add83`) |
+| S2 | Med | Security | Token-file write follows a pre-planted symlink | `auth.ts:593-605` | #32 | Open |
+| S3 | Med | Security | Console has no Host/origin validation (DNS rebinding) | `server.mjs:350` | #33 | Open |
+| S4 | Med | Security | `redact()` matches key names only; strings never scrubbed | `audit.ts:127-138` | #34 | Open |
+| S5 | Low | Security | Tool-call audit path skips `redact()` | `audit.ts:81` | #35 | Open |
+| S6 | Low | Security | Console mints a `read write` scope for a read-only app | `server.mjs:170` | #36 | Open |
+| S7 | Low | Security | Console performs no base-URL validation | `server.mjs:162` | #37 | Open |
+| S8 | Low | Security | Raw error messages returned to the browser | `server.mjs:295-300` | #38 | Open |
+| S9 | Low | Security | `/api/*` not rate-limited *(deliberate)* | `server.mjs:253,262` | #39 | Open — documentation only |
+| S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
+| S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | Open |
+| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | Open |
+| M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open |
+| M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open |
+| M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | Open |
+| M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | Open |
+| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | Open |
+| M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open |
+| M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open |
+| M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open |
+| M9 | Low | Maint | `.env.example` documents 8 of ~16 `ZENDESK_*` vars | `.env.example` | #53 | Open |
+| M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | Open |
+| M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open |
+| M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Fixed** in PR #71 |
+| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open |
+| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | Open |
+| U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | Open |
+| U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | Open |
+| U3 | Med | Usability | Truncated comments have no continuation path | `server.ts:136,142` | #58 | Open |
+| U4 | Med | Usability | Console `load()` has no `catch` → silent empty dashboard | `App.tsx:210-217` | #59 | Open |
+| U5 | Med | Usability | Search description omits pagination, shape, id handoff | `server.ts:61-74` | #60 | Open |
+| U6 | Med | Usability | Write-tool descriptions are 5 words; params undescribed | `server.ts:152,184,214` | #61 | Open |
+| U7 | Med | Usability | No `--help`; unknown flags start the server and hang | `index.ts:14-47` | #62 | Open |
+| U8 | Med | Usability | Doctor can't detect scope/expiry; never prints enabled tools | `doctor.ts:71-114` | #63 | Open |
+| U9 | Med | Usability | Console requires 7 config IDs, needs 5 for data | `server.mjs:48-56` | #64 | Open |
+| U10 | Med | Usability | Two shipped surfaces disagree on which comments return | `server.ts:110` vs `tool-contracts.md:104` | #65 | Open |
+| U11 | Low | Usability | No `logout` / `healthcheck` npm script | `package.json` | #66 | Open |
+| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | Open |
+| U13 | Low | Usability | Console workstream statuses are hard-coded literals | `App.tsx:96-104` | #68 | Open |
+| U14 | Low | Usability | Two headline metrics measured inconsistently | `server.mjs:280-281` | #69 | Open |
+| U15 | Low | Usability | `Math.max(0, ...array)` risks a stack overflow | `server.mjs:283` | #70 | Open |
+| **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
+| **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
+
+---
+
 ## 1. Summary
 
 The engineering quality is high: CI is mature (OIDC publish, Node 20/22/24 matrix, a hermetic mock e2e harness), the OAuth `state` is 24 bytes of `randomBytes` and is validated, the callback server binds loopback-only, `redact()` exists and is applied on three of four log paths, and `doctor` produces genuinely actionable messages.
