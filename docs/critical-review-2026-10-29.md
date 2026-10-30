@@ -1,10 +1,10 @@
 # Critical Review — `zendesk-mcp`
 
 **Date:** 2026-10-29
-**Reviewed revision:** `main` @ `386f270` (v0.6.1) — since advanced to `89add83` by PR #29
+**Reviewed revision:** `main` @ `386f270` (v0.6.1) — the fixes of this round have since advanced `main` past it
 **Scope:** `plugins/zendesk-connector/` (MCP server), `apps/operations-console/` (local web console), `.github/workflows/`, plugin manifests, `docs/`
 **Baseline:** `npm ci && npm run check` — typecheck clean, **171 tests, 0 failures**
-**Status:** Review artifact only. Not committed; lives outside the repo tree (`AGENTS.md:15`).
+**Status:** Review artifact. Committed and tracked since PR #72; the disposition index in section 8 is kept in step with the tree.
 
 **Total: 44 findings — 4 High, 21 Medium, 18 Low, 1 Info.**
 Sections 3–5 below are this agent's findings. **Section 6** adds the findings from the parallel agent's review that I independently re-verified against source (**S0, M12, M13, M14**). **Section 7** adds the two findings from my review of PR #71 (**P1, P2**). **Section 8** is the complete 44-row index with disposition and the filed issue number for each.
@@ -17,54 +17,54 @@ Sections 3–5 below are this agent's findings. **Section 6** adds the findings 
 
 Copy this block on its own; the full evidence for every finding is in sections 3–7.
 
-**44 findings — 4 High, 21 Medium, 18 Low, 1 Info.** One fixed and merged, four fixed in an open PR, one closed by decision, **39 open**, each with a filed issue.
+**44 findings — 4 High, 21 Medium, 18 Low, 1 Info.** 36 fixed and merged, 1 closed by decision, **7 open**, each with a filed issue.
 
-**Do first.** 1. Merge **#71** — it closes **S0**, the runtime token leak that is still live on `main`, plus **P1**, **P2** and **M12**. 2. **U1** (#56) — `commentUsers` is always `undefined` and the tool contract promises otherwise. 3. **M4** (#45) — `tags: []` silently clears every tag on a ticket. 4. **M3** (#44) — all three write tools are annotated `destructiveHint: false`, including the irreversible public reply. 5. **S2** (#32) — the token file write follows a pre-planted symlink; the client-secret write already hardens this, the token write does not.
+**Done.** Every item this review put first is merged; §8 says which pull request each finding landed in. **Still open:** M1 (#42), M2 (#43), M6 (#50), M7 (#51), M8 (#52), M11 (#55) and M13 (#48) — six deferred refactors, and the tag and publish that are the owner's to make.
 
 | ID | Sev | Area | Finding | Location | Issue | Disposition |
 |---|---|---|---|---|---|---|
-| S0 | **High** | Security | Runtime token-exchange failure hands the raw body to the agent | `auth.ts:421-437` | #31 | **Fixed** in PR #71 (`c46ef87`) |
-| S1 | **High** | Security | Token-exchange failure prints the raw access token to stderr | `oauth-setup.ts:597-601` | #30 | **Merged** — PR #29 (`89add83`) |
-| S2 | Med | Security | Token-file write follows a pre-planted symlink | `auth.ts:593-605` | #32 | Open |
-| S3 | Med | Security | Console has no Host/origin validation (DNS rebinding) | `server.mjs:350` | #33 | Open |
-| S4 | Med | Security | `redact()` matches key names only; strings never scrubbed | `audit.ts:127-138` | #34 | Open |
-| S5 | Low | Security | Tool-call audit path skips `redact()` | `audit.ts:81` | #35 | Open |
-| S6 | Low | Security | Console mints a `read write` scope for a read-only app | `server.mjs:170` | #36 | Open |
-| S7 | Low | Security | Console performs no base-URL validation | `server.mjs:162` | #37 | Open |
-| S8 | Low | Security | Raw error messages returned to the browser | `server.mjs:295-300` | #38 | Open |
-| S9 | Low | Security | `/api/*` not rate-limited *(deliberate)* | `server.mjs:253,262` | #39 | Open — documentation only |
+| S0 | **High** | Security | Runtime token-exchange failure hands the raw body to the agent | `auth.ts:421-437` | #31 | **Merged** — PR #71 |
+| S1 | **High** | Security | Token-exchange failure prints the raw access token to stderr | `oauth-setup.ts:597-601` | #30 | **Merged** — PR #29 |
+| S2 | Med | Security | Token-file write follows a pre-planted symlink | `auth.ts:593-605` | #32 | **Merged** — PR #73 |
+| S3 | Med | Security | Console has no Host/origin validation (DNS rebinding) | `server.mjs:350` | #33 | **Merged** — PR #75 |
+| S4 | Med | Security | `redact()` matches key names only; strings never scrubbed | `audit.ts:127-138` | #34 | **Merged** — PR #73 |
+| S5 | Low | Security | Tool-call audit path skips `redact()` | `audit.ts:81` | #35 | **Merged** — PR #73 |
+| S6 | Low | Security | Console mints a `read write` scope for a read-only app | `server.mjs:170` | #36 | **Merged** — PR #75 |
+| S7 | Low | Security | Console performs no base-URL validation | `server.mjs:162` | #37 | **Merged** — PR #75 |
+| S8 | Low | Security | Raw error messages returned to the browser | `server.mjs:295-300` | #38 | **Merged** — PR #75 |
+| S9 | Low | Security | `/api/*` not rate-limited *(deliberate)* | `server.mjs:253,262` | #39 | **Merged** — PR #78 |
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
-| S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | Open |
-| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | Open |
-| M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open |
-| M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open |
-| M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | Open |
-| M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | Open |
-| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | Open |
-| M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open |
-| M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open |
-| M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open |
-| M9 | Low | Maint | `.env.example` documents 8 of ~16 `ZENDESK_*` vars | `.env.example` | #53 | Open |
-| M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | Open |
-| M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open |
-| M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Fixed** in PR #71 |
-| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open |
-| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | Open |
-| U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | Open |
-| U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | Open |
-| U3 | Med | Usability | Truncated comments have no continuation path | `server.ts:136,142` | #58 | Open |
-| U4 | Med | Usability | Console `load()` has no `catch` → silent empty dashboard | `App.tsx:210-217` | #59 | Open |
-| U5 | Med | Usability | Search description omits pagination, shape, id handoff | `server.ts:61-74` | #60 | Open |
-| U6 | Med | Usability | Write-tool descriptions are 5 words; params undescribed | `server.ts:152,184,214` | #61 | Open |
-| U7 | Med | Usability | No `--help`; unknown flags start the server and hang | `index.ts:14-47` | #62 | Open |
-| U8 | Med | Usability | Doctor can't detect scope/expiry; never prints enabled tools | `doctor.ts:71-114` | #63 | Open |
-| U9 | Med | Usability | Console requires 7 config IDs, needs 5 for data | `server.mjs:48-56` | #64 | Open |
-| U10 | Med | Usability | Two shipped surfaces disagree on which comments return | `server.ts:110` vs `tool-contracts.md:104` | #65 | Open |
-| U11 | Low | Usability | No `logout` / `healthcheck` npm script | `package.json` | #66 | Open |
-| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | Open |
-| U13 | Low | Usability | Console workstream statuses are hard-coded literals | `App.tsx:96-104` | #68 | Open |
-| U14 | Low | Usability | Two headline metrics measured inconsistently | `server.mjs:280-281` | #69 | Open |
-| U15 | Low | Usability | `Math.max(0, ...array)` risks a stack overflow | `server.mjs:283` | #70 | Open |
+| S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | **Merged** — PR #73 |
+| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | **Merged** — PR #76 |
+| M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
+| M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open — deferred refactor |
+| M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | **Merged** — PR #74 |
+| M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | **Merged** — PR #74 |
+| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | **Merged** — PR #76 |
+| M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open — deferred refactor |
+| M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open — deferred refactor |
+| M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open — deferred refactor |
+| M9 | Low | Maint | `.env.example` documents 8 of ~16 `ZENDESK_*` vars | `.env.example` | #53 | **Merged** — PR #78 |
+| M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | **Merged** — PR #79 |
+| M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open — deferred refactor |
+| M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Merged** — PR #71 |
+| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open — owner action (tag and publish) |
+| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | **Merged** — PR #76 |
+| U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | **Merged** — PR #74 |
+| U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | **Merged** — PR #74 |
+| U3 | Med | Usability | Truncated comments have no continuation path | `server.ts:136,142` | #58 | **Merged** — PR #74 |
+| U4 | Med | Usability | Console `load()` has no `catch` → silent empty dashboard | `App.tsx:210-217` | #59 | **Merged** — PR #80 |
+| U5 | Med | Usability | Search description omits pagination, shape, id handoff | `server.ts:61-74` | #60 | **Merged** — PR #74 |
+| U6 | Med | Usability | Write-tool descriptions are 5 words; params undescribed | `server.ts:152,184,214` | #61 | **Merged** — PR #74 |
+| U7 | Med | Usability | No `--help`; unknown flags start the server and hang | `index.ts:14-47` | #62 | **Merged** — PR #77 |
+| U8 | Med | Usability | Doctor can't detect scope/expiry; never prints enabled tools | `doctor.ts:71-114` | #63 | **Merged** — PR #77 |
+| U9 | Med | Usability | Console requires 7 config IDs, needs 5 for data | `server.mjs:48-56` | #64 | **Merged** — PR #79 |
+| U10 | Med | Usability | Two shipped surfaces disagree on which comments return | `server.ts:110` vs `tool-contracts.md:104` | #65 | **Merged** — PR #74 |
+| U11 | Low | Usability | No `logout` / `healthcheck` npm script | `package.json` | #66 | **Merged** — PR #78 |
+| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | **Merged** — PR #78 |
+| U13 | Low | Usability | Console workstream statuses are hard-coded literals | `App.tsx:96-104` | #68 | **Merged** — PR #80 |
+| U14 | Low | Usability | Two headline metrics measured inconsistently | `server.mjs:280-281` | #69 | **Merged** — PR #79 |
+| U15 | Low | Usability | `Math.max(0, ...array)` risks a stack overflow | `server.mjs:283` | #70 | **Merged** — PR #79 |
 | **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
 | **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
 
@@ -74,25 +74,25 @@ Copy this block on its own; the full evidence for every finding is in sections 3
 
 The engineering quality is high: CI is mature (OIDC publish, Node 20/22/24 matrix, a hermetic mock e2e harness), the OAuth `state` is 24 bytes of `randomBytes` and is validated, the callback server binds loopback-only, `redact()` exists and is applied on three of four log paths, and `doctor` produces genuinely actionable messages.
 
-Three classes of real defect remain.
+Three classes of real defect were found.
 
-1. **One credential leak is live on `main`.** A failed OAuth token exchange prints the raw response body — which can contain a live access token — to stderr. The fix already exists as **PR #29** (`origin/ci/oauth-exchange-redaction`, `ed5b30d`) and is **not merged**.
-2. **The agent-facing tool contract has behavioural defects.** Two of the twelve tools return data that does not match their own description: `zendesk_get_ticket` reads a `users` side-load it never requests (so comment authors never resolve), and `zendesk_search_tickets` labels non-ticket search results as tickets and hands back broken ticket URLs.
-3. **Write-path semantics are unsafe and undocumented.** `tags: []` silently clears every tag on a ticket, and all three write tools are annotated `destructiveHint: false` — including one that sends an irreversible public reply.
+1. **One credential leak was live on `main`.** A failed OAuth token exchange prints the raw response body — which can contain a live access token — to stderr. The fix is **PR #29** (`ed5b30d`), and it is **merged**.
+2. **The agent-facing tool contract had behavioural defects.** Two of the twelve tools returned data that did not match their own description: `zendesk_get_ticket` reads a `users` side-load it never requests (so comment authors never resolve), and `zendesk_search_tickets` labels non-ticket search results as tickets and hands back broken ticket URLs.
+3. **Write-path semantics were unsafe and undocumented.** `tags: []` silently cleared every tag on a ticket, and all three write tools were annotated `destructiveHint: false` — including one that sends an irreversible public reply.
 
-**Overall verdict: 44 findings — 4 High, 21 Medium, 18 Low, 1 Info** across security (14), maintainability (14) and usability (15), plus 1 Info. One is fixed and merged, four are fixed in an open PR, one was closed by decision, and **39 remain open** with a filed issue for each.
+**Overall verdict: 44 findings — 4 High, 21 Medium, 18 Low, 1 Info** across security (14), maintainability (14) and usability (15), plus 1 Info. 36 are fixed and merged, 1 was closed by decision, and **7 remain open** with a filed issue for each.
 
-**Current state as of 2026-10-29 ~19:40 ET:**
-- `main` = `89add83` — PR #29 (S1, the setup-path leak) is **merged**.
-- PR #71 (`fix/s0-runtime-token-leak`, head `c46ef87`) is **open** and closes **S0, P1, P2, M12** — the runtime-path leak and the write-tool test gap. I reviewed the exact head and approved it.
+**Current state after the fixes of this round:**
+- Both credential leaks are **merged** — PR #29 for the setup path and PR #71 for the runtime path.
+- The security and correctness findings are merged; §8 says which pull request each one landed in.
 - **41 issues** filed, `#30`–`#70`, mapped to findings in §8.
-- **The runtime-path leak (S0) is still live on `main` until PR #71 merges.**
+- **Seven findings are still open**, each with a filed issue: M1, M2, M6, M7, M8, M11 and M13.
 
 ---
 
 ## 2. Prioritised action list
 
-> **Status as of 2026-10-29 ~19:40 ET.** Items 1 and 2 below are **done**: S1 merged via PR #29, and S0/P1/P2/M12 fixed and approved in PR #71 (`c46ef87`, awaiting merge). All 39 remaining findings have a filed issue (`#30`–`#70`) — see §8 for the mapping.
+> **Status after the fixes of this round.** Items 1 and 2 below are **done**: S1 merged via PR #29, and S0/P1/P2/M12 merged in PR #71. Every finding in the list below has a filed issue (`#30`–`#70`) — see §8 for the mapping and for where each one landed.
 
 | Rank | ID | Severity | Area | Title |
 |---|---|---|---|---|
@@ -114,6 +114,8 @@ Three classes of real defect remain.
 ## 3. Security findings
 
 ### S1 — High — Token-exchange failure prints the raw access token to stderr
+
+**Disposition: merged in PR #29.**
 
 **Confirmed (reproduced by the security reviewer with a live mock exchange).**
 `plugins/zendesk-connector/src/oauth-setup.ts:597-601`
@@ -140,6 +142,8 @@ Three classes of real defect remain.
 ---
 
 ### S2 — Medium — Token-file write follows a pre-planted symlink
+
+**Disposition: merged in PR #73.**
 
 **Confirmed (reproduced).** `plugins/zendesk-connector/src/auth.ts:593-605`
 
@@ -190,6 +194,8 @@ The token writer — which holds strictly more sensitive material — got neithe
 
 ### S3 — Medium — Operations console has no Host/origin validation (DNS rebinding)
 
+**Disposition: merged in PR #75.**
+
 **Confirmed in code; the exploit was not executed.**
 `apps/operations-console/server.mjs:350` binds loopback only:
 
@@ -208,6 +214,8 @@ The token writer — which holds strictly more sensitive material — got neithe
 ---
 
 ### S4 — Medium — `redact()` matches key names only; string values are never scrubbed
+
+**Disposition: merged in PR #73.**
 
 **Confirmed.** `plugins/zendesk-connector/src/audit.ts:127-138`
 
@@ -238,6 +246,8 @@ The guard `typeof value !== "object"` returns string values **unchanged**. `reda
 
 ### S5 — Low — The tool-call audit path skips `redact()` entirely
 
+**Disposition: merged in PR #73.**
+
 **Confirmed.** `plugins/zendesk-connector/src/audit.ts:75-82`
 
 ```ts
@@ -266,6 +276,8 @@ function writeEvent(payload: unknown, sink: LogSink): void {
 ---
 
 ### S6 — Low — Console mints a `read write` scope for a read-only app
+
+**Disposition: merged in PR #75.**
 
 **Confirmed.** `apps/operations-console/server.mjs:158-177`
 
@@ -299,6 +311,8 @@ Three problems in one block:
 
 ### S7 — Low — Console performs no base-URL validation
 
+**Disposition: merged in PR #75.**
+
 **Confirmed.** `apps/operations-console/server.mjs:162`
 
 ```js
@@ -325,6 +339,8 @@ The console accepts **any** scheme and host from `client.json` — including `ht
 
 ### S8 — Low — Raw error messages are returned to the browser
 
+**Disposition: merged in PR #75.**
+
 **Confirmed.** `apps/operations-console/server.mjs:295-300`
 
 ```js
@@ -344,6 +360,8 @@ The console accepts **any** scheme and host from `client.json` — including `ht
 
 ### S9 — Low — `/api/*` endpoints are not rate-limited *(deliberate, not a bug)*
 
+**Disposition: merged in PR #78.**
+
 **Confirmed and intentional.** `server.mjs:253` and `:262` register the API routes **before** `mountStaticFiles` (`server.mjs:306-323`) installs the limiter, so Express never applies the limiter to them. This is a deliberate, tested design decision — `apps/operations-console/test/rate-limit.test.mjs:368` asserts the limiter "leaves the routes that were mounted before it alone."
 
 **Why it is still worth a decision:** `/api/overview` triggers live Zendesk reads, and it is the one route that is *not* limited. In development mode the limiter is not installed at all. Record the intent explicitly rather than leaving it as an emergent property of route ordering.
@@ -351,6 +369,8 @@ The console accepts **any** scheme and host from `client.json` — including `ht
 ---
 
 ### S10 — Low — No PKCE in the `authorization_code` flow *(acknowledged in the docs)*
+
+**Disposition: closed by decision.**
 
 **Confirmed.** `oauth-setup.ts:463-475` builds the authorization URL with `response_type`, `client_id`, `scope` and `state` — no `code_challenge`; `exchangeCode` sends no `code_verifier`.
 
@@ -360,6 +380,8 @@ This is a **confidential client** (it sends `client_secret`, `oauth-setup.ts:588
 
 ### S11 — Low — `zendesk_status` discloses the token-file path
 
+**Disposition: merged in PR #73.**
+
 **Confirmed.** `auth.ts:370-378` — `status()` returns `tokenFile` (in `authorization_code` mode; `undefined` otherwise), surfaced directly in the `zendesk_status` tool result. Path only, no credential, but it is filesystem information reaching an LLM that will likely repeat it in a summary. `docs/tool-contracts.md` documents the payload as including `oauth` and `baseUrl` but not the path.
 
 **Remediation.** Return the directory basename or omit the field from the tool payload while keeping it in the CLI/`doctor` output.
@@ -367,6 +389,8 @@ This is a **confidential client** (it sends `client_secret`, `oauth-setup.ts:588
 ---
 
 ### S12 — Info — CI falls back to self-hosted runners if the guard variable is deleted
+
+**Disposition: merged in PR #76.**
 
 **Confirmed.** `ci.yml:71, 96, 169, 208, 298` use a pattern equivalent to:
 
@@ -385,6 +409,8 @@ runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted", ...]') }}
 ## 4. Maintainability findings
 
 ### M1 — Medium — The 12-tool list is duplicated across 9 non-test files
+
+**Disposition: open — deferred refactor.**
 
 **Confirmed.** A repository-wide grep for the tool names returns **284 occurrences across 20 files**. Non-test files that enumerate the tool set:
 
@@ -410,6 +436,8 @@ plus the code itself (`plugins/zendesk-connector/src/server.ts` — 48, `src/pol
 ---
 
 ### M2 — Medium — `safeJson` triplicated; `errorMessage` and mode predicates duplicated
+
+**Disposition: open — deferred refactor.**
 
 **Confirmed.** Identical helper bodies in three modules:
 
@@ -441,6 +469,8 @@ function isKnownMode(value: string): value is OAuthMode {
 
 ### M3 — Medium — `destructiveHint: false` is hardcoded for all three write tools
 
+**Disposition: merged in PR #74.**
+
 **Confirmed.** `plugins/zendesk-connector/src/server.ts:467-474`
 
 ```ts
@@ -466,6 +496,8 @@ Applied to `zendesk_create_ticket`, `zendesk_update_ticket` (`server.ts:194`, `w
 ---
 
 ### M4 — Medium — `tags: []` silently clears every tag on a ticket
+
+**Disposition: merged in PR #74.**
 
 **Confirmed.** Two lines interact.
 
@@ -497,6 +529,8 @@ The schema (`server.ts:192`, `tags: z.array(z.string()).optional()`) permits an 
 
 ### M5 — Medium — `npm run e2e:mock` never runs in CI
 
+**Disposition: merged in PR #76.**
+
 **Confirmed.** `plugins/zendesk-connector/package.json` defines:
 
 ```json
@@ -521,6 +555,8 @@ The suite covers the **read** tools only — no write tool name (`zendesk_create
 
 ### M6 — Low — `client.ts:110` performs an unsound generic cast
 
+**Disposition: open — deferred refactor.**
+
 **Confirmed.** `plugins/zendesk-connector/src/client.ts:109-110`
 
 ```ts
@@ -534,6 +570,8 @@ The suite covers the **read** tools only — no write tool name (`zendesk_create
 ---
 
 ### M7 — Low — `oauth-setup.ts` uses global `fetch`, bypassing the injectable fetcher
+
+**Disposition: open — deferred refactor.**
 
 **Confirmed.** `oauth-setup.ts:578`
 
@@ -549,12 +587,14 @@ Every other HTTP call site in the project injects a fetcher so tests can substit
 
 ### M8 — Low — Environment-variable handling has four access styles and three validation policies
 
-**Confirmed.** Across `auth.ts`, `policy.ts`, `client.ts` and `server.ts`:
+**Disposition: open — deferred refactor.**
+
+**Confirmed.** Across `auth.ts`, `policy.ts`, `client.ts` and the console's `server.mjs`:
 
 - Four ways to read an env var: bare `process.env.X`, the `env()` helper, `??` chains against the saved client file, and direct `process.env` reads in the console (`server.mjs:65`).
-- Three different policies for an *unknown* value: `policy.ts` throws on an unrecognised `ZENDESK_OAUTH_MODE`; `client.ts` silently falls back to a default mode; the console treats an empty string as absent (`configValue`, `server.mjs:64-69`).
+- Three different policies for an *unknown* value: `auth.ts` throws on an unrecognised `ZENDESK_OAUTH_MODE`; `policy.ts` throws on an unrecognised `ZENDESK_READ_ONLY`; `client.ts` silently falls back to the default for a retry limit that is not an integer in range; the console treats an empty string as absent (`configValue`, `server.mjs:64-69`).
 
-**Impact.** An operator who typos `ZENDESK_OAUTH_MODE` gets a hard error from one code path and silent behaviour from another.
+**Impact.** An operator who typos `ZENDESK_OAUTH_MODE` gets a hard error, while an operator who typos `ZENDESK_MAX_RETRIES` gets the default without being told.
 
 **Remediation.** One `env()` helper with one documented policy per variable.
 
@@ -562,15 +602,19 @@ Every other HTTP call site in the project injects a fetcher so tests can substit
 
 ### M9 — Low — `.env.example` documents 8 of ~16 `ZENDESK_*` variables
 
-**Confirmed.** `plugins/zendesk-connector/.env.example` is 12 lines and lists: `ZENDESK_SUBDOMAIN`, `ZENDESK_OAUTH_MODE`, `ZENDESK_OAUTH_CLIENT_ID`, `ZENDESK_OAUTH_CLIENT_SECRET`, `ZENDESK_OAUTH_CLIENT_FILE`, `ZENDESK_OAUTH_SCOPE`, `ZENDESK_ALLOWED_TOOLS`, `ZENDESK_READ_ONLY`.
+**Disposition: merged in PR #78.**
 
-Not documented: `ZENDESK_BASE_URL`, `ZENDESK_OAUTH_ACCESS_TOKEN`, `ZENDESK_OAUTH_TOKEN_FILE`, `ZENDESK_MAX_RETRIES`, `ZENDESK_MAX_RETRY_DELAY_MS`, `ZENDESK_OAUTH_CALLBACK_PORT`, `ZENDESK_HEALTHCHECK`, `ZENDESK_SHUTDOWN_TIMEOUT_MS`. The `ZENDESK_CONSOLE_*` variables live only in the console's own `.env.example`.
+**Confirmed.** `plugins/zendesk-connector/.env.example` was 12 lines and listed: `ZENDESK_SUBDOMAIN`, `ZENDESK_OAUTH_MODE`, `ZENDESK_OAUTH_CLIENT_ID`, `ZENDESK_OAUTH_CLIENT_SECRET`, `ZENDESK_OAUTH_CLIENT_FILE`, `ZENDESK_OAUTH_SCOPE`, `ZENDESK_ALLOWED_TOOLS`, `ZENDESK_READ_ONLY`.
+
+Not documented then: `ZENDESK_BASE_URL`, `ZENDESK_OAUTH_ACCESS_TOKEN`, `ZENDESK_OAUTH_TOKEN_FILE`, `ZENDESK_MAX_RETRIES`, `ZENDESK_MAX_RETRY_DELAY_MS`, `ZENDESK_OAUTH_CALLBACK_PORT`, `ZENDESK_HEALTHCHECK`, `ZENDESK_SHUTDOWN_TIMEOUT_MS`. The `ZENDESK_CONSOLE_*` variables live only in the console's own `.env.example`.
 
 Note `.mcp.json` does list a wider set, so the manifest and the example file disagree about what a user must fill in.
 
 ---
 
 ### M10 — Low — The console duplicates domain constants between server and frontend
+
+**Disposition: merged in PR #79.**
 
 **Confirmed.**
 
@@ -585,6 +629,8 @@ The console's server and frontend are separate packages with no shared module, s
 
 ### M11 — Low — `server.ts` concentrates 12 tool definitions in one large function
 
+**Disposition: open — deferred refactor.**
+
 **Confirmed.** `plugins/zendesk-connector/src/server.ts` is ~560 lines; `createZendeskServer` is a single ~450-line function containing 12 inline `allowedTools.has("...") && server.registerTool("...", { ... }, async () => { ... })` expressions, plus `buildTicketPayload` (`server.ts:488-510`) and the annotation helpers (`server.ts:460-474`).
 
 Each tool is individually testable through the in-memory MCP transport, which is why the test suite is strong — but the file is the natural place for drift, and it is the file that carries M3, M4, U1, U2 and U3.
@@ -596,6 +642,8 @@ Each tool is individually testable through the in-memory MCP transport, which is
 ## 5. Usability findings
 
 ### U1 — High — `commentUsers` is always `undefined`
+
+**Disposition: merged in PR #74.**
 
 **Confirmed.** `plugins/zendesk-connector/src/server.ts:132-143`
 
@@ -639,6 +687,8 @@ So the documentation guarantees a side-load that the code never requests. Any co
 
 ### U2 — Medium — `zendesk_search_tickets` mislabels non-ticket results as tickets
 
+**Disposition: merged in PR #74.**
+
 **Confirmed against Zendesk's API documentation.** `server.ts:78-101`
 
 ```ts
@@ -675,6 +725,8 @@ Zendesk's Search API is a unified endpoint: the `results` array "may consist of 
 
 ### U3 — Medium — Truncated comments have no continuation path
 
+**Disposition: merged in PR #74.**
+
 **Confirmed.** `server.ts:136` fetches `/tickets/${id}/comments.json` with no `page` parameter, and `server.ts:142` returns `commentsTruncated: Boolean(commentsResponse.next_page)`.
 
 The tool has no comment-page parameter (`server.ts:111-114` accepts only `ticketId` and `includeComments`), so when a thread has more comments than fit on one page, the remaining comments are **unreachable**.
@@ -686,6 +738,8 @@ The tool has no comment-page parameter (`server.ts:111-114` accepts only `ticket
 ---
 
 ### U4 — Medium — Console `load()` has no `catch`; a transport failure renders a normal-looking empty dashboard
+
+**Disposition: merged in PR #80.**
 
 **Confirmed.** `apps/operations-console/src/App.tsx:210-218`
 
@@ -711,6 +765,8 @@ There is a `try`/`finally` but **no `catch`**. If `fetch` rejects (server down) 
 
 ### U5 — Medium — The search tool's description omits pagination, result shape and the ticket-id handoff
 
+**Disposition: merged in PR #74.**
+
 **Confirmed.** `server.ts:61-74` — the description is:
 
 ```
@@ -725,6 +781,8 @@ It does not say that the response is paginated, that `count` is the **total acro
 
 ### U6 — Medium — Write-tool descriptions are 5 words; parameters are undescribed
 
+**Disposition: merged in PR #74.**
+
 **Confirmed.**
 
 - `server.ts:152` — `zendesk_create_ticket`: `"Create a Zendesk ticket."` No parameter descriptions, no statement that the result contains the new ticket id, no warning that the ticket is customer-visible.
@@ -738,6 +796,8 @@ The server-level `instructions` string (`server.ts:20-21`) is genuinely good —
 ---
 
 ### U7 — Medium — No `--help`; an unknown flag starts the stdio server and hangs
+
+**Disposition: merged in PR #77.**
 
 **Confirmed.** `plugins/zendesk-connector/src/index.ts:14-47` dispatches only on `--doctor`, `--healthcheck` and `--logout` (via `isDoctorRequested`, `isHealthCheckFlag`, `isLogoutRequested`). Any other argument — including `--help` — falls through to:
 
@@ -754,6 +814,8 @@ The process then waits on stdin **forever**, with no output. `zendesk-mcp --help
 ---
 
 ### U8 — Medium — The doctor cannot detect the most common setup failure, and never prints the enabled tool set
+
+**Disposition: merged in PR #77.**
 
 **Confirmed.** `plugins/zendesk-connector/src/doctor.ts:71-84` states its scope explicitly:
 
@@ -791,6 +853,8 @@ On success it prints only `"Zendesk connector doctor: all checks passed."` (`doc
 
 ### U9 — Medium — The console requires 7 configuration IDs but needs 5 for data
 
+**Disposition: merged in PR #79.**
+
 **Confirmed.** `apps/operations-console/server.mjs:48-56`
 
 ```js
@@ -815,11 +879,15 @@ const REQUIRED_CONFIG = {
 
 ### U10 — Medium — Two shipped surfaces disagree about which comments are returned
 
+**Disposition: merged in PR #74.**
+
 **Confirmed.** `server.ts:110` says *"and recent comments"*; `docs/tool-contracts.md:104` says *"first page"*. Only the contract is correct (see U3).
 
 ---
 
 ### U11 — Low — No `logout` or `healthcheck` npm script, though both flags exist
+
+**Disposition: merged in PR #78.**
 
 **Confirmed.** `plugins/zendesk-connector/package.json` scripts are `clean`, `build`, `build:test`, `typecheck`, `test`, `check`, `start`, `doctor`, `e2e`, `e2e:mock`, `oauth:setup`, `prepack`.
 
@@ -830,6 +898,8 @@ const REQUIRED_CONFIG = {
 ---
 
 ### U12 — Low — The plugin manifest uses a relative path for the server entrypoint
+
+**Disposition: merged in PR #78.**
 
 **Confirmed.** `plugins/zendesk-connector/.mcp.json:5-7`
 
@@ -848,6 +918,8 @@ MCP hosts resolve relative paths against their **own** working directory, not th
 
 ### U13 — Low — The console's workstream statuses are hard-coded literals
 
+**Disposition: merged in PR #80.**
+
 **Confirmed.** `apps/operations-console/src/App.tsx:96-104`
 
 ```tsx
@@ -865,6 +937,8 @@ The app asserts operational facts it never measured. It is a reference app, so t
 
 ### U14 — Low — The console's two headline metrics are measured inconsistently
 
+**Disposition: merged in PR #79.**
+
 **Confirmed.** `server.mjs:279-284`
 
 ```js
@@ -881,6 +955,8 @@ The app asserts operational facts it never measured. It is a reference app, so t
 ---
 
 ### U15 — Low — `Math.max(0, ...array)` risks a stack overflow on very large views
+
+**Disposition: merged in PR #79.**
 
 **Confirmed.** `server.mjs:283` — `Math.max(0, ...summary.tickets.map((ticket) => ticket.ageDays))` spreads the array as function arguments. Exceeding the engine's argument limit throws `RangeError: Maximum call stack size exceeded`, which the `catch` at `server.mjs:295` would convert into a 503 with the error message in the browser.
 
@@ -932,7 +1008,7 @@ The message text is safe (status + statusText only). **The `details` argument is
 
 passes through **verbatim** — the key `error_description` does not match, and `redact()` never inspects what a value contains. The credential lands in the agent's context.
 
-**Disposition: fixed in PR #71** (`c46ef87`) — see §7. Filed as issue **#31**.
+**Disposition: merged in PR #71** (`c46ef87`) — see §7. Filed as issue **#31**.
 
 ### M12 — Medium — The three write tools are never invoked by any test
 
@@ -956,7 +1032,7 @@ The suite's only `callTool` invocation is `zendesk_status`:
 
 No write tool is ever executed against a mock server. That is exactly why the suite is green while **M4** (`tags: []` silently clearing every tag) is live — nothing exercises the write path's behaviour.
 
-**Disposition: fixed in PR #71** (`c46ef87`) — the new test `"the write tools send the request bodies Zendesk expects"` asserts real URLs, methods and request bodies, and pins that an omitted `public` stays `false`. Filed as issue **#47**.
+**Disposition: merged in PR #71** (`c46ef87`) — the new test `"the write tools send the request bodies Zendesk expects"` asserts real URLs, methods and request bodies, and pins that an omitted `public` stays `false`. Filed as issue **#47**.
 
 ### M13 — Medium — Release version drift: version says 0.6.1, but only `v0.6.0` is tagged
 
@@ -966,7 +1042,7 @@ No write tool is ever executed against a mock server. That is exactly why the su
 
 **Remediation.** Tag and release `v0.6.1`, and point the issue template at the version the reporter is actually running.
 
-**Disposition: open.** Filed as issue **#48**.
+**Disposition: open — owner action (tag and publish).** Filed as issue **#48**.
 
 ### M14 — Low — `npm audit --audit-level=high` hides a live moderate advisory in the production tree
 
@@ -993,7 +1069,7 @@ CI's audit step gates at `--audit-level=high`, so a moderate advisory passes **s
 
 **Remediation.** Report moderates (`--audit-level=moderate`) or use `npm audit --omit=dev` with an explicit allowlist, so an advisory is a visible signal rather than a silent one.
 
-**Disposition: open.** Filed as issue **#49**.
+**Disposition: merged in PR #76.** Filed as issue **#49**.
 
 ---
 
@@ -1040,7 +1116,7 @@ const OAUTH_ERROR_CODES = new Set([
 
 `access_denied` was added beyond RFC 6749 §5.2 because it is a code an agent can legitimately see in this flow.
 
-**Disposition: fixed at `c46ef87`, verified by me.** Re-running my probe against the new head: both leak cases now return `contains secret: false`, and `invalid_client` is still preserved. Covered by issue **#31**; the change is in PR #71.
+**Disposition: merged in PR #71.** Re-running my probe against the new head: both leak cases now return `contains secret: false`, and `invalid_client` is still preserved. Covered by issue **#31**; the change is in PR #71.
 
 ### P2 — Medium — The field-name rule missed adjacent credential shapes *(FIXED at `c46ef87`)*
 
@@ -1073,7 +1149,7 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 ]);
 ```
 
-**Disposition: fixed at `c46ef87`, verified by me.** All three name cases now return `["[REDACTED]"]`.
+**Disposition: merged in PR #71.** All three name cases now return `["[REDACTED]"]`.
 
 ### Review verdict on PR #71 at `c46ef87`
 
@@ -1097,57 +1173,67 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 
 | ID | Sev | Area | Title | Location | Issue | Disposition |
 |---|---|---|---|---|---|---|
-| S0 | **High** | Security | Runtime token-exchange failure hands the raw body to the agent | `auth.ts:421-437` | #31 | **Fixed** in PR #71 (`c46ef87`) |
-| S1 | **High** | Security | Token-exchange failure prints the raw access token to stderr | `oauth-setup.ts:597-601` | #30 | **Merged** — PR #29 (`89add83`) |
-| S2 | Med | Security | Token-file write follows a pre-planted symlink | `auth.ts:593-605` | #32 | Open |
-| S3 | Med | Security | Console has no Host/origin validation (DNS rebinding) | `server.mjs:350` | #33 | Open |
-| S4 | Med | Security | `redact()` matches key names only; strings never scrubbed | `audit.ts:127-138` | #34 | Open |
-| S5 | Low | Security | Tool-call audit path skips `redact()` | `audit.ts:81` | #35 | Open |
-| S6 | Low | Security | Console mints a `read write` scope for a read-only app | `server.mjs:170` | #36 | Open |
-| S7 | Low | Security | Console performs no base-URL validation | `server.mjs:162` | #37 | Open |
-| S8 | Low | Security | Raw error messages returned to the browser | `server.mjs:295-300` | #38 | Open |
-| S9 | Low | Security | `/api/*` not rate-limited *(deliberate)* | `server.mjs:253,262` | #39 | Open — documentation only |
+| S0 | **High** | Security | Runtime token-exchange failure hands the raw body to the agent | `auth.ts:421-437` | #31 | **Merged** — PR #71 |
+| S1 | **High** | Security | Token-exchange failure prints the raw access token to stderr | `oauth-setup.ts:597-601` | #30 | **Merged** — PR #29 |
+| S2 | Med | Security | Token-file write follows a pre-planted symlink | `auth.ts:593-605` | #32 | **Merged** — PR #73 |
+| S3 | Med | Security | Console has no Host/origin validation (DNS rebinding) | `server.mjs:350` | #33 | **Merged** — PR #75 |
+| S4 | Med | Security | `redact()` matches key names only; strings never scrubbed | `audit.ts:127-138` | #34 | **Merged** — PR #73 |
+| S5 | Low | Security | Tool-call audit path skips `redact()` | `audit.ts:81` | #35 | **Merged** — PR #73 |
+| S6 | Low | Security | Console mints a `read write` scope for a read-only app | `server.mjs:170` | #36 | **Merged** — PR #75 |
+| S7 | Low | Security | Console performs no base-URL validation | `server.mjs:162` | #37 | **Merged** — PR #75 |
+| S8 | Low | Security | Raw error messages returned to the browser | `server.mjs:295-300` | #38 | **Merged** — PR #75 |
+| S9 | Low | Security | `/api/*` not rate-limited *(deliberate)* | `server.mjs:253,262` | #39 | **Merged** — PR #78 |
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
-| S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | Open |
-| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | Open |
-| M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open |
-| M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open |
-| M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | Open |
-| M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | Open |
-| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | Open |
-| M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open |
-| M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open |
-| M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open |
-| M9 | Low | Maint | `.env.example` documents 8 of ~16 `ZENDESK_*` vars | `.env.example` | #53 | Open |
-| M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | Open |
-| M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open |
-| M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Fixed** in PR #71 |
-| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open |
-| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | Open |
-| U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | Open |
-| U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | Open |
-| U3 | Med | Usability | Truncated comments have no continuation path | `server.ts:136,142` | #58 | Open |
-| U4 | Med | Usability | Console `load()` has no `catch` → silent empty dashboard | `App.tsx:210-217` | #59 | Open |
-| U5 | Med | Usability | Search description omits pagination, shape, id handoff | `server.ts:61-74` | #60 | Open |
-| U6 | Med | Usability | Write-tool descriptions are 5 words; params undescribed | `server.ts:152,184,214` | #61 | Open |
-| U7 | Med | Usability | No `--help`; unknown flags start the server and hang | `index.ts:14-47` | #62 | Open |
-| U8 | Med | Usability | Doctor can't detect scope/expiry; never prints enabled tools | `doctor.ts:71-114` | #63 | Open |
-| U9 | Med | Usability | Console requires 7 config IDs, needs 5 for data | `server.mjs:48-56` | #64 | Open |
-| U10 | Med | Usability | Two shipped surfaces disagree on which comments return | `server.ts:110` vs `tool-contracts.md:104` | #65 | Open |
-| U11 | Low | Usability | No `logout` / `healthcheck` npm script | `package.json` | #66 | Open |
-| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | Open |
-| U13 | Low | Usability | Console workstream statuses are hard-coded literals | `App.tsx:96-104` | #68 | Open |
-| U14 | Low | Usability | Two headline metrics measured inconsistently | `server.mjs:280-281` | #69 | Open |
-| U15 | Low | Usability | `Math.max(0, ...array)` risks a stack overflow | `server.mjs:283` | #70 | Open |
+| S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | **Merged** — PR #73 |
+| S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | **Merged** — PR #76 |
+| M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
+| M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open — deferred refactor |
+| M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | **Merged** — PR #74 |
+| M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | **Merged** — PR #74 |
+| M5 | Med | Maint | `npm run e2e:mock` never runs in CI | `ci.yml:43` | #46 | **Merged** — PR #76 |
+| M6 | Low | Maint | Unsound generic cast on unvalidated JSON | `client.ts:110` | #50 | Open — deferred refactor |
+| M7 | Low | Maint | Global `fetch` bypasses the injectable fetcher | `oauth-setup.ts:578` | #51 | Open — deferred refactor |
+| M8 | Low | Maint | 4 env-access styles, 3 validation policies | `auth.ts`, `policy.ts`, `client.ts` | #52 | Open — deferred refactor |
+| M9 | Low | Maint | `.env.example` documents 8 of ~16 `ZENDESK_*` vars | `.env.example` | #53 | **Merged** — PR #78 |
+| M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | **Merged** — PR #79 |
+| M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open — deferred refactor |
+| M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Merged** — PR #71 |
+| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open — owner action (tag and publish) |
+| M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | **Merged** — PR #76 |
+| U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | **Merged** — PR #74 |
+| U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | **Merged** — PR #74 |
+| U3 | Med | Usability | Truncated comments have no continuation path | `server.ts:136,142` | #58 | **Merged** — PR #74 |
+| U4 | Med | Usability | Console `load()` has no `catch` → silent empty dashboard | `App.tsx:210-217` | #59 | **Merged** — PR #80 |
+| U5 | Med | Usability | Search description omits pagination, shape, id handoff | `server.ts:61-74` | #60 | **Merged** — PR #74 |
+| U6 | Med | Usability | Write-tool descriptions are 5 words; params undescribed | `server.ts:152,184,214` | #61 | **Merged** — PR #74 |
+| U7 | Med | Usability | No `--help`; unknown flags start the server and hang | `index.ts:14-47` | #62 | **Merged** — PR #77 |
+| U8 | Med | Usability | Doctor can't detect scope/expiry; never prints enabled tools | `doctor.ts:71-114` | #63 | **Merged** — PR #77 |
+| U9 | Med | Usability | Console requires 7 config IDs, needs 5 for data | `server.mjs:48-56` | #64 | **Merged** — PR #79 |
+| U10 | Med | Usability | Two shipped surfaces disagree on which comments return | `server.ts:110` vs `tool-contracts.md:104` | #65 | **Merged** — PR #74 |
+| U11 | Low | Usability | No `logout` / `healthcheck` npm script | `package.json` | #66 | **Merged** — PR #78 |
+| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | **Merged** — PR #78 |
+| U13 | Low | Usability | Console workstream statuses are hard-coded literals | `App.tsx:96-104` | #68 | **Merged** — PR #80 |
+| U14 | Low | Usability | Two headline metrics measured inconsistently | `server.mjs:280-281` | #69 | **Merged** — PR #79 |
+| U15 | Low | Usability | `Math.max(0, ...array)` risks a stack overflow | `server.mjs:283` | #70 | **Merged** — PR #79 |
 | **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
 | **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
 
 **Roll-up:** 4 High, 21 Medium, 18 Low, 1 Info = **44**.
-**Closed or fixed:** S1 (merged), S0 + P1 + P2 + M12 (PR #71, awaiting merge), S10 (by decision). **Open: 39**, each with a filed issue.
+**Closed or fixed:** 36 findings, each merged in one of PR #29, #71, #73, #74, #75, #76, #77, #78, #79 and #80; S10 closed by decision. **Open: 7** — M1, M2, M6, M7, M8, M11, M13 — each with a filed issue.
 
-### The one thing that is still live on `main`
+### What is still live on `main`
 
-`main` is at `89add83` (PR #29 merged). That fixes the **setup-path** site (`oauth-setup.ts`). The **runtime-path** site (`auth.ts:421-437`, finding S0) is **still open on `main`** — PR #71 closes it and is waiting on merge. Until PR #71 merges, a token-endpoint response can still put a credential in front of the agent.
+The security and correctness findings of this review are all merged. 7 findings are still open, and each has a filed issue:
+
+| ID | Issue | What is left |
+|---|---|---|
+| M1 | #42 | The 12-tool list is duplicated across nine non-test files. |
+| M2 | #43 | `safeJson`, `errorMessage` and the mode predicates are duplicated. |
+| M6 | #50 | The client casts an unvalidated response to the caller's type. |
+| M7 | #51 | The token exchange calls the global `fetch` instead of an injected one. |
+| M8 | #52 | Four ways to read an environment variable, three policies for an unknown value. |
+| M11 | #55 | `server.ts` holds the twelve tool definitions in one function. |
+| M13 | #48 | The version in `package.json` is ahead of the tag; the tag and the publish are the owner's to make. |
 
 ---
 
