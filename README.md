@@ -137,7 +137,7 @@ group or organization result no longer gets a ticket URL, so a consumer that
 reads `agent_url` on every result must check `resultType` first. The
 [tool contracts](docs/tool-contracts.md#agent_url) reference has the details.
 
-Two more changes travel with it, and both change what a call does:
+Three more changes travel with it, and all three change what a call does:
 
 - `zendesk_update_ticket` refuses an empty `tags` array. It used to send it,
   and Zendesk reads that as "remove every tag on the ticket", so a call that
