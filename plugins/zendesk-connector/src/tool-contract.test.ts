@@ -166,7 +166,22 @@ test("does not read the comments when they are not asked for", async () => {
       requests.some((request) => request.url.pathname.endsWith("/comments.json")),
       false,
     );
-    assert.equal(payload.comments, undefined);
+    // The contract says the comment fields are absent, so every one of them
+    // is checked: a field that leaked into the payload would be a lie.
+    for (const field of [
+      "comments",
+      "commentUsers",
+      "commentPage",
+      "commentsTruncated",
+      "commentsNextPage",
+      "commentsNextPageNumber",
+    ]) {
+      assert.equal(
+        field in payload,
+        false,
+        `${field} should be absent when the comments are not asked for`,
+      );
+    }
   } finally {
     await session.close();
   }
@@ -487,6 +502,22 @@ test("marks the write tools that overwrite or send as destructive", async () => 
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
+      openWorldHint: true,
+    });
+
+    // The read tools carry the other set of hints, and the whole object is
+    // pinned there too: a read tool that claimed to be destructive, or that
+    // claimed not to be idempotent, would change what a host does with it.
+    assert.deepEqual(annotation("zendesk_get_ticket"), {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+    assert.deepEqual(annotation("zendesk_search_tickets"), {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: true,
     });
   } finally {
