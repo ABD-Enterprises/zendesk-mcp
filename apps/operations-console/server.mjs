@@ -573,12 +573,15 @@ export async function zendesk(path) {
 const VIEW_PAGE_SIZE = 100;
 const VIEW_PAGE_LIMIT = 20;
 // The pages of a view are read a few at a time, so a view of twenty pages
-// costs four round trips instead of twenty.
+// costs five round trips instead of twenty.
 const VIEW_PAGE_CONCURRENCY = 5;
 
 async function fetchViewRows(viewId) {
   const rows = [];
-  let count = 0;
+  // The account states how many tickets the view holds. It does not always
+  // state one, and when it does it can disagree with the rows it serves, so
+  // the number is kept as the account gave it and the rows are counted here.
+  let count = null;
   let more = true;
   let page = 1;
   while (more && page <= VIEW_PAGE_LIMIT) {
@@ -586,7 +589,7 @@ async function fetchViewRows(viewId) {
     // a window of five would ask for four pages that do not exist. After the
     // first page the count says how many pages the view holds, and that is
     // how many are asked for at a time.
-    const remaining = Math.max(1, Math.ceil(count / VIEW_PAGE_SIZE) - (page - 1));
+    const remaining = Math.max(1, Math.ceil((count ?? 0) / VIEW_PAGE_SIZE) - (page - 1));
     const size = Math.min(
       VIEW_PAGE_CONCURRENCY,
       remaining,
@@ -609,8 +612,8 @@ async function fetchViewRows(viewId) {
     more = Boolean(last && last.next_page);
     page += size;
   }
-  const total = count || rows.length;
-  return { rows, count: total };
+  // The console read the view to its end unless the page limit stopped it.
+  return { rows, count, complete: !more };
 }
 
 function bucketAge(days) {
@@ -709,11 +712,12 @@ app.get("/api/overview", async (_request, response) => {
       measured: {
         tickets: aging.rows.length,
         total: aging.count,
+        complete: aging.complete,
       },
       metrics: {
         // Both headline numbers are the total of their view, so they answer
         // the same question the same way.
-        active: aging.count,
+        active: aging.count ?? aging.rows.length,
         untriaged: untriagedView.count || 0,
         unassigned: summary.tickets.filter((ticket) => !ticket.assigneeId).length,
         oldestDays: summary.tickets.reduce(

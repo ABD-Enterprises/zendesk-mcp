@@ -96,3 +96,12 @@ test("the overview page renders the row of the oldest ticket", () => {
   assert.match(appSource, /\{oldest\.title\}/);
   assert.equal(row.title, "#900000000101 · invented subject one");
 });
+
+test("both pages that show a breakdown say how much of the view was measured", () => {
+  // The note is built by the module, and it is rendered on the dashboard and
+  // on the queue reports: the request-type breakdown exists only on the
+  // reports page, so a note that was only on the dashboard would leave that
+  // breakdown undisclosed.
+  assert.match(appSource, /measurementNote\(data\.measured\)/);
+  assert.equal((appSource.match(/<MeasurementNote note=\{note\} \/>/g) ?? []).length, 2);
+});

@@ -82,7 +82,11 @@ test("builds the dashboard from the aging and untriaged views", async () => {
 
   // The breakdown was measured from every ticket of the view, so the console
   // says that the view was read whole.
-  assert.deepEqual(body.measured, { tickets: ROWS.length, total: ROWS.length });
+  assert.deepEqual(body.measured, {
+    tickets: ROWS.length,
+    total: ROWS.length,
+    complete: true,
+  });
 
   assert.deepEqual(body.aging, [
     { name: "0-2 days", count: 2 },
@@ -247,7 +251,7 @@ test("measures its numbers from the whole view, not from one page", async () => 
   // The whole view was read, so the breakdown was measured from every ticket
   // of it. Had the console stopped at the first page, the headline would
   // still be 3 and this would say 2 of 3.
-  assert.deepEqual(body.measured, { tickets: 3, total: 3 });
+  assert.deepEqual(body.measured, { tickets: 3, total: 3, complete: true });
 
   // The whole view was read, so the row-based numbers count every ticket.
   const agingRequests = mock.state.viewRequests.filter(
@@ -299,6 +303,9 @@ test("says how much of a view that is longer than the page limit it measured", a
   assert.equal(body.metrics.active, 5000);
   assert.equal(body.measured.total, 5000);
   assert.equal(body.measured.tickets, 2000);
+  // The console stopped at its page limit, so it knows it did not read the
+  // view whole, and says so.
+  assert.equal(body.measured.complete, false);
 
   // The page limit bounds the work one load can cause, and the console stops
   // at it rather than reading a long view for ever.
@@ -308,10 +315,53 @@ test("says how much of a view that is longer than the page limit it measured", a
   assert.equal(agingRequests.length, 20);
 });
 
+test("says so when the account states no count of its own", async () => {
+  // An account that does not state how many tickets the view holds leaves
+  // the console with nothing but the rows it read. It must not report those
+  // as the total of the view: it knows it stopped at its page limit, and a
+  // partial measurement must not read as a whole one.
+  const page = Array.from({ length: 100 }, (_unused, index) => ({
+    ticket: { id: 900000000300 + index, status: "open" },
+    subject: "invented subject",
+    status: "open",
+    created: daysAgo(1),
+    assignee_id: 900000000900,
+    [REQUEST_TYPE_FIELD_ID]: "Billing",
+    [SYSTEM_FIELD_ID]: "invented system",
+  }));
+  mock.setViewResponse(AGING_VIEW_ID, 200, () => ({
+    rows: page,
+    next_page: "the next page",
+  }));
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  // The account states no total, so the console states none either.
+  assert.equal(body.measured.total, null);
+  assert.equal(body.measured.tickets, 2000);
+  assert.equal(body.measured.complete, false);
+});
+
+test("says so when the account's count and the tickets it served disagree", async () => {
+  // The account says the view holds three tickets and serves ten. The
+  // console has to say which it measured, because the headline and the
+  // breakdown then describe different sets.
+  mock.setViewResponse(AGING_VIEW_ID, 200, { count: 3, rows: ROWS });
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  assert.equal(body.measured.total, 3);
+  assert.equal(body.measured.tickets, ROWS.length);
+  assert.equal(body.measured.complete, true);
+});
+
 test("reads the dashboard when only a link setting is missing", async () => {
   // The open queue and the request-type report only build a link into the
-  // account. A console without them still reads the dashboard, and the
-  // status endpoint names them apart from the settings it needs.
+  // account. A console without them still reads the dashboard.
   setConsoleEnv({ ZENDESK_CONSOLE_VIEW_OPEN_ID: undefined });
   mock.setViewResponse(AGING_VIEW_ID, 200, { count: ROWS.length, rows: ROWS });
   mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });

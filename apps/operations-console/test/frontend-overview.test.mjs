@@ -10,6 +10,7 @@ import { test } from "node:test";
 import {
   EMPTY_OVERVIEW,
   connectionStatus,
+  measurementNote,
   openQueueHref,
   toOverviewState,
   viewHref,
@@ -21,6 +22,7 @@ const REACHABLE = {
   accountUrl: "https://example.zendesk.com",
   brandId: "900000000001",
   metrics: { active: 3, untriaged: 1, unassigned: 2, oldestDays: 9 },
+  measured: { tickets: 3, total: 3, complete: true },
   aging: [{ name: "0-2 days", count: 3 }],
   requestTypes: [{ name: "Billing", count: 3 }],
   tickets: [],
@@ -83,6 +85,39 @@ test("describes an unreachable account with the message of the server", () => {
 test("points at the OAuth configuration when the server reports no reason", () => {
   assert.equal(connectionStatus({ connected: false }).detail, "Check OAuth configuration");
   assert.equal(connectionStatus({ connected: false, error: "" }).detail, "Check OAuth configuration");
+});
+
+test("says nothing when the whole view was measured", () => {
+  assert.equal(measurementNote(REACHABLE.measured), "");
+  assert.equal(measurementNote({ tickets: 0, total: null, complete: false }), "");
+  assert.equal(measurementNote(undefined), "");
+});
+
+test("names the tickets it read when the view is longer", () => {
+  const note = measurementNote({ tickets: 2000, total: 5000, complete: false });
+
+  assert.match(note, /2000/);
+  assert.match(note, /5000/);
+  // The note must not claim that every number is a total: the unassigned
+  // figure and the oldest ticket are measured from the tickets that were read.
+  assert.match(note, /unassigned figure, the oldest ticket/);
+  assert.match(note, /measured from the tickets that were read/);
+  assert.ok(!/headline numbers are the totals/.test(note));
+});
+
+test("names the tickets it read when the account states no count", () => {
+  const note = measurementNote({ tickets: 2000, total: null, complete: false });
+
+  assert.match(note, /2000/);
+  assert.match(note, /measured from the tickets that were read/);
+});
+
+test("names the disagreement when the count and the rows differ", () => {
+  const note = measurementNote({ tickets: 10, total: 3, complete: true });
+
+  assert.match(note, /10/);
+  assert.match(note, /3/);
+  assert.match(note, /measured from the tickets that were read/);
 });
 
 test("links to a view of the account", () => {
