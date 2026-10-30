@@ -129,12 +129,14 @@ function validateBaseUrl(value) {
 }
 
 /**
- * The account URL, resolved the way the connector resolves it.
+ * The account URL, validated the way the connector validates it — but taken
+ * from the client file alone.
  *
- * The environment wins over the client file for both halves of the account,
- * so an operator who points the console at another account with
- * ZENDESK_BASE_URL or ZENDESK_SUBDOMAIN gets the same account the connector
- * would use.
+ * The client file names the account, so the console reads the one the
+ * connector reads. The environment does not: an exported ZENDESK_BASE_URL or
+ * ZENDESK_SUBDOMAIN names an account for the connector, and following it here
+ * would send the client secret to that other account, which the console has
+ * no reason to do.
  */
 export function resolveConsoleBaseUrl(client) {
   // The account comes from the client file, not from the environment. An
