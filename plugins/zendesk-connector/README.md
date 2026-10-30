@@ -174,12 +174,12 @@ npm run build
 The plugin manifest of this directory, `.mcp.json`, starts the built server
 with `node ./dist/index.js`. The path is relative to the plugin root, so it
 resolves only if the host runs the server with the plugin's installed
-directory as its working directory. Hosts differ here: some resolve the
-manifest and the entrypoint against the plugin directory, others against
-their own working directory, where `./dist/index.js` does not exist. This
-repository has not verified the behaviour against a specific host. If your
-host does not start the plugin this way, name the built file by its absolute
-path instead, as the repository README shows:
+directory as its working directory. MCP hosts resolve relative paths against
+their own working directory, not the plugin directory, so whether the plugin
+starts depends on the host, and this repository has not verified the
+behaviour against any host. If your host does not start the plugin this way,
+name the built file by its absolute path instead, as the repository README
+shows:
 
 ```json
 {
@@ -191,6 +191,10 @@ path instead, as the repository README shows:
   }
 }
 ```
+
+The manifest also passes the `ZENDESK_*` environment variables through its
+`env` block; a manual configuration has to set them in the client's own
+environment.
 
 ### Container
 
