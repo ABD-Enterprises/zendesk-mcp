@@ -15,6 +15,35 @@ import { ticketRow } from "../src/lib/tickets.mjs";
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 
 /**
+ * The source of the load function of the console.
+ *
+ * The suite cannot render the components, so it reads their source. The load
+ * is read on its own, so that a change around it cannot hide a change to it.
+ *
+ * @returns {string}
+ */
+function loadSource() {
+  const start = appSource.indexOf("const load = async () => {");
+  assert.notEqual(start, -1, "the console must have a load function");
+  const end = appSource.indexOf("\n  };", start);
+  assert.notEqual(end, -1, "the load function must end");
+  return appSource.slice(start, end);
+}
+
+/**
+ * The source with its comments removed.
+ *
+ * The suite counts calls in the source, and a comment that names a call
+ * would be counted as one.
+ *
+ * @param {string} source
+ * @returns {string}
+ */
+function withoutComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+}
+
+ /**
  * The source of one page component of the console.
  *
  * The suite cannot render the components, so it reads their source. Each page
@@ -114,6 +143,65 @@ test("the overview page renders the row of the oldest ticket", () => {
   assert.equal(row.title, "#900000000101 · invented subject one");
 });
 
+test("a failed load is reported instead of shown as an empty dashboard", () => {
+  // The component asks the loader for the dashboard and for the failure, and
+  // renders the failure: a console that cannot reach its server must not
+  // render zeros, which read as a quiet account rather than an unreachable
+  // console. The loader itself is covered in frontend-overview.test.mjs.
+  assert.match(appSource, /loadOverview\(/);
+  assert.match(appSource, /setFailure\(loaded\.failure\)/);
+  assert.match(appSource, /failure &&/);
+});
+
+test("the failure reason that is rendered is the console's own message", () => {
+  // The band shows the text the console wrote, not a guess, and the text is
+  // marked as an alert so that it is announced.
+  assert.match(appSource, /role="alert"/);
+  assert.match(appSource, /<strong>\{failure\}<\/strong>/);
+});
+
+test("the spinner is stopped even when the load failed", () => {
+  // The loading state is cleared in a finally, and only by the newest load,
+  // so a failed load cannot leave the spinner turning.
+  assert.match(appSource, /finally \{ if \(sequence\.isCurrent\(id\)\) setLoading\(false\); \}/);
+});
+
+test("only the newest load may write", () => {
+  // Two loads can overlap, and the older one may settle last. The component
+  // asks the sequence which load is the newest; the sequence itself is
+  // covered in frontend-overview.test.mjs.
+  const raw = loadSource();
+  const load = withoutComments(raw);
+  assert.match(load, /const id = sequence\.begin\(\);/);
+  assert.match(load, /if \(!sequence\.isCurrent\(id\)\) return;/);
+  // One load begins one sequence entry: two calls would make every load a
+  // no-op, and the suite would stay green. The entry is begun inside the
+  // load, so a render cannot take one in the load's place.
+  assert.equal((load.match(/sequence\.begin\s*\(\s*\)/g) ?? []).length, 1);
+  assert.ok(
+    !withoutComments(appSource.replace(raw, "")).includes("sequence.begin"),
+    "only the load may begin a sequence entry",
+  );
+  // The guard runs where the load settles, after the wait, and before either
+  // write. A guard that ran before the wait would always be true, and a
+  // superseded load would write; a load that wrote a failure without asking
+  // would show a failure for an account that is reachable.
+  const guard = load.indexOf("if (!sequence.isCurrent(id)) return;");
+  assert.ok(
+    guard > load.indexOf("await loadOverview()"),
+    "the guard must run where the load settles",
+  );
+  assert.ok(guard < load.indexOf("setData("), "the guard must run before the overview is written");
+  assert.ok(guard < load.indexOf("setFailure("), "the guard must run before the failure is written");
+});
+
+test("the account blocker is shown only when there are unassigned tickets", () => {
+  // Every number is zero when the load failed, and a band that says the
+  // queue has no assigned agent would turn a failure into a claim about the
+  // account. The band is only true when the count is.
+  assert.match(appSource, /data\.metrics\.unassigned > 0 && <section className="alert-band">/);
+});
+
 test("the alert band states a fact about the queue only when the dashboard describes it whole", () => {
   const overview = pageSource("OverviewPage");
   // The band keys on the measurement itself, not on the note. The note is
@@ -149,5 +237,33 @@ test("both pages that show a breakdown say how much of the view was measured", (
   assert.ok(
     reports.indexOf("<MeasurementNote note={note} />") < reports.indexOf('className="report-grid"'),
     "the reports show the note above the breakdowns",
+  );
+});
+
+test("the workstream panel says that its statuses are not measured", () => {
+  // The workstream panel states facts about work the console never read. The
+  // values are invented on purpose — it is a reference app — so the panel has
+  // to say so, or a reader cannot tell it apart from the panels that are
+  // measured from the account. The caption sits next to the heading, so it
+  // is checked there and not anywhere else on the page.
+  const overview = pageSource("OverviewPage");
+
+  assert.match(
+    overview,
+    /<h2>Workstream readiness<\/h2><p>[^<]*[Ii]llustrative[^<]*not measured from the account[^<]*<\/p>/,
+  );
+});
+
+test("the sidebar is told why the console could not reach its server", () => {
+  // The sidebar's fallback for an account it cannot reach is "Check OAuth
+  // configuration", which points at the wrong cause when the console's own
+  // server is the problem. The component hands its failure to the status
+  // builder, so the sidebar shows the reason the console wrote. What the
+  // builder does with that reason is covered in frontend-overview.test.mjs;
+  // what is held here is that the component passes it on.
+  assert.match(withoutComments(appSource), /connectionStatus\(data, failure\)/);
+  assert.ok(
+    !/connectionStatus\(data\)/.test(withoutComments(appSource)),
+    "the component must not drop the failure it was given",
   );
 });

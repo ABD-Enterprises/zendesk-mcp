@@ -9,7 +9,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   EMPTY_OVERVIEW,
+  CONSOLE_UNREACHABLE,
   connectionStatus,
+  createLoadSequence,
+  loadOverview,
   measurementIsWhole,
   measurementNote,
   openQueueHref,
@@ -86,6 +89,49 @@ test("describes an unreachable account with the message of the server", () => {
 test("points at the OAuth configuration when the server reports no reason", () => {
   assert.equal(connectionStatus({ connected: false }).detail, "Check OAuth configuration");
   assert.equal(connectionStatus({ connected: false, error: "" }).detail, "Check OAuth configuration");
+});
+
+test("does not point at the OAuth configuration when the console is the problem", () => {
+  // A console that cannot reach its own server did not fail on an OAuth
+  // configuration, and telling the operator to check one sends them looking
+  // in the wrong place.
+  const status = connectionStatus({ connected: false }, CONSOLE_UNREACHABLE);
+
+  assert.equal(status.connected, false);
+  assert.equal(status.title, "Zendesk unavailable");
+  assert.equal(status.detail, CONSOLE_UNREACHABLE);
+  assert.notEqual(status.detail, "Check OAuth configuration");
+});
+
+test("only the newest load may write", () => {
+  // Two loads can overlap, and the older one may settle last. The sequence
+  // hands out a number for each load and says which is still the newest, so
+  // that a stale failure cannot replace a newer success.
+  const sequence = createLoadSequence();
+
+  const first = sequence.begin();
+  assert.equal(sequence.isCurrent(first), true);
+
+  const second = sequence.begin();
+  assert.equal(sequence.isCurrent(first), false);
+  assert.equal(sequence.isCurrent(second), true);
+
+  // A load that never began is not the newest one either.
+  assert.equal(sequence.isCurrent(second + 1), false);
+});
+
+test("the reason of an account the server cannot reach is not a console failure", async () => {
+  // The server answered. Its answer says the account is unreachable, which
+  // is a different condition from the console failing to reach the server,
+  // so it is not reported as a failure of the console.
+  const loaded = await loadOverview(async () => ({
+    json: async () => ({ connected: false, error: "Zendesk request failed (503)" }),
+  }));
+
+  assert.equal(loaded.failure, null);
+  assert.equal(loaded.overview.connected, false);
+  assert.equal(loaded.overview.error, "Zendesk request failed (503)");
+  assert.equal(connectionStatus(loaded.overview, loaded.failure).detail, "Zendesk request failed (503)");
 });
 
 test("says nothing when the whole view was measured", () => {
@@ -273,4 +319,36 @@ test("links to the open queue of the account", () => {
     openQueueHref({ accountUrl: "https://example.zendesk.com", views: {} }),
     "https://example.zendesk.com/agent/home/tickets",
   );
+});
+
+test("a reachable account loads without a failure", async () => {
+  const loaded = await loadOverview(async () => ({
+    json: async () => REACHABLE,
+  }));
+
+  assert.equal(loaded.failure, null);
+  assert.deepEqual(loaded.overview, REACHABLE);
+});
+
+test("a console that cannot reach its server says so", async () => {
+  // The transport failed. The dashboard must not answer with zeros: an
+  // empty dashboard reads as a quiet account, and the operator cannot tell
+  // the two apart.
+  const loaded = await loadOverview(async () => {
+    throw new Error("connection refused");
+  });
+
+  assert.equal(loaded.failure, CONSOLE_UNREACHABLE);
+  assert.deepEqual(loaded.overview, EMPTY_OVERVIEW);
+});
+
+test("an answer that is not JSON is a failure too", async () => {
+  const loaded = await loadOverview(async () => ({
+    json: async () => {
+      throw new SyntaxError("Unexpected token '<', \"<!DOCTYPE\" is not valid JSON");
+    },
+  }));
+
+  assert.equal(loaded.failure, CONSOLE_UNREACHABLE);
+  assert.deepEqual(loaded.overview, EMPTY_OVERVIEW);
 });
