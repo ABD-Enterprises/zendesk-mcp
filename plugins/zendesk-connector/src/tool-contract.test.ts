@@ -244,6 +244,36 @@ test("reports the page number the account itself names", async () => {
   }
 });
 
+test("falls back to the next page when the URL names no usable page", async () => {
+  // A page of zero, or of half a page, or of a word, is not a page a caller
+  // could read, so the number the tool reports is the page after the one it
+  // asked for rather than the one the URL names.
+  for (const page of ["0", "-1", "1.5", "abc", ""]) {
+    const { client } = contractClient((url) => {
+      if (url.pathname.endsWith("/comments.json")) {
+        return {
+          comments: [EXAMPLE_COMMENT],
+          users: [EXAMPLE_COMMENT_USER],
+          next_page: `https://example.zendesk.com/api/v2/tickets/42/comments.json?page=${page}`,
+        };
+      }
+      return { ticket: EXAMPLE_TICKET, users: [], organizations: [] };
+    });
+    const session = await connectContracts(client);
+
+    try {
+      const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+        ticketId: 42,
+        commentPage: 2,
+      });
+
+      assert.equal(payload.commentsNextPageNumber, 3, `page=${page}`);
+    } finally {
+      await session.close();
+    }
+  }
+});
+
 test("falls back to the next page when the URL names none", async () => {
   const { client } = contractClient((url) => {
     if (url.pathname.endsWith("/comments.json")) {
