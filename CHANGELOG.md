@@ -21,8 +21,10 @@
 - **Breaking:** `zendesk_create_ticket` sends its first comment with
   `public: true`, so the requester sees the ticket's description. The value
   used to be left to the account's own default, and an account configured for
-  private comments now gets a public one. Pass `public: false` to keep it
-  internal.
+  private comments now gets a public one. The other way round as well: a call
+  that passed `public: false` had the flag ignored and got the account's
+  default, and now gets an internal first comment. Pass `public: false` to
+  keep it internal.
 - The write tools say what they do: `zendesk_update_ticket` and
   `zendesk_add_ticket_comment` are marked `destructiveHint: true`, and the
   three write-tool descriptions name their result shape, describe their

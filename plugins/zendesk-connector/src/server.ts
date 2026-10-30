@@ -133,8 +133,10 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
         "Get a Zendesk ticket with requester, assignee, organization, and " +
         "the page of its comments named by commentPage. Zendesk returns a " +
         "ticket's comments oldest first, so the first page holds the start " +
-        "of the thread. commentsTruncated says whether more comment pages " +
-        "exist; call again with commentsNextPageNumber to read on.",
+        "of the thread — unless a trigger adds a comment when the ticket is " +
+        "created, which Zendesk does not order. commentsTruncated says " +
+        "whether more comment pages exist; call again with " +
+        "commentsNextPageNumber to read on.",
       inputSchema: z.object({
         ticketId: z
           .number()
@@ -189,10 +191,12 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           commentsNextPage: commentsResponse.next_page ?? null,
           // The page number to read on with. Zendesk's own next_page URL is
           // reported too, but it is a URL and the tool takes a number, so the
-          // number is what a caller can actually use. It is the page after
-          // the one this call asked for.
+          // number is what a caller can actually use. It is the number
+          // Zendesk put in that URL, so the continuation is the page the
+          // account itself points at; the arithmetic is the fallback for an
+          // account that sends no page in the URL.
           commentsNextPageNumber: commentsResponse.next_page
-            ? commentPage + 1
+            ? nextPageNumber(commentsResponse.next_page, commentPage + 1)
             : null,
           agent_url: ticketUrl(client, id),
         };
@@ -618,6 +622,24 @@ function writeAnnotations(options: {
 
 function ticketUrl(client: ZendeskClient, id: number | string): string {
   return `${client.baseUrl}/agent/tickets/${id}`;
+}
+
+/**
+ * The page number a Zendesk `next_page` URL points at.
+ *
+ * The number is read out of the URL the account sent, so the continuation is
+ * the page the account itself names. The arithmetic fallback covers an
+ * account that sends a URL with no page in it.
+ */
+function nextPageNumber(nextPage: string, fallback: number): number {
+  try {
+    const page = new URL(nextPage, "https://zendesk.invalid").searchParams.get("page");
+    const parsed = Number(page);
+    if (page !== null && Number.isInteger(parsed) && parsed > 0) return parsed;
+  } catch {
+    // A URL the parser refuses carries no page, so the fallback stands.
+  }
+  return fallback;
 }
 
 function ticketId(ticket: JsonObject): number | string | undefined {

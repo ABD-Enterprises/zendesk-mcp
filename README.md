@@ -148,7 +148,9 @@ Three more changes travel with it, and all three change what a call does:
 - `zendesk_create_ticket` sends its first comment with `public: true`, so the
   requester sees the ticket's description. The value used to be left to the
   account's own default, and an account configured for private comments now
-  gets a public one. Pass `public: false` to keep it internal.
+  gets a public one. The other way round as well: a call that passed
+  `public: false` had the flag ignored and got the account's default, and now
+  gets an internal first comment. Pass `public: false` to keep it internal.
 
 ## Requirements
 

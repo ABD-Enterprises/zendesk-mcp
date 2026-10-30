@@ -119,6 +119,113 @@ test("reports no continuation when the thread ends here", async () => {
   }
 });
 
+test("reads the first comment page when none is named", async () => {
+  // The default is part of the promise the contract makes about the inputs,
+  // so it is pinned: a default that moved would start the thread in the
+  // middle.
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname.endsWith("/comments.json")) {
+      return { comments: [EXAMPLE_COMMENT], users: [EXAMPLE_COMMENT_USER] };
+    }
+    return { ticket: EXAMPLE_TICKET, users: [], organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+      ticketId: 42,
+    });
+
+    const commentsRequest = requests.find((request) =>
+      request.url.pathname.endsWith("/comments.json"),
+    );
+    assert.ok(commentsRequest);
+    assert.equal(commentsRequest.url.searchParams.get("page"), "1");
+    assert.equal(payload.commentPage, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("does not read the comments when they are not asked for", async () => {
+  const { client, requests } = contractClient(() => ({
+    ticket: EXAMPLE_TICKET,
+    users: [],
+    organizations: [],
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+      ticketId: 42,
+      includeComments: false,
+    });
+
+    // A caller that says no comments gets no comments request.
+    assert.equal(
+      requests.some((request) => request.url.pathname.endsWith("/comments.json")),
+      false,
+    );
+    assert.equal(payload.comments, undefined);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports the page number the account itself names", async () => {
+  // The number is read out of the URL Zendesk sent, so the continuation is
+  // the page the account points at rather than a number re-derived from the
+  // page this call asked for.
+  const { client } = contractClient((url) => {
+    if (url.pathname.endsWith("/comments.json")) {
+      return {
+        comments: [EXAMPLE_COMMENT],
+        users: [EXAMPLE_COMMENT_USER],
+        next_page:
+          "https://example.zendesk.com/api/v2/tickets/42/comments.json?page=5",
+      };
+    }
+    return { ticket: EXAMPLE_TICKET, users: [], organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+      ticketId: 42,
+      commentPage: 2,
+    });
+
+    assert.equal(payload.commentsNextPageNumber, 5);
+  } finally {
+    await session.close();
+  }
+});
+
+test("falls back to the next page when the URL names none", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname.endsWith("/comments.json")) {
+      return {
+        comments: [EXAMPLE_COMMENT],
+        users: [EXAMPLE_COMMENT_USER],
+        next_page: "https://example.zendesk.com/api/v2/tickets/42/comments.json",
+      };
+    }
+    return { ticket: EXAMPLE_TICKET, users: [], organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket", {
+      ticketId: 42,
+      commentPage: 2,
+    });
+
+    assert.equal(payload.commentsNextPageNumber, 3);
+  } finally {
+    await session.close();
+  }
+});
+
 test("labels every search result with the kind of record it is", async () => {
   const { client } = contractClient(() => ({
     count: 2,
@@ -361,6 +468,27 @@ test("marks the write tools that overwrite or send as destructive", async () => 
     assert.equal(annotation("zendesk_add_ticket_comment")?.destructiveHint, true);
     // Creating a record adds one without changing another.
     assert.equal(annotation("zendesk_create_ticket")?.destructiveHint, false);
+
+    // The whole object is pinned, so a hint that changes is a change a test
+    // sees and not only one that is destructively true.
+    assert.deepEqual(annotation("zendesk_update_ticket"), {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+    assert.deepEqual(annotation("zendesk_add_ticket_comment"), {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+    assert.deepEqual(annotation("zendesk_create_ticket"), {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
   } finally {
     await session.close();
   }
