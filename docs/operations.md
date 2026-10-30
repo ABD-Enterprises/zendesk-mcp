@@ -372,8 +372,9 @@ dashboard request with `503`. `/api/overview` returns an `error` field of
 and the console logs the reason; the console process keeps running, and the
 secret is never read into memory and never posted to the account. The page
 itself still loads and shows "Zendesk unavailable" with that reason beside it
-in the sidebar — the sidebar is hidden below 760 px, where the console's log
-is the only place the reason appears.
+in the sidebar — the sidebar is hidden at 760 px and below, where the page
+carries no sign of the failure, the API's `error` field carries the reason,
+and the console's log is where it is recorded.
 
 In a container deployment the client file also has to be readable by the
 container's unprivileged `node` user. Align the owner with that user rather
