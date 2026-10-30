@@ -606,7 +606,9 @@ Every other HTTP call site in the project injects a fetcher so tests can substit
 
 **Confirmed.** `plugins/zendesk-connector/.env.example` was 12 lines and listed: `ZENDESK_SUBDOMAIN`, `ZENDESK_OAUTH_MODE`, `ZENDESK_OAUTH_CLIENT_ID`, `ZENDESK_OAUTH_CLIENT_SECRET`, `ZENDESK_OAUTH_CLIENT_FILE`, `ZENDESK_OAUTH_SCOPE`, `ZENDESK_ALLOWED_TOOLS`, `ZENDESK_READ_ONLY`.
 
-Not documented then: `ZENDESK_BASE_URL`, `ZENDESK_OAUTH_ACCESS_TOKEN`, `ZENDESK_OAUTH_TOKEN_FILE`, `ZENDESK_MAX_RETRIES`, `ZENDESK_MAX_RETRY_DELAY_MS`, `ZENDESK_OAUTH_CALLBACK_PORT`, `ZENDESK_HEALTHCHECK`, `ZENDESK_SHUTDOWN_TIMEOUT_MS`. The `ZENDESK_CONSOLE_*` variables live only in the console's own `.env.example`.
+Not in that file then: `ZENDESK_BASE_URL`, `ZENDESK_OAUTH_ACCESS_TOKEN`, `ZENDESK_OAUTH_TOKEN_FILE`, `ZENDESK_MAX_RETRIES`, `ZENDESK_MAX_RETRY_DELAY_MS`, `ZENDESK_OAUTH_CALLBACK_PORT`, `ZENDESK_HEALTHCHECK`, `ZENDESK_SHUTDOWN_TIMEOUT_MS`. The `ZENDESK_CONSOLE_*` variables live only in the console's own `.env.example`.
+
+`ZENDESK_MAX_RETRIES` and `ZENDESK_MAX_RETRY_DELAY_MS` were in the root README's configuration table then, so an operator could find them there — but not their bounds, and not the rest of the list. That is what the file's absence cost: the example file was the only place an operator would look for a complete list.
 
 Note `.mcp.json` does list a wider set, so the manifest and the example file disagree about what a user must fill in.
 
