@@ -239,3 +239,17 @@ test("both pages that show a breakdown say how much of the view was measured", (
     "the reports show the note above the breakdowns",
   );
 });
+
+test("the workstream panel says that its statuses are not measured", () => {
+  // The workstream panel states facts about work the console never read. The
+  // values are invented on purpose — it is a reference app — so the panel has
+  // to say so, or a reader cannot tell it apart from the panels that are
+  // measured from the account. The caption sits next to the heading, so it
+  // is checked there and not anywhere else on the page.
+  const overview = pageSource("OverviewPage");
+
+  assert.match(
+    overview,
+    /<h2>Workstream readiness<\/h2><p>[^<]*[Ii]llustrative[^<]*not measured from the account[^<]*<\/p>/,
+  );
+});
