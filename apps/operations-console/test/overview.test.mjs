@@ -17,6 +17,7 @@ import {
   removeTempDir,
   startConsole,
   writeClientFile,
+  clearAccountEnv,
 } from "./helpers/console.mjs";
 
 const DAY = 86_400_000;
@@ -40,6 +41,7 @@ after(async () => {
 
 beforeEach(async () => {
   resetCaches();
+  clearAccountEnv();
   // Every test reads its own mock account, so the requests it records are the
   // ones the console sent for that test. The dashboard reads two views at the
   // same time and answers with an error as soon as the first one fails, so
@@ -198,8 +200,22 @@ test("reports a failed token request as unavailable", async () => {
 
   assert.equal(status, 503);
   assert.equal(body.connected, false);
-  assert.equal(body.error, "Zendesk OAuth failed (401)");
+  assert.equal(body.error, "Zendesk OAuth failed (401 invalid_client)");
   assert.deepEqual(mock.state.viewRequests, []);
+});
+
+test("does not show the client file's bytes when the file is malformed", async () => {
+  // The parser's message carries the file's own bytes, so the console answers
+  // with its own message and the reason stays in the server log.
+  const file = await writeClientFile(directory, "{ not json inventeds");
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = file;
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 503);
+  assert.equal(body.connected, false);
+  assert.equal(body.error, "The Zendesk OAuth client file could not be read.");
+  assert.ok(!JSON.stringify(body).includes("inventeds"));
 });
 
 test("reports a missing configuration as unavailable", async () => {

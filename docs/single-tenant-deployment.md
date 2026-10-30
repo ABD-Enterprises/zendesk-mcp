@@ -105,6 +105,13 @@ deployment. The default least-privilege scopes are:
 tickets:read tickets:write users:read organizations:read brands:read groups:read
 ```
 
+The operations console reads ticket views, and a view is its own scope: it
+needs `ticket_views:read` as well. With no scope configured the console asks
+for `ticket_views:read tickets:read` of its own, and a client that does not
+allow `ticket_views:read` refuses that request with `invalid_scope`. A scope
+that leaves the view scope out — including one copied from the list above —
+is refused before that, with the console naming the scope it needs.
+
 Override them with `ZENDESK_OAUTH_SCOPE` only when a workflow needs a
 different set. The OAuth mode is part of the deployment shape:
 `authorization_code` keeps an owner-only token file on disk,
@@ -113,11 +120,13 @@ testing and cannot renew a token.
 
 ### Owner-only permissions
 
-The client file must not be readable by group or other; the connector
+The client file must not be accessible to group or other; the connector
 refuses to start when it is (except on Windows, where Node reports
 synthetic permission bits regardless of the file's ACLs, so the check is
-skipped there). The console reads the same file without checking its
-mode, so the owner-only mode is the only protection there. The
+skipped there). The console applies the same rule to the file it reads and
+refuses to use a file that is accessible to group or other, so its dashboard
+answers `503` instead of reading a view; the check is skipped there for the
+console as well, and the console process itself keeps running. The
 token file (which exists in `authorization_code` mode only) is written
 owner-only but not checked when it is read, so keep it owner-only yourself.
 Restore the modes after any copy or restore, as the
@@ -257,12 +266,11 @@ as described in the
 id and secret in their own client file (`~/.config/codex-zendesk/client.json`
 under their own home, moved by `ZENDESK_OAUTH_CLIENT_FILE`) or in their
 own environment. One registration per person, and no shared client file:
-the connector refuses to start when the client file is readable by group
+the connector refuses to start when the client file is accessible to group
 or other (skipped on Windows, where Node reports synthetic permission
-bits). The console reads the same file without checking its mode, so
-the owner-only mode is the only protection there — a file two host users
-can read is refused by the connector rather than shared, and kept out of
-the console's reach only by its mode.
+bits). The console applies the same rule to the file it reads — a file two
+host users can read is refused by the connector and is not used by the
+console, so it is never shared.
 
 Sharing one client registration widens the blast radius of a leak, and
 sharing one token file defeats the reason to run per-user deployments.

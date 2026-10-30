@@ -109,8 +109,11 @@ The operations console reads the same client file, from
 `client_credentials` grant. It does not read `ZENDESK_OAUTH_CLIENT_ID` or
 `ZENDESK_OAUTH_CLIENT_SECRET` from the environment, and it neither writes nor
 reads a token file: its access token lives in the process memory for the
-lifetime of the console. The console applies no permission check to the client
-file it reads, so the file's permissions are the operator's responsibility.
+lifetime of the console. The console applies the same owner-only rule to the
+client file it reads, and refuses to use a file that is accessible to group
+or other (except on Windows, where Node reports synthetic permission bits
+regardless of the file's ACLs and the check is skipped there): the console
+keeps running, and its dashboard answers `503` with the reason.
 
 ## Supplying secrets from a secret manager
 
