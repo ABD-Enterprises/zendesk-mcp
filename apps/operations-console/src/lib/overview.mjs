@@ -14,7 +14,10 @@ import { formatCount, formatSyncTime } from "./format.mjs";
  * reaches the page limit. When it read the whole view and the account agrees
  * on its size, every figure the console measured is a figure of the whole
  * view. Otherwise the dashboard describes a part of it, or the account's count
- * and the tickets it served disagree, and the console has to say so.
+ * and the tickets it served disagree.
+ *
+ * The alert band uses this: it states a fact about the queue only when the
+ * dashboard describes the whole queue.
  *
  * @param {any} measured the measurement the payload carries
  * @returns {boolean}
@@ -97,7 +100,7 @@ export function measurementNote(measured, connected = true) {
       );
     } else if (countUnmeasured) {
       parts.push(
-        `The account says the view holds ${formatCount(total)}, and the pages the console read served no tickets.`,
+        `The account says the view holds ${formatCount(total)}, and the view has pages the console did not read, so the console measured nothing.`,
       );
     } else {
       parts.push(`The account says the view holds ${formatCount(total)}.`);

@@ -208,7 +208,8 @@ test("says something when the account counted tickets the console never read", (
   assert.notEqual(partial, "");
   assert.match(partial, /no tickets/);
   assert.match(partial, /5000/);
-  assert.match(partial, /pages the console read served no tickets/);
+  assert.match(partial, /pages the console did not read/);
+  assert.match(partial, /measured nothing/);
   assert.ok(!/disagree/.test(partial), "the count is not shown to be wrong");
 });
 
@@ -238,7 +239,8 @@ test("says that a page was left when the account counts nothing", () => {
 
   assert.notEqual(note, "");
   assert.match(note, /no tickets/);
-  assert.match(note, /pages the console read served no tickets/);
+  assert.match(note, /pages the console did not read/);
+  assert.match(note, /measured nothing/);
 });
 
 test("says what the triage figure is", () => {
