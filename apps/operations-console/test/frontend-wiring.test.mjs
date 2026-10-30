@@ -96,3 +96,12 @@ test("the overview page renders the row of the oldest ticket", () => {
   assert.match(appSource, /\{oldest\.title\}/);
   assert.equal(row.title, "#900000000101 · invented subject one");
 });
+
+test("a failed load is reported instead of shown as an empty dashboard", () => {
+  // The component catches a transport failure and says so: a console that
+  // cannot reach its server must not render zeros, which read as a quiet
+  // account rather than an unreachable console.
+  assert.match(appSource, /catch \{/);
+  assert.match(appSource, /setFailure\(/);
+  assert.match(appSource, /failure &&/);
+});

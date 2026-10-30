@@ -91,7 +91,7 @@ function OverviewPage({ data }: { data: Overview }) {
 
     <div className="two-column">
       <section className="panel">
-        <div className="panel-header"><div><h2>Workstream readiness</h2><p>Configuration work grouped by operational outcome.</p></div><ListChecks size={19} /></div>
+        <div className="panel-header"><div><h2>Workstream readiness</h2><p>Illustrative example of configuration work — these statuses are not measured from the account.</p></div><ListChecks size={19} /></div>
         <div className="workstreams">
           {[
             ["Service intake", "Email-first form, routing, and views", "Configured", "good"],
@@ -205,6 +205,7 @@ export function App() {
   const [section, setSection] = useState<Section>(() => sectionFromHash(location.hash) as Section);
   const [data, setData] = useState<Overview>(EMPTY_OVERVIEW);
   const [loading, setLoading] = useState(true);
+  const [failure, setFailure] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const load = async () => {
@@ -213,6 +214,13 @@ export function App() {
       const response = await fetch("/api/overview");
       const payload = await response.json();
       setData(toOverviewState(payload));
+      setFailure(null);
+    } catch {
+      // The server could not be reached, or it answered with something that
+      // is not JSON. An empty dashboard would say "no tickets" here, and
+      // that is the one answer that must not be given: the operator would
+      // read it as a quiet account instead of an unreachable console.
+      setFailure("The console could not reach its server. Check that it is running, then refresh.");
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -235,7 +243,8 @@ export function App() {
       <header className="topbar"><div className="mobile-brand"><div className="logo">SO</div><strong>Service Operations</strong></div><div className="topbar-context"><LifeBuoy size={17}/><span>Service desk</span><i>/</i><strong>{sectionLabel(navigation, section)}</strong></div><button className="icon-button" title="Refresh live Zendesk data" aria-label="Refresh live Zendesk data" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? "spin" : ""}/></button></header>
       <div className="mobile-nav">{navigation.map((item) => <button aria-label={item.label} className={section === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><item.icon size={18}/></button>)}</div>
       <div className="page-content">
-        {section === "overview" && <OverviewPage data={data}/>} {section === "intake" && <IntakePage data={data}/>} {section === "reports" && <ReportsPage data={data}/>} {section === "knowledge" && <KnowledgePage/>} {section === "controls" && <ControlsPage data={data}/>} 
+        {failure && <div className="failure-band" role="alert"><AlertTriangle size={19}/><div><strong>The console could not reach its server.</strong><span>{failure}</span></div></div>}
+        {section === "overview" && <OverviewPage data={data}/>} {section === "intake" && <IntakePage data={data}/>} {section === "reports" && <ReportsPage data={data}/>} {section === "knowledge" && <KnowledgePage/>} {section === "controls" && <ControlsPage data={data}/>}
       </div>
     </main>
   </div>;
