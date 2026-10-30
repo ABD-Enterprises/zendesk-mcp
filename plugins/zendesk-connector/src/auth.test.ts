@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -327,6 +327,85 @@ test("removeTokenFile removes the stored token and tolerates a missing file", as
 
   assert.equal(await removeTokenFile(tokenFile), true);
   assert.equal(await removeTokenFile(tokenFile), false);
+});
+
+test("writeTokenFile writes the token through no link", async (t) => {
+  // Creating a link needs a privilege Windows does not grant by default.
+  if (process.platform === "win32") {
+    t.skip("symlinks need a privilege this host does not grant");
+    return;
+  }
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-token-link-test-"));
+  const tokenFile = join(directory, "oauth.json");
+  const captured = join(directory, "captured.json");
+  await writeFile(captured, "");
+  // A link at the token file's own path would be written through by a plain
+  // write, and a link at the temporary path would be written through by a
+  // write that follows it. The temporary name carries random bytes, so no
+  // local user can guess where the token lands on its way there.
+  await symlink(captured, tokenFile);
+  await symlink(captured, `${tokenFile}.${process.pid}.tmp`);
+
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+
+  // The links were replaced, not followed: the file they pointed at still
+  // holds nothing, and the token file holds the token.
+  assert.equal(await readFile(captured, "utf8"), "");
+  const written = JSON.parse(await readFile(tokenFile, "utf8"));
+  assert.equal(written.access_token, "invented-access-token");
+});
+
+test("writeTokenFile writes twice in a row", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-token-stale-test-"));
+  const tokenFile = join(directory, "oauth.json");
+
+  await writeTokenFile(tokenFile, { access_token: "invented-access-token" });
+  await writeTokenFile(tokenFile, { access_token: "invented-second-token" });
+
+  // Neither write may trip over the other's temporary file.
+  const written = JSON.parse(await readFile(tokenFile, "utf8"));
+  assert.equal(written.access_token, "invented-second-token");
+});
+
+test("writeTokenFile refuses a shared token directory", async (t) => {
+  // Node reports synthetic permission bits on Windows, so the check is skipped
+  // there instead of failing every run.
+  if (process.platform === "win32") {
+    t.skip("file mode bits are not reported the same way on Windows");
+    return;
+  }
+  const directory = await mkdtemp(join(tmpdir(), "zendesk-token-dir-test-"));
+  // mkdir's mode applies only to a directory it creates, so an existing one
+  // keeps its own permissions.
+  await chmod(directory, 0o777);
+
+  // Another local user could replace the token file in a directory they can
+  // write to, so the write is refused rather than the directory tightened:
+  // the directory may be one the operator shares, and changing its
+  // permissions behind their back is not the connector's call.
+  await assert.rejects(
+    () => writeTokenFile(join(directory, "oauth.json"), {
+      access_token: "invented-access-token",
+    }),
+    /writable by other users/,
+  );
+  assert.equal((await stat(directory)).mode & 0o777, 0o777);
+});
+
+test("the tool status omits the token file's path", () => {
+  const auth = new ZendeskOAuth({
+    baseUrl: "https://example.zendesk.com",
+    mode: "authorization_code",
+    clientId: "invented-client-id",
+    clientSecret: "invented-client-secret",
+    tokenFile: "/unused/oauth.json",
+    scope: "tickets:read",
+  });
+
+  // The operator still gets the path from the doctor and the logout.
+  assert.equal(auth.status().tokenFile, "/unused/oauth.json");
+  assert.equal("tokenFile" in auth.toolStatus(), false);
+  assert.equal(auth.toolStatus().mode, "authorization_code");
 });
 
 test("resolveCallbackPort reads only trimmed decimal digits", () => {

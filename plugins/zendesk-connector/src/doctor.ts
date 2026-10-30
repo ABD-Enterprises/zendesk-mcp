@@ -10,10 +10,13 @@ import {
   type ZendeskConfig,
 } from "./auth.js";
 import { assertUsableConfig } from "./health.js";
-import { configuredTools } from "./policy.js";
+import { configuredTools, toolNames } from "./policy.js";
 
 /** The configuration fields the doctor inspects beyond startup validation. */
-type DoctorConfig = Pick<ZendeskConfig, "baseUrl" | "mode" | "tokenFile">;
+type DoctorConfig = Pick<
+  ZendeskConfig,
+  "baseUrl" | "mode" | "tokenFile" | "scope"
+>;
 
 /** What the loopback port probe found when it tried to bind. */
 export type PortProbeResult =
@@ -38,6 +41,11 @@ export interface DoctorOptions {
    * Defaults to a real bind.
    */
   probePort?: (port: number) => Promise<PortProbeResult>;
+  /**
+   * Prints the resolved configuration and the enabled tools, so an operator
+   * can see what the agent will receive without starting the server.
+   */
+  tools?: boolean;
   /** Writes the all-clear line to stdout. */
   writeOut?: (line: string) => void;
   /** Writes one line per failing check to stderr. */
@@ -66,6 +74,13 @@ export function isDoctorRequested(
   argv: string[] = process.argv.slice(2),
 ): boolean {
   return argv.includes("--doctor");
+}
+
+/** Reports whether the process was asked to print the tool inventory. */
+export function isToolsRequested(
+  argv: string[] = process.argv.slice(2),
+): boolean {
+  return argv.includes("--tools");
 }
 
 /**
@@ -115,7 +130,7 @@ export async function checkDoctor(
 
 /**
  * Runs the doctor preflight: one line per failing check on stderr and exit 1,
- * or a single all-clear line on stdout and exit 0. The configuration messages
+ * or an all-clear line on stdout and exit 0. The configuration messages
  * and the token file's missing/unparseable/incomplete messages reuse the exact
  * error strings startup produces; the port and the token file-state messages
  * are the doctor's own. None of them carry credential material.
@@ -135,10 +150,113 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
   const problems = await checkDoctor(options);
   if (problems.length === 0) {
     writeOut("Zendesk connector doctor: all checks passed.\n");
-    return 0;
+    // The tool result does not name the token file any more, so the doctor is
+    // where the operator learns where the token lives. The path is filesystem
+    // information for the person running it, never credential material.
+    const tokenFile = tokenFileOf(options);
+    if (tokenFile) writeOut(`OAuth token file: ${tokenFile}\n`);
+  } else {
+    for (const problem of problems) writeError(`${problem}\n`);
   }
-  for (const problem of problems) writeError(`${problem}\n`);
-  return 1;
+  if (options.tools) writeInventory(options, writeOut);
+  return problems.length === 0 ? 0 : 1;
+}
+
+/**
+ * Prints the resolved configuration and the enabled tools.
+ *
+ * Without it an operator cannot confirm what the agent will receive: the
+ * tool policy is read from the environment, and the only way to see the
+ * result was to start the server and list its tools.
+ */
+function writeInventory(
+  options: DoctorOptions,
+  writeOut: (line: string) => void,
+): void {
+  let loaded;
+  try {
+    loaded = (options.loadConfig ?? getConfig)();
+  } catch {
+    // The checks already reported what is wrong with the configuration, so
+    // the inventory says what it could not do — the configuration, not the
+    // tools.
+    writeOut("The configuration could not be resolved.\n");
+    return;
+  }
+  writeOut(`Base URL: ${loaded.baseUrl}\n`);
+  writeOut(`OAuth mode: ${loaded.mode}\n`);
+  writeOut(`Scope: ${loaded.scope}\n`);
+  // The scope the account granted and the token's expiry. The scope above is
+  // the one the connector asks for; only the stored token says what it was
+  // given, and reading it asks the account nothing.
+  const stored = storedTokenDetails(loaded);
+  if (stored.scope) writeOut(`Granted scope: ${stored.scope}\n`);
+  if (stored.expiresAt) writeOut(`Token expires: ${stored.expiresAt}\n`);
+  try {
+    const enabled = [...configuredTools()].sort();
+    writeOut(
+      `Enabled tools (${enabled.length} of ${toolNames().length}): ${enabled.join(", ")}\n`,
+    );
+  } catch {
+    // The tool policy is broken, but the configuration above is what the
+    // operator asked for, so it is printed anyway.
+    writeOut("The enabled tools could not be resolved.\n");
+  }
+}
+
+/**
+ * The granted scope and the expiry of the stored token.
+ *
+ * The client-credentials mode stores no token — it asks the account for one
+ * per request — so there is nothing to report for it. A token file that
+ * cannot be read is reported by the checks, and the inventory leaves the
+ * lines out rather than repeating the problem.
+ */
+function storedTokenDetails(config: DoctorConfig): {
+  scope?: string;
+  expiresAt?: string;
+} {
+  if (config.mode !== "authorization_code") return {};
+  // The OAuth client file is not a token file. Its scope is the scope the
+  // connector asks for, so printing it under "granted" would say a token was
+  // granted something that no token was ever granted.
+  if (sameFilePath(config.tokenFile, oauthClientFilePath())) return {};
+  try {
+    const payload = JSON.parse(readFileSync(config.tokenFile, "utf8")) as {
+      scope?: unknown;
+      expires_at?: unknown;
+    };
+    return {
+      scope: typeof payload.scope === "string" ? oneLine(payload.scope) : undefined,
+      expiresAt:
+        typeof payload.expires_at === "string"
+          ? oneLine(payload.expires_at)
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A value on one line.
+ *
+ * The doctor prints one fact per line, so a value that carried a line break
+ * would print as two, and the second would read as a fact of its own.
+ */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/** The token file of a configuration that passed the checks, if it has one. */
+function tokenFileOf(options: DoctorOptions): string | undefined {
+  try {
+    const loaded = (options.loadConfig ?? getConfig)();
+    return loaded.mode === "authorization_code" ? loaded.tokenFile : undefined;
+  } catch {
+    // The problems already say what is wrong with the configuration.
+    return undefined;
+  }
 }
 
 /**

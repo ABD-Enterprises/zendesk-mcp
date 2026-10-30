@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- **Breaking:** `zendesk_search_tickets` now labels every result with a
+  `resultType` field (`ticket`, `user`, `group` or `organization`), and only a
+  ticket result carries an `agent_url`. A non-ticket result no longer gets a
+  ticket URL, so a consumer that reads `agent_url` on every result must check
+  `resultType` first.
+- `zendesk_get_ticket` now asks Zendesk for the comment authors it always
+  promised, returns the comment page named by the new `commentPage` input, and
+  reports `commentPage`, `commentsTruncated`, `commentsNextPage` and
+  `commentsNextPageNumber` so a truncated thread has a continuation the tool
+  can actually take.
+- **Breaking:** `zendesk_update_ticket` refuses an empty `tags` array instead
+  of sending it to Zendesk, where it would remove every tag on the ticket. A
+  call that succeeded before now fails.
+- **Breaking:** a tag must name something. Both write tools now reject a
+  `tags` list holding an empty string, so a call that sent `tags: [""]`
+  fails instead of writing an empty tag.
+- **Breaking:** `zendesk_create_ticket` sends its first comment with
+  `public: true`, so the requester sees the ticket's description. The value
+  used to be left to the account's own default, and an account configured for
+  private comments now gets a public one. The other way round as well: a call
+  that passed `public: false` had the flag ignored and got the account's
+  default, and now gets an internal first comment. Pass `public: false` to
+  keep it internal.
+- The write tools say what they do: `zendesk_update_ticket` and
+  `zendesk_add_ticket_comment` are marked `destructiveHint: true`, and the
+  three write-tool descriptions name their result shape, describe their
+  fields, and say what the tool cannot do.
 - The operations console now answers the `Host` names an operator lists in
   `ZENDESK_CONSOLE_ALLOWED_HOSTS`, so a console behind a reverse proxy has to
   name the proxy's host there; until it does, every request is refused with

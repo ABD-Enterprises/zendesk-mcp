@@ -118,8 +118,28 @@ configuration messages and the token file's missing, unparseable, and
 incomplete messages are the server's own error strings; the port and the token
 file-state messages (an unreadable path, not a regular file, loose
 permissions) are the doctor's, and nothing printed carries credential values.
+
+With `--tools` the doctor also prints what the agent will receive: the
+resolved base URL, the OAuth mode, the requested scope, and the enabled tool
+names. When a token is stored, it also prints the scope the account granted
+and the token's expiry, so the scope the connector asks for and the scope it
+was given can be compared. Nothing it prints contacts Zendesk.
+
+```sh
+npm run doctor -- --tools
+```
+
 An explicit `--doctor` or `--logout` flag wins over the `ZENDESK_HEALTHCHECK`
 environment-variable shortcut.
+
+`--help` prints the usage of the command line. A flag the connector does not
+know is refused with exit code 2 instead of starting the server: an unknown
+flag used to fall through to the server, which then waited on stdin forever
+and printed nothing, so a typo read as a broken install.
+
+```sh
+node dist/index.js --help
+```
 
 ## Healthcheck and shutdown
 
@@ -211,7 +231,7 @@ part of `npm run check` or CI.
 ## Tools
 
 - `zendesk_status`: validates configuration and returns the authenticated user.
-- `zendesk_search_tickets`: searches tickets with Zendesk search syntax.
+- `zendesk_search_tickets`: searches Zendesk with Zendesk search syntax.
 - `zendesk_get_ticket`: reads a ticket with users, organization, and comments.
 - `zendesk_list_brands`: lists brands with page-based pagination.
 - `zendesk_list_groups`: lists groups with page-based pagination.

@@ -1,5 +1,10 @@
 name: CI
 
+# Every job runs on the runner labels in the repository variable
+# LINUX_RUNNER_LABELS. The expression has no fallback on purpose: if the
+# variable is missing, `fromJSON` fails and the job does not start, instead
+# of running pull-request code on the operator's own hardware.
+
 on:
   pull_request:
   push:
@@ -11,7 +16,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     strategy:
       matrix:
         node-version:
@@ -41,12 +46,19 @@ jobs:
           cache-dependency-path: plugins/zendesk-connector/package-lock.json
       - run: npm ci
       - run: npm run check
+      - name: Run the hermetic end-to-end harness
+        # The harness binds an ephemeral loopback port against a mock
+        # Zendesk: it needs no account, no network and no credentials, so it
+        # can gate a merge.
+        run: npm run e2e:mock
       - run: npm pack --dry-run
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        # A moderate advisory is a live signal too: the gate used to be
+        # `high`, which let one pass silently.
+        run: npm audit --omit=dev --audit-level=moderate
 
   validate-plugin:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     steps:
       - name: Start with fresh Git metadata on self-hosted runners
         working-directory: ${{ runner.temp }}
@@ -68,7 +80,7 @@ jobs:
           node -e 'JSON.parse(require("fs").readFileSync("plugins/zendesk-connector/.mcp.json"))'
 
   changelog:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     permissions:
       contents: read
     steps:
@@ -93,7 +105,7 @@ jobs:
         run: node scripts/check-changelog.mjs --self-test
 
   manifest-preflight:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     permissions:
       contents: read
     steps:
@@ -118,7 +130,7 @@ jobs:
         run: node --test scripts/release-tag.test.mjs
 
   container:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     steps:
       - name: Start with fresh Git metadata on self-hosted runners
         working-directory: ${{ runner.temp }}
@@ -136,7 +148,7 @@ jobs:
         run: docker build -t zendesk-mcp:test plugins/zendesk-connector
 
   console:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     defaults:
       run:
         working-directory: apps/operations-console
@@ -163,10 +175,10 @@ jobs:
       - run: npm run build
       - run: npm test
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=moderate
 
   sbom:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     permissions:
       contents: read
     steps:
@@ -205,7 +217,7 @@ jobs:
           retention-days: 30
 
   workflow-lint:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     permissions:
       contents: read
     steps:
@@ -295,7 +307,7 @@ jobs:
 
   dependency-review:
     if: github.event_name == 'pull_request'
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     permissions:
       contents: read
     steps:

@@ -113,8 +113,8 @@ events, the allowlist, and the versioning policy — is in the
 | Tool | Access | Purpose |
 | --- | --- | --- |
 | `zendesk_status` | Read | Verify OAuth and identify the authenticated user |
-| `zendesk_search_tickets` | Read | Search tickets with Zendesk search syntax |
-| `zendesk_get_ticket` | Read | Read a ticket, users, organization, and comments |
+| `zendesk_search_tickets` | Read | Search Zendesk with Zendesk search syntax |
+| `zendesk_get_ticket` | Read | Read a ticket with users, organization, and comments |
 | `zendesk_list_brands` | Read | List brands with page-based pagination |
 | `zendesk_list_groups` | Read | List groups with page-based pagination |
 | `zendesk_list_users` | Read | List users with page-based pagination |
@@ -125,8 +125,32 @@ events, the allowlist, and the versioning policy — is in the
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
 
-Internal notes are the default for comments. Write tools are marked explicitly
-in their MCP annotations.
+Internal notes are the default for `zendesk_add_ticket_comment`. A new
+ticket's first comment is public unless `public: false` is passed, because it
+is the ticket's description. Write tools are marked explicitly in their MCP
+annotations.
+
+**Breaking in the unreleased version:** `zendesk_search_tickets` now labels
+every result with a `resultType` (`ticket`, `user`, `group` or
+`organization`), and only a ticket result carries an `agent_url`. A user,
+group or organization result no longer gets a ticket URL, so a consumer that
+reads `agent_url` on every result must check `resultType` first. The
+[tool contracts](docs/tool-contracts.md#agent_url) reference has the details.
+
+Three more changes travel with it, and all three change what a call does:
+
+- `zendesk_update_ticket` refuses an empty `tags` array. It used to send it,
+  and Zendesk reads that as "remove every tag on the ticket", so a call that
+  succeeded before now fails. Send the tags the ticket should keep.
+- A tag must name something. Both write tools now reject a `tags` list that
+  holds an empty string, so a call that sent `tags: [""]` fails instead of
+  writing an empty tag.
+- `zendesk_create_ticket` sends its first comment with `public: true`, so the
+  requester sees the ticket's description. The value used to be left to the
+  account's own default, and an account configured for private comments now
+  gets a public one. The other way round as well: a call that passed
+  `public: false` had the flag ignored and got the account's default, and now
+  gets an internal first comment. Pass `public: false` to keep it internal.
 
 ## Requirements
 
@@ -348,6 +372,16 @@ root has no `package.json`), or directly with the built output:
 node plugins/zendesk-connector/dist/index.js --doctor
 ```
 
+With `--tools` the doctor also prints what the agent will receive: the
+resolved base URL, the OAuth mode, the requested scope, and the enabled tool
+names. When a token is stored, it also prints the scope the account granted
+and the token's expiry, so the scope the connector asks for and the scope it
+was given can be compared. Nothing it prints contacts Zendesk.
+
+```sh
+npm run doctor -- --tools
+```
+
 The `npm run` form is for a git checkout: it rebuilds first, so it needs the
 dev dependencies that `npm ci` installs. An installed package ships only
 `dist` (no sources or `tsconfig`), so there the direct form is the only one —
@@ -367,6 +401,15 @@ An explicit command-line flag always wins over the environment-variable
 shortcuts: `--doctor` (or `--logout`) runs its own mode even on a host that
 exports `ZENDESK_HEALTHCHECK=1`. When two mode flags appear together, the
 order is `--healthcheck`, then `--doctor`, then `--logout`.
+
+`--help` prints the usage of the command line, and a flag the connector does
+not know is refused with exit code 2 rather than starting the server — an
+unknown flag used to fall through to the server, which then waited on stdin
+forever and printed nothing, so a typo read as a broken install.
+
+```sh
+node plugins/zendesk-connector/dist/index.js --help
+```
 
 ### Healthcheck and shutdown
 
