@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { connect } from "node:net";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import {
+  allowedHosts,
   getOAuthToken,
   isLoopbackHost,
   resetCaches,
@@ -112,7 +113,63 @@ test("knows the loopback names it answers to", () => {
   assert.equal(isLoopbackHost(undefined), false);
 });
 
-test("asks for the read scopes and no others", async () => {
+test("answers a host the operator allowed for a proxy in front of it", async () => {
+  // A proxy forwards the name the browser asked for, not the loopback
+  // address, so a console behind a proxy needs that name on its list.
+  process.env.ZENDESK_CONSOLE_ALLOWED_HOSTS = "console.example.com";
+
+  const response = await fetchWithHost(
+    `${consoleServer.baseUrl}/api/status`,
+    "console.example.com",
+  );
+
+  assert.equal(response.status, 200);
+});
+
+test("refuses an allowed host that carries another port", async () => {
+  // The name is matched against the whole Host header. A browser that
+  // reaches the console's own port sends "name:port", which is not the
+  // header the operator listed, so a rebound name stays out.
+  process.env.ZENDESK_CONSOLE_ALLOWED_HOSTS = "console.example.com";
+
+  const response = await fetchWithHost(
+    `${consoleServer.baseUrl}/api/status`,
+    "console.example.com:4177",
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("refuses a host that the operator did not allow", async () => {
+  process.env.ZENDESK_CONSOLE_ALLOWED_HOSTS = "console.example.com";
+
+  const response = await fetchWithHost(
+    `${consoleServer.baseUrl}/api/status`,
+    "other.example.com",
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("answers no other host when the list is empty", async () => {
+  // The list is empty unless the operator fills it in.
+  assert.deepEqual(allowedHosts(), []);
+
+  const response = await fetchWithHost(
+    `${consoleServer.baseUrl}/api/status`,
+    "console.example.com",
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("reads the allowed hosts from the environment", () => {
+  process.env.ZENDESK_CONSOLE_ALLOWED_HOSTS = "Console.Example.com, other.example.com";
+
+  assert.deepEqual(allowedHosts(), ["console.example.com", "other.example.com"]);
+});
+
+test("asks for the scope the console reads and no others", async () => {
   process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(
     directory,
     clientFileFor(mock.baseUrl),
@@ -121,35 +178,76 @@ test("asks for the read scopes and no others", async () => {
   await getOAuthToken();
 
   const [tokenRequest] = mock.state.tokenRequests;
-  assert.equal(
-    tokenRequest.body.scope,
-    "tickets:read ticket_views:read users:read organizations:read brands:read groups:read",
-  );
+  // The console reads two ticket views. `ticket_views:read` is documented as
+  // "view ticket views and the tickets they return", and `tickets:read`
+  // covers the ticket fields the dashboard reads off the rows.
+  assert.equal(tokenRequest.body.scope, "ticket_views:read tickets:read");
 });
 
-test("drops the write scopes of the configured scope", async () => {
-  process.env.ZENDESK_OAUTH_SCOPE = "tickets:read tickets:write users:read";
+test("drops the write scopes of the configured scope", () => {
+  process.env.ZENDESK_OAUTH_SCOPE =
+    "ticket_views:read tickets:read tickets:write users:read";
 
-  // The scope of a view is its own, and the console reads views.
   assert.equal(
     resolveConsoleScope(),
-    "tickets:read ticket_views:read users:read",
+    "ticket_views:read tickets:read users:read",
   );
 });
 
-test("reads the scope of the client file when the environment is silent", () => {
-  assert.equal(
-    resolveConsoleScope({ scope: "tickets:read organizations:read" }),
-    "tickets:read ticket_views:read organizations:read",
+test("takes the scope of the console's own setting first", () => {
+  process.env.ZENDESK_OAUTH_SCOPE = "ticket_views:read tickets:read";
+  process.env.ZENDESK_CONSOLE_OAUTH_SCOPE = "ticket_views:read";
+
+  assert.equal(resolveConsoleScope(), "ticket_views:read");
+});
+
+test("does not take the scope of the client file", async () => {
+  // The client file holds the connector's scope: it names what the connector
+  // reads and it carries write scopes. The console reads different things and
+  // writes none, so it asks for its own.
+  process.env.ZENDESK_OAUTH_CLIENT_FILE = await writeClientFile(directory, {
+    ...clientFileFor(mock.baseUrl),
+    scope: "tickets:read tickets:write",
+  });
+
+  await getOAuthToken();
+
+  const [tokenRequest] = mock.state.tokenRequests;
+  assert.equal(tokenRequest.body.scope, "ticket_views:read tickets:read");
+});
+
+test("never asks for a scope the operator did not name", () => {
+  // Zendesk caps what a client may request at the scopes allowed on the
+  // OAuth client and answers a request outside that set with
+  // `400 invalid_scope`, so the console does not add a scope of its own.
+  process.env.ZENDESK_OAUTH_SCOPE = "ticket_views:read";
+
+  assert.equal(resolveConsoleScope(), "ticket_views:read");
+});
+
+test("names the scope it needs when the configured scope cannot read a view", () => {
+  process.env.ZENDESK_OAUTH_SCOPE = "tickets:read tickets:write";
+
+  assert.throws(
+    () => resolveConsoleScope(),
+    /ticket_views:read/,
   );
 });
 
-test("falls back to the read scopes when nothing readable is configured", () => {
-  // The console reads views, so it needs the scope of a view as well.
-  assert.equal(
-    resolveConsoleScope({ scope: "read write" }),
-    "tickets:read ticket_views:read users:read organizations:read brands:read groups:read",
+test("names the scope it needs when nothing readable is configured", () => {
+  process.env.ZENDESK_OAUTH_SCOPE = "tickets:write";
+
+  assert.throws(
+    () => resolveConsoleScope(),
+    /ticket_views:read/,
   );
+});
+
+test("accepts the broad read scope", () => {
+  // `read` is a read scope: it covers every GET endpoint, a view included.
+  process.env.ZENDESK_OAUTH_SCOPE = "read write";
+
+  assert.equal(resolveConsoleScope(), "read");
 });
 
 test("refuses an account URL that is not HTTPS", async () => {
@@ -327,8 +425,11 @@ test("shows the OAuth error code only when it is a known one", async () => {
 
     assert.equal(status, 503);
     // The code is what tells the operator that the client was not granted
-    // the scopes the console asks for.
-    assert.equal(body.error, "Zendesk OAuth failed (400 invalid_scope)");
+    // the scopes the console asks for, and the message names the scope.
+    assert.equal(
+      body.error,
+      "Zendesk OAuth failed (400 invalid_scope). The console's token needs the ticket_views:read scope: allow it on the Zendesk OAuth client.",
+    );
   } finally {
     await account.close();
   }

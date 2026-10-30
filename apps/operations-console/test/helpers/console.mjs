@@ -41,6 +41,8 @@ export const ACCESS_TOKEN = "invented-access-token";
 // that at their own mock.
 export function clearAccountEnv() {
   delete process.env.ZENDESK_OAUTH_SCOPE;
+  delete process.env.ZENDESK_CONSOLE_OAUTH_SCOPE;
+  delete process.env.ZENDESK_CONSOLE_ALLOWED_HOSTS;
   delete process.env.ZENDESK_BASE_URL;
   delete process.env.ZENDESK_SUBDOMAIN;
 }

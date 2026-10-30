@@ -53,7 +53,7 @@ test("requests a token with the client credentials from the client file", async 
     grant_type: "client_credentials",
     client_id: CLIENT.clientId,
     client_secret: CLIENT.clientSecret,
-    scope: "tickets:read ticket_views:read users:read organizations:read brands:read groups:read",
+    scope: "ticket_views:read tickets:read",
   });
   assert.equal(token.value, ACCESS_TOKEN);
   assert.equal(token.baseUrl, mock.baseUrl);
