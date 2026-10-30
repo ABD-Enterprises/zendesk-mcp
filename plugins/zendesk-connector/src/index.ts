@@ -41,7 +41,7 @@ if (isHelpRequested(argv)) {
 ) {
   process.exitCode = runHealthCheck();
 } else if (wantsDoctor) {
-  process.exitCode = await runDoctor();
+  process.exitCode = await runDoctor({ tools: wantsTools });
 } else if (wantsLogout) {
   process.exitCode = await runLogout();
 } else {

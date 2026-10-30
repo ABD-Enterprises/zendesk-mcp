@@ -52,6 +52,22 @@ test("an unknown flag is refused instead of starting the server", async () => {
   assert.equal(result.stdout, "");
 });
 
+test("--tools prints what the agent will receive", async () => {
+  const result = await runCli(["--tools"], {
+    ZENDESK_OAUTH_MODE: "client_credentials",
+    ZENDESK_SUBDOMAIN: "example",
+    ZENDESK_OAUTH_CLIENT_ID: "invented-client-id",
+    ZENDESK_OAUTH_CLIENT_SECRET: "invented-client-secret",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /Base URL: https:\/\/example\.zendesk\.com/);
+  assert.match(result.stdout, /OAuth mode: client_credentials/);
+  assert.match(result.stdout, /Scope: /);
+  // The operator can see what the agent will receive without starting it.
+  assert.match(result.stdout, /Enabled tools \(12 of 12\): /);
+});
+
 /**
  * Runs the built connector with the given arguments.
  *
@@ -61,10 +77,12 @@ test("an unknown flag is refused instead of starting the server", async () => {
  */
 function runCli(
   args: string[],
+  env: NodeJS.ProcessEnv = {},
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [join(here, "index.js"), ...args], {
       stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, ...env },
       signal: AbortSignal.timeout(20_000),
     });
     let stdout = "";
