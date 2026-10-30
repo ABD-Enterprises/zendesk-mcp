@@ -103,3 +103,32 @@ export function openQueueHref(overview) {
   const href = viewHref(overview?.views, "open");
   return href === "#" ? `${overview?.accountUrl}/agent/home/tickets` : href;
 }
+
+/**
+ * The message the console shows when it cannot reach its own server.
+ *
+ * @type {string}
+ */
+export const CONSOLE_UNREACHABLE =
+  "The console could not reach its server. Check that it is running, then refresh.";
+
+/**
+ * Loads the dashboard payload and says why it could not be loaded.
+ *
+ * A console that cannot reach its server must not answer with zeros: an
+ * empty dashboard reads as a quiet account, and the operator cannot tell the
+ * two apart. The failure is therefore reported next to the dashboard, not
+ * in place of it.
+ *
+ * @param {() => Promise<any>} [fetchImpl] the fetch the loader calls
+ * @returns {Promise<{overview: any, failure: string | null}>}
+ */
+export async function loadOverview(fetchImpl = fetch) {
+  try {
+    const response = await fetchImpl("/api/overview");
+    const payload = await response.json();
+    return { overview: toOverviewState(payload), failure: null };
+  } catch {
+    return { overview: EMPTY_OVERVIEW, failure: CONSOLE_UNREACHABLE };
+  }
+}

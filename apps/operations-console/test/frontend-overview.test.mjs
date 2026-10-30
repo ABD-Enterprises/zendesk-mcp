@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   EMPTY_OVERVIEW,
+  CONSOLE_UNREACHABLE,
   connectionStatus,
+  loadOverview,
   openQueueHref,
   toOverviewState,
   viewHref,
@@ -103,4 +105,36 @@ test("links to the open queue of the account", () => {
     openQueueHref({ accountUrl: "https://example.zendesk.com", views: {} }),
     "https://example.zendesk.com/agent/home/tickets",
   );
+});
+
+test("a reachable account loads without a failure", async () => {
+  const loaded = await loadOverview(async () => ({
+    json: async () => REACHABLE,
+  }));
+
+  assert.equal(loaded.failure, null);
+  assert.deepEqual(loaded.overview, REACHABLE);
+});
+
+test("a console that cannot reach its server says so", async () => {
+  // The transport failed. The dashboard must not answer with zeros: an
+  // empty dashboard reads as a quiet account, and the operator cannot tell
+  // the two apart.
+  const loaded = await loadOverview(async () => {
+    throw new Error("connection refused");
+  });
+
+  assert.equal(loaded.failure, CONSOLE_UNREACHABLE);
+  assert.deepEqual(loaded.overview, EMPTY_OVERVIEW);
+});
+
+test("an answer that is not JSON is a failure too", async () => {
+  const loaded = await loadOverview(async () => ({
+    json: async () => {
+      throw new SyntaxError("Unexpected token '<', \"<!DOCTYPE\" is not valid JSON");
+    },
+  }));
+
+  assert.equal(loaded.failure, CONSOLE_UNREACHABLE);
+  assert.deepEqual(loaded.overview, EMPTY_OVERVIEW);
 });

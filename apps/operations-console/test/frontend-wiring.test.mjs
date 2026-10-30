@@ -98,10 +98,11 @@ test("the overview page renders the row of the oldest ticket", () => {
 });
 
 test("a failed load is reported instead of shown as an empty dashboard", () => {
-  // The component catches a transport failure and says so: a console that
-  // cannot reach its server must not render zeros, which read as a quiet
-  // account rather than an unreachable console.
-  assert.match(appSource, /catch \{/);
-  assert.match(appSource, /setFailure\(/);
+  // The component asks the loader for the dashboard and for the failure, and
+  // renders the failure: a console that cannot reach its server must not
+  // render zeros, which read as a quiet account rather than an unreachable
+  // console. The loader itself is covered in frontend-overview.test.mjs.
+  assert.match(appSource, /loadOverview\(/);
+  assert.match(appSource, /setFailure\(loaded\.failure\)/);
   assert.match(appSource, /failure &&/);
 });

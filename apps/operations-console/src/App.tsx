@@ -28,7 +28,7 @@ import { formatBrandName, formatCount } from "./lib/format.mjs";
 import { isReviewed, parseReviewed, toggleReviewed, REVIEWED_STORAGE_KEY } from "./lib/knowledge.mjs";
 import { queueBars } from "./lib/metrics.mjs";
 import { matchesQuery, sectionFromHash, sectionLabel } from "./lib/navigation.mjs";
-import { EMPTY_OVERVIEW, connectionStatus, openQueueHref, toOverviewState, viewHref } from "./lib/overview.mjs";
+import { EMPTY_OVERVIEW, connectionStatus, loadOverview, openQueueHref, viewHref } from "./lib/overview.mjs";
 import { ticketRow } from "./lib/tickets.mjs";
 
 const navigation = [
@@ -211,16 +211,12 @@ export function App() {
   const load = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/overview");
-      const payload = await response.json();
-      setData(toOverviewState(payload));
-      setFailure(null);
-    } catch {
-      // The server could not be reached, or it answered with something that
-      // is not JSON. An empty dashboard would say "no tickets" here, and
-      // that is the one answer that must not be given: the operator would
-      // read it as a quiet account instead of an unreachable console.
-      setFailure("The console could not reach its server. Check that it is running, then refresh.");
+      // The loader reports a transport failure instead of leaving the
+      // dashboard empty: zeros read as a quiet account, and the operator
+      // cannot tell the two apart.
+      const loaded = await loadOverview();
+      setData(loaded.overview);
+      setFailure(loaded.failure);
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
