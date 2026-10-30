@@ -8,8 +8,30 @@
 import { formatCount, formatSyncTime } from "./format.mjs";
 
 /**
- * The note the console shows when it did not measure the whole view, or when
- * the account's count and the tickets it served disagree.
+ * True when the dashboard describes the whole view.
+ *
+ * The console reads a view until the view offers no further page, or until it
+ * reaches the page limit. When it read the whole view and the account agrees
+ * on its size, every figure on the dashboard is a figure of the whole view.
+ * Otherwise the dashboard describes a part of it, or the account's count and
+ * the tickets it served disagree, and the console has to say so.
+ *
+ * @param {any} measured the measurement the payload carries
+ * @returns {boolean}
+ */
+export function measurementIsWhole(measured) {
+  if (!measured) return false;
+  const read = Number(measured.tickets) || 0;
+  const total = measured.total === null || measured.total === undefined
+    ? null
+    : Number(measured.total);
+  if (!measured.complete) return false;
+  return total === null || total === read;
+}
+
+/**
+ * The note the console shows when the dashboard does not describe the whole
+ * view, or when the account's count and the tickets it served disagree.
  *
  * The console measures the breakdown of a view from the tickets it read. When
  * the view is longer than the console reads, the breakdown covers only part of
@@ -18,51 +40,64 @@ import { formatCount, formatSyncTime } from "./format.mjs";
  * measurement read as a whole one.
  *
  * @param {any} measured the measurement the payload carries
- * @returns {string} the note, or "" when there is nothing to disclose
+ * @returns {string} the note, or "" when the dashboard describes the whole view
  */
 export function measurementNote(measured) {
   if (!measured) return "";
   const read = Number(measured.tickets) || 0;
-  // Nothing was measured, so there is no partial measurement to disclose.
-  if (read === 0) return "";
   const total = measured.total === null || measured.total === undefined
     ? null
     : Number(measured.total);
   const complete = Boolean(measured.complete);
-  // The console read the whole view and the account agrees on its size, so
-  // there is nothing to disclose.
-  if (complete && (total === null || total === read)) return "";
+  // The whole view was read and the account agrees on its size: every figure
+  // on the dashboard is a figure of the whole view, so there is nothing to
+  // disclose.
+  if (measurementIsWhole(measured)) return "";
 
   // The account's count and the tickets it served can disagree. A count below
   // the number of tickets read cannot be a part of the view, and a count above
-  // a view the console read to its end cannot be the size of that view. In
-  // both cases the count is the number that cannot be trusted, so the note
-  // names the disagreement instead of calling the measurement a part of the
-  // view.
-  const countDisagrees =
-    total !== null && (total < read || (complete && total > read));
+  // a view the console read to its end cannot be the size of that view. A
+  // count that equals the tickets read is too low as well when the console
+  // knows the view has a page it did not read.
+  const countTooHigh =
+    total !== null && total > read && (complete || read === 0);
+  const countTooLow =
+    total !== null &&
+    (total < read || (total === read && !complete && total > 0));
 
   // What the console read.
-  const scope = countDisagrees
-    ? complete
+  const scope = read === 0
+    ? "no tickets"
+    : complete
       ? `${formatCount(read)} tickets, every ticket the view served`
-      : `the first ${formatCount(read)} tickets of the view`
-    : total !== null && total > read
-      ? `the first ${formatCount(read)} of the ${formatCount(total)} tickets in the view`
       : `the first ${formatCount(read)} tickets of the view`;
 
   const parts = [`The console read ${scope}.`];
-  if (countDisagrees) {
-    parts.push(
-      `The account says the view holds ${formatCount(total)}, and the two numbers disagree.`,
-    );
+  if (total !== null) {
+    if (countTooHigh) {
+      parts.push(
+        `The account says the view holds ${formatCount(total)}, and the view served ${formatCount(read)}, so the two numbers disagree.`,
+      );
+    } else if (countTooLow) {
+      parts.push(
+        total < read
+          ? `The account says the view holds ${formatCount(total)}, and the console read ${formatCount(read)} tickets, so the two numbers disagree.`
+          : `The account says the view holds ${formatCount(total)}, and the view has pages the console did not read, so the two numbers disagree.`,
+      );
+    } else {
+      parts.push(`The account says the view holds ${formatCount(total)}.`);
+    }
   }
   if (total === null) {
     // The account states no count, so the active figure is the number of
     // tickets the console read. The console did not read the whole view, so
     // that number is a floor rather than the size of the view.
     parts.push(
-      "The active figure counts only the tickets the console read, so it is a floor rather than the size of the view.",
+      "The active figure is the number of tickets the console read, so it is a floor rather than the size of the view.",
+    );
+  } else {
+    parts.push(
+      "The active figure is the account's count of the view, not a number the console measured.",
     );
   }
   parts.push(

@@ -28,7 +28,7 @@ import { formatBrandName, formatCount } from "./lib/format.mjs";
 import { isReviewed, parseReviewed, toggleReviewed, REVIEWED_STORAGE_KEY } from "./lib/knowledge.mjs";
 import { queueBars } from "./lib/metrics.mjs";
 import { matchesQuery, sectionFromHash, sectionLabel } from "./lib/navigation.mjs";
-import { EMPTY_OVERVIEW, connectionStatus, measurementNote, openQueueHref, toOverviewState, viewHref } from "./lib/overview.mjs";
+import { EMPTY_OVERVIEW, connectionStatus, measurementIsWhole, measurementNote, openQueueHref, toOverviewState, viewHref } from "./lib/overview.mjs";
 import { ticketRow } from "./lib/tickets.mjs";
 
 const navigation = [
@@ -75,6 +75,9 @@ function MeasurementNote({ note }: { note: string }) {
 function OverviewPage({ data }: { data: Overview }) {
   const oldest = data.tickets[0] ? ticketRow(data.tickets[0]) : undefined;
   const note = measurementNote(data.measured);
+  // The band states a fact about the queue, so it may only do so when the
+  // dashboard describes the whole queue.
+  const whole = measurementIsWhole(data.measured);
   return <>
     <section className="page-heading">
       <div><p className="eyebrow">Service desk command center</p><h1>Today’s operating picture</h1><p>Live queue health, workflow readiness, and the next actions that need ownership.</p></div>
@@ -92,7 +95,7 @@ function OverviewPage({ data }: { data: Overview }) {
 
     <section className="alert-band">
       <AlertTriangle size={20} />
-      <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} {note ? "of the tickets the console read are" : "active tickets are"} currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
+      <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} {whole ? "active tickets are" : "of the tickets the console read are"} currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
       <button onClick={() => location.hash = "controls"}>Review blocker<ChevronRight size={16} /></button>
     </section>
 

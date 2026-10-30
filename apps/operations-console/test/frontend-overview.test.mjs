@@ -10,6 +10,7 @@ import { test } from "node:test";
 import {
   EMPTY_OVERVIEW,
   connectionStatus,
+  measurementIsWhole,
   measurementNote,
   openQueueHref,
   toOverviewState,
@@ -89,8 +90,22 @@ test("points at the OAuth configuration when the server reports no reason", () =
 
 test("says nothing when the whole view was measured", () => {
   assert.equal(measurementNote(REACHABLE.measured), "");
-  assert.equal(measurementNote({ tickets: 0, total: null, complete: false }), "");
+  assert.equal(measurementNote({ tickets: 3, total: 3, complete: true }), "");
   assert.equal(measurementNote(undefined), "");
+});
+
+test("knows when the dashboard describes the whole view", () => {
+  assert.equal(measurementIsWhole({ tickets: 3, total: 3, complete: true }), true);
+  assert.equal(measurementIsWhole({ tickets: 3, total: null, complete: true }), true);
+  // The console did not read the whole view, so the dashboard describes a part
+  // of it even when the count happens to match.
+  assert.equal(measurementIsWhole({ tickets: 2000, total: 2000, complete: false }), false);
+  assert.equal(measurementIsWhole({ tickets: 2000, total: 5000, complete: false }), false);
+  // The count and the tickets disagree, so the dashboard does not describe
+  // one view.
+  assert.equal(measurementIsWhole({ tickets: 3, total: 5000, complete: true }), false);
+  assert.equal(measurementIsWhole({ tickets: 0, total: 5000, complete: true }), false);
+  assert.equal(measurementIsWhole(undefined), false);
 });
 
 test("names the tickets it read when the view is longer", () => {
@@ -113,7 +128,7 @@ test("names the tickets it read when the account states no count", () => {
   // The account states no count, so the active figure is the number of
   // tickets the console read. The console did not read the whole view, so
   // that number is a floor and the note has to say so.
-  assert.match(note, /active figure counts only the tickets the console read/);
+  assert.match(note, /active figure is the number of tickets the console read/);
   assert.match(note, /floor rather than the size of the view/);
 });
 
@@ -122,7 +137,8 @@ test("does not call the active figure a floor when the account states a count", 
   // is that count and not the number of tickets the console read.
   const note = measurementNote({ tickets: 300, total: 5000, complete: false });
 
-  assert.match(note, /the first 300 of the 5000/);
+  assert.match(note, /the first 300 tickets of the view/);
+  assert.match(note, /5000/);
   assert.ok(!/floor/.test(note), "the count of the account is not a floor");
 });
 
@@ -147,6 +163,47 @@ test("names the disagreement when the count and the rows differ", () => {
   assert.match(note, /3/);
   assert.match(note, /disagree/);
   assert.match(note, /measured from the tickets that were read/);
+});
+
+test("says the count is too low when the console read more than the account counted", () => {
+  // The account counted fewer tickets than the console read, so the count
+  // cannot be the size of the view and the active figure is too low.
+  const note = measurementNote({ tickets: 2000, total: 500, complete: false });
+
+  assert.match(note, /500/);
+  assert.match(note, /2000/);
+  assert.match(note, /disagree/);
+  // The count is the account's, so the active figure is that count.
+  assert.match(note, /active figure is the account's count/);
+});
+
+test("says the view holds more when the count matches what was read", () => {
+  // The count equals the tickets read, but the console stopped at the page
+  // limit with a page left to read, so the count cannot be the size of the
+  // view either.
+  const note = measurementNote({ tickets: 2000, total: 2000, complete: false });
+
+  assert.match(note, /2000/);
+  assert.match(note, /pages the console did not read/);
+  assert.match(note, /disagree/);
+});
+
+test("says something when the account counted tickets the console never read", () => {
+  // Nothing was measured, but the account states a count. The two disagree
+  // in the strongest way there is, and the note has to say so: without it the
+  // dashboard shows a headline over an all-zero breakdown and no
+  // qualification.
+  const whole = measurementNote({ tickets: 0, total: 5000, complete: true });
+  const partial = measurementNote({ tickets: 0, total: 5000, complete: false });
+
+  assert.notEqual(whole, "");
+  assert.match(whole, /no tickets/);
+  assert.match(whole, /5000/);
+  assert.match(whole, /disagree/);
+  assert.notEqual(partial, "");
+  assert.match(partial, /no tickets/);
+  assert.match(partial, /5000/);
+  assert.match(partial, /disagree/);
 });
 
 test("links to a view of the account", () => {

@@ -114,6 +114,17 @@ test("the overview page renders the row of the oldest ticket", () => {
   assert.equal(row.title, "#900000000101 · invented subject one");
 });
 
+test("the alert band states a fact about the queue only when the dashboard describes it whole", () => {
+  const overview = pageSource("OverviewPage");
+  // The band keys on the measurement itself, not on the note. The note is
+  // empty whenever the whole view was read and the account agrees, but the
+  // band has to know that rather than infer it: a band that claims "0 active
+  // tickets are currently unassigned" over a queue of five thousand tickets
+  // the console never read says something the console cannot support.
+  assert.match(overview, /measurementIsWhole\(data\.measured\)/);
+  assert.match(overview, /whole \? "active tickets are"/);
+});
+
 test("both pages that show a breakdown say how much of the view was measured", () => {
   // The note is built by the module, and it is rendered on the dashboard and
   // on the queue reports: the request-type breakdown exists only on the
