@@ -424,7 +424,7 @@ export class ZendeskOAuth {
       throw new ZendeskAuthError(
         `Zendesk OAuth token request failed: HTTP ${response.status} ${response.statusText}`,
         response.status,
-        payload,
+        summarizeTokenResponse(text, response.headers.get("content-type")),
       );
     }
 
@@ -433,7 +433,7 @@ export class ZendeskOAuth {
       throw new ZendeskAuthError(
         "Zendesk OAuth response did not include an access token.",
         response.status,
-        payload,
+        summarizeTokenResponse(text, response.headers.get("content-type")),
       );
     }
 
@@ -634,6 +634,94 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+/**
+ * The OAuth 2.0 error codes a token endpoint may return (RFC 6749 section
+ * 5.2, plus the OpenID Connect `access_denied`). The code is kept only when
+ * it is one of these, so a credential parked in the `error` field cannot
+ * reach the agent.
+ */
+const OAUTH_ERROR_CODES = new Set([
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "invalid_scope",
+  "access_denied",
+]);
+
+/**
+ * The field names a token endpoint may legitimately return: the token
+ * response fields (RFC 6749 section 5.1), the error response fields (section
+ * 5.2), the OpenID Connect id token, and the two names an authorization code
+ * exchange mentions. Any other name is masked, so an endpoint that parks a
+ * credential in the name position cannot reach the agent.
+ */
+const TOKEN_RESPONSE_FIELDS = new Set([
+  "access_token",
+  "token_type",
+  "expires_in",
+  "refresh_token",
+  "scope",
+  "id_token",
+  "error",
+  "error_description",
+  "error_uri",
+  "code",
+  "client_id",
+]);
+
+/**
+ * Describes a token endpoint response without carrying any of its values.
+ *
+ * The details of an auth error travel with the failure to the MCP client, so
+ * a raw body would put a live access token, a refresh token, or a client
+ * secret echoed back by the endpoint in front of the model. This summary
+ * keeps what a human needs to diagnose the failure - the media type, the
+ * size, the field names that came back and the OAuth error code - and drops
+ * every value.
+ */
+function summarizeTokenResponse(
+  text: string,
+  contentType: string | null,
+): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    mediaType: narrowMediaType(contentType),
+    bytes: Buffer.byteLength(text, "utf8"),
+  };
+  const payload = text ? safeJson(text) : undefined;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const record = payload as Record<string, unknown>;
+    summary.keys = Object.keys(record).slice(0, 32).map(safeFieldName);
+    // The OAuth error code is what tells an agent why the exchange was
+    // refused. It is kept only when it is one of the registered codes, so an
+    // endpoint that parks a credential in this field cannot reach the agent.
+    const code = record.error;
+    if (typeof code === "string" && OAUTH_ERROR_CODES.has(code)) {
+      summary.error = code;
+    }
+  }
+  return summary;
+}
+
+/**
+ * Keeps a field name that a token endpoint may legitimately return and masks
+ * every other name.
+ */
+function safeFieldName(name: string): string {
+  return TOKEN_RESPONSE_FIELDS.has(name) ? name : "[REDACTED]";
+}
+
+/** Narrows a Content-Type to its bare `type/subtype`, without parameters. */
+function narrowMediaType(contentType: string | null): string {
+  const bare = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/.test(
+    bare,
+  )
+    ? bare
+    : "unknown";
 }
 
 /**

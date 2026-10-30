@@ -162,3 +162,150 @@ test("publishes twelve annotated tools and serves status over MCP", async (t) =>
     await server.close();
   }
 });
+
+test("a refused token exchange puts no credential in the tool output", async (t) => {
+  const originalReadOnly = process.env.ZENDESK_READ_ONLY;
+  delete process.env.ZENDESK_READ_ONLY;
+  t.after(() => {
+    if (originalReadOnly === undefined) delete process.env.ZENDESK_READ_ONLY;
+    else process.env.ZENDESK_READ_ONLY = originalReadOnly;
+  });
+  const echoedSecret = "invented-client-secret-value";
+  const zendesk = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "client_credentials",
+      clientId: "example-client-id",
+      clientSecret: echoedSecret,
+      tokenFile: "/unused/oauth.json",
+      scope: "tickets:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: "invalid_client",
+          error_description: `client_secret ${echoedSecret} rejected`,
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      ),
+  );
+  const server = createZendeskServer(zendesk);
+  const client = new Client({ name: "test-client", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+
+  try {
+    const result = await client.callTool({
+      name: "zendesk_status",
+      arguments: {},
+    });
+    assert.equal(result.isError, true);
+    assert.ok(Array.isArray(result.content));
+    const content = result.content[0] as { type: string; text?: string };
+    const text = content.text ?? "";
+    // The agent reads this text; a credential in it would reach the model.
+    assert.ok(!text.includes(echoedSecret));
+    const payload = JSON.parse(text);
+    assert.equal(payload.status, 401);
+    assert.deepEqual(payload.details.keys, ["error", "error_description"]);
+    assert.equal(payload.details.error, "invalid_client");
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("the write tools send the request bodies Zendesk expects", async (t) => {
+  const originalReadOnly = process.env.ZENDESK_READ_ONLY;
+  delete process.env.ZENDESK_READ_ONLY;
+  t.after(() => {
+    if (originalReadOnly === undefined) delete process.env.ZENDESK_READ_ONLY;
+    else process.env.ZENDESK_READ_ONLY = originalReadOnly;
+  });
+  const requests: { url: string; method: string; body: unknown }[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    requests.push({
+      url: String(input),
+      method: init?.method ?? "GET",
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    return Response.json({ ticket: { id: 7, subject: "Example subject" } });
+  };
+  const zendesk = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "tickets:write",
+    },
+    fetcher,
+  );
+  const server = createZendeskServer(zendesk);
+  const client = new Client({ name: "test-client", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+
+  try {
+    const created = await client.callTool({
+      name: "zendesk_create_ticket",
+      arguments: {
+        subject: "Example subject",
+        comment: "Example body",
+        requesterEmail: "person@example.com",
+        priority: "high",
+      },
+    });
+    assert.equal(created.isError, undefined);
+    assert.deepEqual(requests.at(-1), {
+      url: "https://example.zendesk.com/api/v2/tickets.json",
+      method: "POST",
+      body: {
+        ticket: {
+          subject: "Example subject",
+          priority: "high",
+          comment: { body: "Example body" },
+          requester: { email: "person@example.com", name: "person@example.com" },
+        },
+      },
+    });
+
+    const updated = await client.callTool({
+      name: "zendesk_update_ticket",
+      arguments: { ticketId: 7, status: "solved" },
+    });
+    assert.equal(updated.isError, undefined);
+    assert.deepEqual(requests.at(-1), {
+      url: "https://example.zendesk.com/api/v2/tickets/7.json",
+      method: "PUT",
+      body: { ticket: { status: "solved" } },
+    });
+
+    const commented = await client.callTool({
+      name: "zendesk_add_ticket_comment",
+      arguments: { ticketId: 7, body: "Example note" },
+    });
+    assert.equal(commented.isError, undefined);
+    assert.deepEqual(requests.at(-1), {
+      url: "https://example.zendesk.com/api/v2/tickets/7.json",
+      method: "PUT",
+      // An omitted "public" flag must stay an internal note.
+      body: { ticket: { comment: { body: "Example note", public: false } } },
+    });
+
+    const empty = await client.callTool({
+      name: "zendesk_update_ticket",
+      arguments: { ticketId: 7 },
+    });
+    assert.equal(empty.isError, true);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
