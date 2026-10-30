@@ -606,12 +606,11 @@ async function exchangeCode(
     // The audit sink's redact() is the house filter, so it strips the keys
     // the filter knows — token, secret, password, authorization, cookie —
     // and the message keeps the rest of the response's diagnosable shape.
-    // The filter matches key names, so it cannot see a token a middlebox
-    // parked in the value of some innocuous key, nor one used as a key
-    // itself — neither filter inspects what a name contains; that limit
-    // belongs to the filters and is shared with every audit line, so the
-    // call site keeps their contract rather than growing a second
-    // redactor. Two keys they deliberately leave alone are dropped here
+    // The filter looks inside a string as well, so a token that a middlebox
+    // parked in the value of some innocuous name is masked too; what it
+    // cannot see is a name that is itself a credential, so the field names
+    // this body carries are dropped by the allowlist below.
+    // Two keys they deliberately leave alone are dropped here
     // instead: a field named code in this body is the one-time
     // authorization code, and its client_id is the identifier that pairs
     // with it. The shared regex may not match either name — audit.test.ts
