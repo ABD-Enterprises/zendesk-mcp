@@ -122,10 +122,12 @@ export const CONSOLE_UNREACHABLE =
 /**
  * Sequences the console's loads.
  *
- * Two loads can overlap: the refresh button is disabled while one runs, but
- * the first load on mount cannot be cancelled, and the operator can ask for
- * another one before the first has settled. The older one may then settle
- * last, and a failure it reports would replace a success that came after it.
+ * Two loads can overlap: React's development double-mount runs the mount
+ * load twice, and the older of the two may settle last. A failure the older
+ * one reports would then replace a success that came after it, and the
+ * console would show a failure for an account that is reachable. The refresh
+ * button is disabled while a load runs, so this is the only way two loads
+ * can be in flight at once.
  *
  * The sequence hands out a number for every load and says which of them is
  * still the newest, so that only the newest may write.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -207,13 +207,10 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const sequence = useRef(createLoadSequence()).current;
+  const [sequence] = useState(createLoadSequence);
 
   const load = async () => {
-    // Two loads can overlap — the button is disabled while one runs, but the
-    // first load on mount cannot be cancelled — and the older one may settle
-    // last. Only the newest load may write, or a stale failure can replace a
-    // newer success.
+    // Only the newest load may write; the sequence owns that rule.
     const id = sequence.begin();
     setLoading(true);
     try {

@@ -121,12 +121,21 @@ test("the spinner is stopped even when the load failed", () => {
 });
 
 test("only the newest load may write", () => {
-  // Two loads can overlap — the refresh button is disabled while one runs,
-  // but the first load on mount cannot be cancelled — and the older one may
-  // settle last. The component asks the sequence which load is the newest;
-  // the sequence itself is covered in frontend-overview.test.mjs.
+  // Two loads can overlap, and the older one may settle last. The component
+  // asks the sequence which load is the newest; the sequence itself is
+  // covered in frontend-overview.test.mjs.
   assert.match(appSource, /const id = sequence\.begin\(\);/);
   assert.match(appSource, /if \(!sequence\.isCurrent\(id\)\) return;/);
+  // One load begins one sequence entry: two calls would make every load a
+  // no-op, and the suite would stay green.
+  assert.equal((appSource.match(/sequence\.begin\(\)/g) ?? []).length, 1);
+  // And the guard has to run before the load writes, or a superseded load
+  // can overwrite a newer success.
+  assert.ok(
+    appSource.indexOf("if (!sequence.isCurrent(id)) return;") <
+      appSource.indexOf("setData(loaded.overview)"),
+    "the guard must run before the load writes",
+  );
 });
 
 test("the account blocker is shown only when there are unassigned tickets", () => {
