@@ -24,6 +24,12 @@ export type Overview = {
     unassigned: number;
     oldestDays: number;
   };
+  // How many tickets the breakdown was measured from, and how many the view
+  // holds. The two differ when the view is longer than the page limit.
+  measured: {
+    tickets: number;
+    total: number;
+  };
   aging: QueueMetric[];
   requestTypes: QueueMetric[];
   tickets: Ticket[];

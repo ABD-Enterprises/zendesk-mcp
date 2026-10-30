@@ -83,6 +83,8 @@ function OverviewPage({ data }: { data: Overview }) {
       <MetricCard label="Oldest active" value={data.metrics.oldestDays} note="Calendar days" tone="blue" />
     </section>
 
+    {data.measured.total > data.measured.tickets && <p className="metric-note">The breakdown below covers the first {formatCount(data.measured.tickets)} of {formatCount(data.measured.total)} tickets in the view; the headline numbers are the totals.</p>}
+
     <section className="alert-band">
       <AlertTriangle size={20} />
       <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} active tickets are currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>

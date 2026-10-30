@@ -6,13 +6,16 @@
  * environment when a request arrives, so the server still starts (and reports
  * the missing names) when the console is not configured.
  *
- * Required environment variables:
+ * Required environment variables — the dashboard cannot be read without them:
  *   ZENDESK_CONSOLE_BRAND_ID              brand the console is scoped to
  *   ZENDESK_CONSOLE_REQUEST_TYPE_FIELD_ID ticket field that carries the request type
  *   ZENDESK_CONSOLE_SYSTEM_FIELD_ID       ticket field that carries the system
- *   ZENDESK_CONSOLE_VIEW_OPEN_ID          view id for the open queue
  *   ZENDESK_CONSOLE_VIEW_UNTRIAGED_ID     view id for the untriaged queue
  *   ZENDESK_CONSOLE_VIEW_AGING_ID         view id for the aging report
+ *
+ * Optional environment variables — these only build a link into the account,
+ * and the dashboard is read without them:
+ *   ZENDESK_CONSOLE_VIEW_OPEN_ID          view id for the open queue
  *   ZENDESK_CONSOLE_VIEW_REQUEST_TYPE_ID  view id for the request-type report
  *
  * Optional environment variables:
@@ -23,8 +26,8 @@
  *   ZENDESK_CONSOLE_OAUTH_SCOPE          the scope the console's own token
  *                                        asks for
  *
- * `.env.example` next to this file lists the required variables with
- * placeholder values. Export them in the shell, or run
+ * `.env.example` next to this file lists the variables with placeholder
+ * values. Export them in the shell, or run
  * `node --env-file=.env server.mjs` once you have created a local `.env` file.
  *
  * HTTP endpoints:
@@ -57,8 +60,6 @@ import {
 export const app = express();
 const port = Number(process.env.PORT || 4177);
 const root = dirname(fileURLToPath(import.meta.url));
-
-const UNCLASSIFIED = UNCLASSIFIED_REQUEST_TYPE;
 
 /**
  * An error whose message the console wrote itself.
@@ -565,21 +566,51 @@ export async function zendesk(path) {
 // view: a truncated page would make "active" and "untriaged" disagree about
 // the same quantity, and the row-based numbers would count a part of the
 // view. The page limit bounds the work a single dashboard load can cause.
+//
+// The limit is a bound, not a promise. A view that is longer than it is not
+// fully measured, and the console says so rather than reporting a total next
+// to a breakdown that covers only part of the view.
 const VIEW_PAGE_SIZE = 100;
 const VIEW_PAGE_LIMIT = 20;
+// The pages of a view are read a few at a time, so a view of twenty pages
+// costs four round trips instead of twenty.
+const VIEW_PAGE_CONCURRENCY = 5;
 
 async function fetchViewRows(viewId) {
   const rows = [];
   let count = 0;
-  for (let page = 1; page <= VIEW_PAGE_LIMIT; page += 1) {
-    const view = await zendesk(
-      `/api/v2/views/${viewId}/execute.json?page=${page}&per_page=${VIEW_PAGE_SIZE}`,
+  let more = true;
+  let page = 1;
+  while (more && page <= VIEW_PAGE_LIMIT) {
+    // The first page is fetched on its own: most views fit on one page, and
+    // a window of five would ask for four pages that do not exist. After the
+    // first page the count says how many pages the view holds, and that is
+    // how many are asked for at a time.
+    const remaining = Math.max(1, Math.ceil(count / VIEW_PAGE_SIZE) - (page - 1));
+    const size = Math.min(
+      VIEW_PAGE_CONCURRENCY,
+      remaining,
+      VIEW_PAGE_LIMIT - page + 1,
     );
-    rows.push(...(view.rows || []));
-    count = typeof view.count === "number" ? view.count : rows.length;
-    if (!view.next_page) break;
+    const pages = await Promise.all(
+      Array.from({ length: size }, (_unused, index) =>
+        zendesk(
+          `/api/v2/views/${viewId}/execute.json?page=${page + index}&per_page=${VIEW_PAGE_SIZE}`,
+        ),
+      ),
+    );
+    for (const view of pages) {
+      for (const row of view.rows || []) rows.push(row);
+      if (typeof view.count === "number") count = view.count;
+    }
+    // Only the last page of the window says whether there is another page:
+    // a page in the middle of the window always does.
+    const last = pages[pages.length - 1];
+    more = Boolean(last && last.next_page);
+    page += size;
   }
-  return { rows, count };
+  const total = count || rows.length;
+  return { rows, count: total };
 }
 
 function bucketAge(days) {
@@ -602,8 +633,8 @@ function countRequestTypes(tickets) {
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => {
       if (a.name === b.name) return 0;
-      if (a.name === UNCLASSIFIED) return 1;
-      if (b.name === UNCLASSIFIED) return -1;
+      if (a.name === UNCLASSIFIED_REQUEST_TYPE) return 1;
+      if (b.name === UNCLASSIFIED_REQUEST_TYPE) return -1;
       if (a.count !== b.count) return b.count - a.count;
       if (a.name < b.name) return -1;
       if (a.name > b.name) return 1;
@@ -623,7 +654,7 @@ function summarize(rows, baseUrl, config) {
       createdAt,
       ageDays,
       ageBucket: bucketAge(ageDays),
-      requestType: row[config.requestTypeFieldId] || UNCLASSIFIED,
+      requestType: row[config.requestTypeFieldId] || UNCLASSIFIED_REQUEST_TYPE,
       system: row[config.systemFieldId] || UNSPECIFIED_SYSTEM,
       assigneeId: row.assignee_id,
       url: `${baseUrl}/agent/tickets/${row.ticket.id}`,
@@ -670,6 +701,15 @@ app.get("/api/overview", async (_request, response) => {
       lastSynced: new Date().toISOString(),
       accountUrl: auth.baseUrl,
       brandId: config.brandId,
+      // What the breakdown below was measured from. The headline number is
+      // the total of the view; the breakdown is measured from the tickets the
+      // console read, and a view that is longer than the page limit is not
+      // read whole. The console says which it has, rather than reporting a
+      // total next to a breakdown of part of the view.
+      measured: {
+        tickets: aging.rows.length,
+        total: aging.count,
+      },
       metrics: {
         // Both headline numbers are the total of their view, so they answer
         // the same question the same way.

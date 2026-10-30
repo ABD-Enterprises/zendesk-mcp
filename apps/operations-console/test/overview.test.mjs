@@ -15,6 +15,7 @@ import {
   getJson,
   makeTempDir,
   removeTempDir,
+  setConsoleEnv,
   startConsole,
   writeClientFile,
   clearAccountEnv,
@@ -79,6 +80,10 @@ test("builds the dashboard from the aging and untriaged views", async () => {
     oldestDays: 30,
   });
 
+  // The breakdown was measured from every ticket of the view, so the console
+  // says that the view was read whole.
+  assert.deepEqual(body.measured, { tickets: ROWS.length, total: ROWS.length });
+
   assert.deepEqual(body.aging, [
     { name: "0-2 days", count: 2 },
     { name: "3-5 days", count: 2 },
@@ -104,8 +109,7 @@ test("builds the dashboard from the aging and untriaged views", async () => {
       900000000101, 900000000102, 900000000103, 900000000104,
       900000000105, 900000000106, 900000000107, 900000000108,
     ],
-  );
-  assert.deepEqual(body.tickets[0], {
+  );  assert.deepEqual(body.tickets[0], {
     id: 900000000101,
     subject: "invented subject one",
     status: "open",
@@ -221,13 +225,16 @@ test("does not show the client file's bytes when the file is malformed", async (
 test("measures its numbers from the whole view, not from one page", async () => {
   // The view holds three tickets but answers one page at a time. The
   // headline numbers have to describe the whole view, or "active" and
-  // "untriaged" answer the same question two different ways.
+  // "untriaged" answer the same question two different ways. The view holds
+  // three tickets and the account says so: the count and the rows have to
+  // agree, or the test cannot tell a whole view from a part of one.
+  const three = ROWS.slice(0, 3);
   mock.setViewResponse(AGING_VIEW_ID, 200, (url) => {
     const page = url.searchParams.get("page");
     if (page === "1") {
-      return { count: 3, rows: ROWS.slice(0, 2), next_page: "the next page" };
+      return { count: three.length, rows: three.slice(0, 2), next_page: "the next page" };
     }
-    return { count: 3, rows: ROWS.slice(2), next_page: null };
+    return { count: three.length, rows: three.slice(2), next_page: null };
   });
   mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
 
@@ -236,6 +243,11 @@ test("measures its numbers from the whole view, not from one page", async () => 
   assert.equal(status, 200);
   assert.equal(body.metrics.active, 3);
   assert.equal(body.metrics.untriaged, UNTRIAGED_COUNT);
+
+  // The whole view was read, so the breakdown was measured from every ticket
+  // of it. Had the console stopped at the first page, the headline would
+  // still be 3 and this would say 2 of 3.
+  assert.deepEqual(body.measured, { tickets: 3, total: 3 });
 
   // The whole view was read, so the row-based numbers count every ticket.
   const agingRequests = mock.state.viewRequests.filter(
@@ -246,14 +258,69 @@ test("measures its numbers from the whole view, not from one page", async () => 
   assert.match(agingRequests[1].query, /page=2/);
   assert.equal(
     body.metrics.unassigned,
-    ROWS.filter((ticket) => !ticket.assignee_id).length,
+    three.filter((ticket) => !ticket.assignee_id).length,
   );
-  const oldest = Math.max(
-    ...ROWS.map((ticket) =>
+  const oldest = three.reduce(
+    (oldestDays, ticket) => Math.max(
+      oldestDays,
       Math.floor((Date.now() - new Date(ticket.created).getTime()) / DAY),
     ),
+    0,
   );
   assert.equal(body.metrics.oldestDays, oldest);
+});
+
+test("says how much of a view that is longer than the page limit it measured", async () => {
+  // A view that is longer than the page limit cannot be read whole. The
+  // console must say so: the headline is the total of the view, and the
+  // breakdown is measured from the tickets that were read, and reporting one
+  // next to the other without saying so is how the two disagree.
+  const page = Array.from({ length: 100 }, (_unused, index) => ({
+    ticket: { id: 900000000200 + index, status: "open" },
+    subject: "invented subject",
+    status: "open",
+    created: daysAgo(1),
+    assignee_id: 900000000900,
+    [REQUEST_TYPE_FIELD_ID]: "Billing",
+    [SYSTEM_FIELD_ID]: "invented system",
+  }));
+  mock.setViewResponse(AGING_VIEW_ID, 200, () => ({
+    count: 5000,
+    rows: page,
+    next_page: "the next page",
+  }));
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  // The headline is the total of the view; the breakdown is measured from
+  // the tickets the console read, and it says which.
+  assert.equal(body.metrics.active, 5000);
+  assert.equal(body.measured.total, 5000);
+  assert.equal(body.measured.tickets, 2000);
+
+  // The page limit bounds the work one load can cause, and the console stops
+  // at it rather than reading a long view for ever.
+  const agingRequests = mock.state.viewRequests.filter(
+    (request) => request.id === AGING_VIEW_ID,
+  );
+  assert.equal(agingRequests.length, 20);
+});
+
+test("reads the dashboard when only a link setting is missing", async () => {
+  // The open queue and the request-type report only build a link into the
+  // account. A console without them still reads the dashboard, and the
+  // status endpoint names them apart from the settings it needs.
+  setConsoleEnv({ ZENDESK_CONSOLE_VIEW_OPEN_ID: undefined });
+  mock.setViewResponse(AGING_VIEW_ID, 200, { count: ROWS.length, rows: ROWS });
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  assert.equal(body.connected, true);
+  assert.equal(body.metrics.active, ROWS.length);
 });
 
 test("reports a missing configuration as unavailable", async () => {

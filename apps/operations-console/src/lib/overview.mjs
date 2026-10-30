@@ -14,6 +14,7 @@ import { formatSyncTime } from "./format.mjs";
  * @property {string} accountUrl
  * @property {string} brandId
  * @property {{active: number, untriaged: number, unassigned: number, oldestDays: number}} metrics
+ * @property {{tickets: number, total: number}} measured
  * @property {Array<{name: string, count: number}>} aging
  * @property {Array<{name: string, count: number}>} requestTypes
  * @property {Array<any>} tickets
@@ -31,6 +32,7 @@ export const EMPTY_OVERVIEW = {
   accountUrl: "https://example.zendesk.com",
   brandId: "",
   metrics: { active: 0, untriaged: 0, unassigned: 0, oldestDays: 0 },
+  measured: { tickets: 0, total: 0 },
   aging: [],
   requestTypes: [],
   tickets: [],
