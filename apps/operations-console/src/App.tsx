@@ -75,8 +75,9 @@ function MeasurementNote({ note }: { note: string }) {
 function OverviewPage({ data }: { data: Overview }) {
   const oldest = data.tickets[0] ? ticketRow(data.tickets[0]) : undefined;
   const note = measurementNote(data.measured, data.connected);
-  // The band states a fact about the queue, so it may only do so when the
-  // dashboard describes the whole queue.
+  // The band's count sentence states a fact about the queue, so it may only
+  // do so when the dashboard describes the whole queue. The heading above it
+  // is static copy.
   const whole = measurementIsWhole(data.measured);
   return <>
     <section className="page-heading">

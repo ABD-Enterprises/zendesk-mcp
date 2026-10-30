@@ -81,7 +81,9 @@ export function measurementNote(measured, connected = true) {
 
   // What the console read.
   const scope = read === 0
-    ? "no tickets"
+    ? complete
+      ? "no tickets"
+      : "no tickets, and the view has pages the console did not read"
     : complete
       ? `${formatCount(read)} tickets, every ticket the view served`
       : `the first ${formatCount(read)} tickets of the view`;
@@ -96,11 +98,11 @@ export function measurementNote(measured, connected = true) {
       parts.push(
         total < read
           ? `The account says the view holds ${formatCount(total)}, and the console read ${formatCount(read)} tickets, so the two numbers disagree.`
-          : `The account says the view holds ${formatCount(total)}, and the view has pages the console did not read, so the two numbers disagree.`,
+          : `The account says the view holds ${formatCount(total)}, and the view has pages the console did not read, so the count cannot be the size of the view.`,
       );
     } else if (countUnmeasured) {
       parts.push(
-        `The account says the view holds ${formatCount(total)}, and the view has pages the console did not read, so the console measured nothing.`,
+        `The account says the view holds ${formatCount(total)}, and the pages the console read served no tickets, so the console measured nothing.`,
       );
     } else {
       parts.push(`The account says the view holds ${formatCount(total)}.`);

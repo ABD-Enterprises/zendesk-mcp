@@ -185,7 +185,10 @@ test("says the view holds more when the count matches what was read", () => {
 
   assert.match(note, /2000/);
   assert.match(note, /pages the console did not read/);
-  assert.match(note, /disagree/);
+  // The two numbers on screen are the same, so the note does not claim they
+  // disagree: it says the count cannot be the size of the view.
+  assert.match(note, /cannot be the size of the view/);
+  assert.ok(!/disagree/.test(note), "equal numbers are not shown to disagree");
 });
 
 test("says something when the account counted tickets the console never read", () => {
