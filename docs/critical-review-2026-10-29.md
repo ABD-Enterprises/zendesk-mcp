@@ -36,7 +36,7 @@ Copy this block on its own; the full evidence for every finding is in sections 3
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
 | S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | **Merged** — PR #73 |
 | S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | **Merged** — PR #76 |
-| M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
+| M1 | Med | Maint | The 12-tool list is duplicated across ten non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
 | M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open — deferred refactor |
 | M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | **Merged** — PR #74 |
 | M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | **Merged** — PR #74 |
@@ -61,12 +61,12 @@ Copy this block on its own; the full evidence for every finding is in sections 3
 | U9 | Med | Usability | Console requires 7 config IDs, needs 5 for data | `server.mjs:48-56` | #64 | **Merged** — PR #79 |
 | U10 | Med | Usability | Two shipped surfaces disagree on which comments return | `server.ts:110` vs `tool-contracts.md:104` | #65 | **Merged** — PR #74 |
 | U11 | Low | Usability | No `logout` / `healthcheck` npm script | `package.json` | #66 | **Merged** — PR #78 |
-| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | **Merged** — PR #78 |
+| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | **Merged** — PR #78 (documentation) |
 | U13 | Low | Usability | Console workstream statuses are hard-coded literals | `App.tsx:96-104` | #68 | **Merged** — PR #80 |
 | U14 | Low | Usability | Two headline metrics measured inconsistently | `server.mjs:280-281` | #69 | **Merged** — PR #79 |
 | U15 | Low | Usability | `Math.max(0, ...array)` risks a stack overflow | `server.mjs:283` | #70 | **Merged** — PR #79 |
-| **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
-| **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
+| **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Merged** — PR #71 |
+| **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Merged** — PR #71 |
 
 ---
 
@@ -106,7 +106,7 @@ Three classes of real defect were found.
 | 8 | S3 | Medium | Security | Console has no Host/origin validation (DNS rebinding) |
 | 9 | S4 | Medium | Security | `redact()` matches key names only; string values are never scrubbed |
 | 10 | M5 | Medium | Maintainability | `npm run e2e:mock` never runs in CI |
-| 11 | M1 | Medium | Maintainability | The 12-tool list is duplicated across 9 non-test files |
+| 11 | M1 | Medium | Maintainability | The 12-tool list is duplicated across ten non-test files |
 | 12 | M2 | Medium | Maintainability | `safeJson` triplicated; `errorMessage` and mode predicates duplicated |
 
 ---
@@ -408,7 +408,7 @@ runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted", ...]') }}
 
 ## 4. Maintainability findings
 
-### M1 — Medium — The 12-tool list is duplicated across 9 non-test files
+### M1 — Medium — The 12-tool list is duplicated across ten non-test files
 
 **Disposition: open — deferred refactor.**
 
@@ -426,6 +426,8 @@ runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted", ...]') }}
 | `SECURITY.md` | 4 |
 | `docs/multi-user-oauth-isolation.md` | 3 |
 | `docs/secrets-and-storage.md` | 1 |
+
+Nine of the ten name a tool more than once; `docs/secrets-and-storage.md` names a single one.
 
 plus the code itself (`plugins/zendesk-connector/src/server.ts` — 48, `src/policy.ts` — 15).
 
@@ -595,6 +597,9 @@ Every other HTTP call site in the project injects a fetcher so tests can substit
 - Three different policies for an *unknown* value: `auth.ts` throws on an unrecognised `ZENDESK_OAUTH_MODE`; `policy.ts` throws on an unrecognised `ZENDESK_READ_ONLY`; `client.ts` silently falls back to the default for a retry limit that is not an integer in range; the console treats an empty string as absent (`configValue`, `server.mjs:64-69`).
 
 **Impact.** An operator who typos `ZENDESK_OAUTH_MODE` gets a hard error, while an operator who typos `ZENDESK_MAX_RETRIES` gets the default without being told.
+
+Issue #52 was filed with the earlier wording, which named the wrong reader for the mode
+and the wrong variable for the client. The correction is recorded on the issue.
 
 **Remediation.** One `env()` helper with one documented policy per variable.
 
@@ -901,7 +906,9 @@ const REQUIRED_CONFIG = {
 
 ### U12 — Low — The plugin manifest uses a relative path for the server entrypoint
 
-**Disposition: merged in PR #78.**
+**Disposition: merged in PR #78 — the plugin README and the root README now say that the
+path is relative to the plugin root and name the absolute path a host has to use. The
+manifest itself is unchanged.**
 
 **Confirmed.** `plugins/zendesk-connector/.mcp.json:5-7`
 
@@ -1188,7 +1195,7 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 | S10 | Low | Security | No PKCE *(acknowledged in the docs)* | `oauth-setup.ts:463-475` | — | Closed by decision |
 | S11 | Low | Security | `zendesk_status` discloses the token-file path | `auth.ts:370-378` | #41 | **Merged** — PR #73 |
 | S12 | Info | Security | CI falls back to self-hosted runners if the guard var is deleted | `ci.yml` | #40 | **Merged** — PR #76 |
-| M1 | Med | Maint | The 12-tool list is duplicated across 9 non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
+| M1 | Med | Maint | The 12-tool list is duplicated across ten non-test files | `docs/`, `README.md` | #42 | Open — deferred refactor |
 | M2 | Med | Maint | `safeJson` triplicated; `errorMessage` + mode predicates duplicated | `auth.ts:631` etc. | #43 | Open — deferred refactor |
 | M3 | Med | Maint | `destructiveHint: false` hardcoded for all three write tools | `server.ts:467-474` | #44 | **Merged** — PR #74 |
 | M4 | Med | Maint | `tags: []` silently clears every tag on a ticket | `server.ts:199,501` | #45 | **Merged** — PR #74 |
@@ -1213,12 +1220,12 @@ const TOKEN_RESPONSE_FIELDS = new Set([
 | U9 | Med | Usability | Console requires 7 config IDs, needs 5 for data | `server.mjs:48-56` | #64 | **Merged** — PR #79 |
 | U10 | Med | Usability | Two shipped surfaces disagree on which comments return | `server.ts:110` vs `tool-contracts.md:104` | #65 | **Merged** — PR #74 |
 | U11 | Low | Usability | No `logout` / `healthcheck` npm script | `package.json` | #66 | **Merged** — PR #78 |
-| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | **Merged** — PR #78 |
+| U12 | Low | Usability | Manifest uses a relative path for the entrypoint | `.mcp.json:6` | #67 | **Merged** — PR #78 (documentation) |
 | U13 | Low | Usability | Console workstream statuses are hard-coded literals | `App.tsx:96-104` | #68 | **Merged** — PR #80 |
 | U14 | Low | Usability | Two headline metrics measured inconsistently | `server.mjs:280-281` | #69 | **Merged** — PR #79 |
 | U15 | Low | Usability | `Math.max(0, ...array)` risks a stack overflow | `server.mjs:283` | #70 | **Merged** — PR #79 |
-| **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
-| **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Fixed** at `c46ef87` |
+| **P1** | **High** | Security | Retained `error` value gated by shape, not vocabulary | `auth.ts:661-666` @ `1111f74` | #31 | **Merged** — PR #71 |
+| **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Merged** — PR #71 |
 
 **Roll-up:** 4 High, 21 Medium, 18 Low, 1 Info = **44**.
 **Closed or fixed:** 36 findings, each merged in one of PR #29, #71, #73, #74, #75, #76, #77, #78, #79 and #80; S10 closed by decision. **Open: 7** — M1, M2, M6, M7, M8, M11, M13 — each with a filed issue.
@@ -1229,7 +1236,7 @@ The security and correctness findings of this review are all merged. 7 findings 
 
 | ID | Issue | What is left |
 |---|---|---|
-| M1 | #42 | The 12-tool list is duplicated across nine non-test files. |
+| M1 | #42 | The 12-tool list is duplicated across ten non-test files. |
 | M2 | #43 | `safeJson`, `errorMessage` and the mode predicates are duplicated. |
 | M6 | #50 | The client casts an unvalidated response to the caller's type. |
 | M7 | #51 | The token exchange calls the global `fetch` instead of an injected one. |
