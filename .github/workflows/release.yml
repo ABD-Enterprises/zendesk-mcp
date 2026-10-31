@@ -16,7 +16,10 @@ concurrency:
 jobs:
   publish-image:
     name: Publish image to GHCR
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    # The fallback is the value the repository variable holds. This repository is
+    # public, and no self-hosted runner group admits public repositories, so a
+    # self-hosted fallback would queue forever.
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 20
     steps:
       - name: Start with fresh Git metadata on self-hosted runners
