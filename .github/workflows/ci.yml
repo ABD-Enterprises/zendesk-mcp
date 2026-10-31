@@ -15,8 +15,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # Supersede an in-flight pull-request run; never cancel a push-to-main run.
+  # Pull-request runs share a group per pull request, so a new push supersedes
+  # the one in flight. Every other run is keyed by its run id: GitHub keeps at
+  # most one pending run per group, so sharing a group would drop a queued
+  # push-to-main run even with cancel-in-progress off.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
