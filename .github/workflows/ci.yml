@@ -14,9 +14,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Supersede an in-flight pull-request run; never cancel a push-to-main run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     strategy:
       matrix:
         node-version:
@@ -59,6 +67,9 @@ jobs:
 
   validate-plugin:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     steps:
       - name: Start with fresh Git metadata on self-hosted runners
         working-directory: ${{ runner.temp }}
@@ -81,6 +92,9 @@ jobs:
 
   changelog:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -106,6 +120,9 @@ jobs:
 
   manifest-preflight:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -131,6 +148,9 @@ jobs:
 
   container:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     steps:
       - name: Start with fresh Git metadata on self-hosted runners
         working-directory: ${{ runner.temp }}
@@ -149,6 +169,9 @@ jobs:
 
   console:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: apps/operations-console
@@ -179,6 +202,9 @@ jobs:
 
   sbom:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -218,6 +244,9 @@ jobs:
 
   workflow-lint:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -308,6 +337,9 @@ jobs:
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
+    # Measured 2026-10-31 over the last 25 successful runs: every job in this
+    # workflow finished in under 0.5 min of running time.
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:

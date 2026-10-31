@@ -16,7 +16,8 @@ concurrency:
 jobs:
   publish-image:
     name: Publish image to GHCR
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","ARM64","docker"]') }}
+    # The fallback is chip-neutral: the self-hosted pool is served by more than one architecture.
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS || '["self-hosted","Linux","docker"]') }}
     timeout-minutes: 20
     steps:
       - name: Start with fresh Git metadata on self-hosted runners
