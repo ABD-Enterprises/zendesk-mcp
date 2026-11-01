@@ -3,7 +3,7 @@
 <!-- fleet-core:begin (generated: edit the fleet source, not this block) -->
 ## Fleet core
 
-Applies to every repository in the fleet. It is generated from one source; repository-specific rules go outside the markers.
+Applies to new work after a repository adopts this baseline; do not retroactively invalidate in-flight work under its existing contract. It is generated from one source; repository-specific rules go outside the markers.
 
 ### Evidence
 - Read live state before stating it: fetch the remote, read the default branch, run the command. A number or an "X is missing" taken from a doc or a stale checkout is a claim to verify. A figure in a doc carries its date and how it was read.
@@ -13,9 +13,12 @@ Applies to every repository in the fleet. It is generated from one source; repos
 
 ### Changes
 - One bounded task per change request. Stay in scope: no drive-by edits and no agent scratch files committed.
-- Run the repository's validation (named below) before pushing.
-- A change request merges when a fresh-context review of the exact head has no unresolved P0 or P1 findings and every required check is green. A new commit needs a new review; a clean automatic merge of the base branch keeps the review.
-- At most three open non-draft change requests per repository. While the fleet backlog check reports a backlog, finish and land existing work and start nothing new.
+- Standard workflow: run the repository's relevant declared validation, commit to an unprotected branch, and open a change request. Use the repository's ordinary delivery route unless an explicit owner, adopter or repository requirement selects supervision.
+- SureForge supervised contracts are available when work benefits from a bounded contract. They are required when explicitly selected by the owner, adopter or repository; inside a run, its contract and delivery process govern commits and publication. Preserve in-flight contracts and stricter repository or operator requirements; this baseline does not waive them.
+- Record one compact, truthful result: tested revision and checks, delivery status, elapsed time and usage where available. Mark unavailable measurements unknown rather than zero; do not create duplicate evidence or accounting gates.
+- Generated-policy checks establish instruction consistency; they do not establish runtime enforcement or OS confinement.
+- A change request merges after one substantive independent fresh-context review of the exact head has no unresolved P0 or P1 findings, blocking threads are resolved, and every current required check is green. Additional reviews need a specific risk or explicit requirement. A new commit needs a new review; supported native candidate-to-head binding or a clean automatic merge of the base branch may preserve the review under the applicable delivery rules.
+- At most three open non-draft change requests per repository. Before starting work, check admission for every target repository: WIP, queue load, default-branch validation and forge API reads must pass. When a target is blocked, finish and land existing work there; unrelated fleet failures do not freeze passing targets. Escalate change-request age without using age alone to block admission. Shared-runner failures affecting a target remain blocking.
 - Fix a finding that takes minutes in the current change; fold the rest into an existing tracking issue. A session closes at least as many issues as it opens on its own initiative; tickets the owner asks for in chat are separate.
 
 ### Safety
@@ -27,6 +30,7 @@ Applies to every repository in the fleet. It is generated from one source; repos
 ### Layout
 - AGENTS.md is the canonical agent file; where a CLAUDE.md exists it only imports it. Keep this file under 200 lines.
 - Name this repository's validation command, merge rule and changelog rule outside the markers. Rules kept outside the repository are not visible here: if a task seems to need one, ask rather than guess.
+- Rules any adopter needs live in SureForge and in this core; rules that name a machine, account or model live in the operator's own configuration repository, from which each tool's settings are meant to be generated so every agent on every machine follows the same rules.
 - Shared skills are installed per machine from the fleet skills hub. Name the ones this repository expects below.
 
 ### Forge: GitHub
