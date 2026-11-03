@@ -91,11 +91,11 @@ fact.
 Views already have a landed read surface; this section extends the design,
 not the code.
 
-**Endpoint family** (paths are the documented Zendesk shape; verify against
-current endpoint documentation before implementation):
+**Endpoint family:** the current tools use `GET /api/v2/views.json` and
+`GET /api/v2/views/{id}/tickets.json`. Verify any additional endpoint against
+current Zendesk documentation before implementation.
 
-- Read: `GET /api/v2/views.json`, `GET /api/v2/views/{id}.json`,
-  `GET /api/v2/views/{id}/tickets.json` (both list tools shipped in 0.7.0).
+- Candidate read: `GET /api/v2/views/{id}.json` (single view definition).
 - Candidate read: `GET /api/v2/views/count.json` and the per-view count
   family for ticket tallies without fetching ticket bodies.
 - Candidate write (deferred): `POST /api/v2/views.json`,
@@ -227,8 +227,8 @@ unverified.
 Service-level targets per ticket criteria. The least-visible module here:
 SLA policies shape breach calculations across the whole account.
 
-**Endpoint family** (verify against current documentation; the SLA policies
-API shape and permissions before implementation):
+**Endpoint family:** verify the SLA policies API paths, verbs, response shape,
+and permissions against current documentation before implementation.
 
 - Read: `GET /api/v2/slas/policies.json`, `GET /api/v2/slas/policies/{id}.json`.
 - Candidate write (deferred): `POST /api/v2/slas/policies.json`,
@@ -298,9 +298,9 @@ unverified; treat `count` presence as per-endpoint knowledge recorded during
 sandbox verification, not assumed.
 
 **Scope:** Guide/Help Center scope strings are **unknown, not verified
-candidates**. Help Center endpoints have historically used different scope
-names than the `<resource>:<verb>` Support pattern. Confirm from current
-endpoint documentation and a sandbox token before scheduling.
+candidates**. Do not infer them from the Support API's `<resource>:<verb>`
+pattern; confirm from current endpoint documentation and a sandbox token
+before scheduling.
 
 ## Cross-cutting implications
 
