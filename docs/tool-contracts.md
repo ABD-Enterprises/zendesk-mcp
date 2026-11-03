@@ -15,6 +15,9 @@ envelope.
 
 ## Tools
 
+<!-- BEGIN GENERATED: tool table -->
+The connector ships 14 tools: 11 read tools and 3 write tools.
+
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
 | `zendesk_status` | Read | Verify OAuth and identify the authenticated user | None | Yes |
@@ -26,11 +29,16 @@ envelope.
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
-| `zendesk_list_views` | Read | List ticket views with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
-| `zendesk_list_view_tickets` | Read | List the tickets in one view with page-based pagination | `viewId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_views` | Read | List the shared and personal ticket views the authenticated user can see, with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_view_tickets` | Read | List the tickets in one view, with page-based pagination | `viewId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `public` bool (default true); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of non-empty strings (optional) | Yes |
 | `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one non-empty string (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
+<!-- END GENERATED: tool table -->
+
+The tool names, their access and their counts come from the connector's tool
+policy, which `scripts/generate-tool-tables.mjs` reads; the rest of this
+reference is hand-written.
 
 Notes on the inputs:
 
@@ -63,7 +71,7 @@ the sections below describe.
 
 ### List and search results
 
-The eight list tools and `zendesk_search_tickets` return a shared envelope:
+The list tools and `zendesk_search_tickets` return a shared envelope:
 
 ```json
 {
@@ -238,7 +246,7 @@ credentials.
 ## Annotations contract
 
 Every read tool — `zendesk_status`, `zendesk_search_tickets`,
-`zendesk_get_ticket`, and the eight `zendesk_list_*` tools — is marked:
+`zendesk_get_ticket`, and the `zendesk_list_*` tools — is marked:
 
 ```json
 { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
@@ -264,8 +272,8 @@ scopes are.
 
 `ZENDESK_ALLOWED_TOOLS` narrows the deployed tool surface to a named subset:
 
-- Unset or empty, the allowlist itself restricts nothing, and all fourteen
-  tools are available (subject to `ZENDESK_READ_ONLY`, below).
+- Unset or empty, the allowlist itself restricts nothing, and every tool is
+  available (subject to `ZENDESK_READ_ONLY`, below).
 - Set to a comma-separated list of tool names, only those tools are
   registered. A filtered tool does not appear in `tools/list`, and calls to it
   are refused. Each handler also re-checks the policy at call time, so a tool
@@ -274,8 +282,9 @@ scopes are.
   name is rejected at startup: the server refuses to start and reports the
   problem, naming any offending tool names.
 
-For example, a read-only deployment allows the eleven read tools:
+For example, a read-only deployment allows the read tools:
 
+<!-- BEGIN GENERATED: read-only allowlist example -->
 ```sh
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
@@ -283,14 +292,15 @@ zendesk_list_users,zendesk_list_organizations,\
 zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
 zendesk_list_views,zendesk_list_view_tickets"
 ```
+<!-- END GENERATED: read-only allowlist example -->
 
 `ZENDESK_READ_ONLY` expresses the same intent in one variable:
 
-- Set to `1` or `true`, the surface is the eleven read tools; the three write
-  tools are not registered and their calls are refused.
+- Set to `1` or `true`, the surface is the read tools; the write tools are not
+  registered and their calls are refused.
 - An explicit `ZENDESK_ALLOWED_TOOLS` still wins when it names only read
   tools, so a deployment can combine both: the allowlist's subset — which
-  can be narrower than the eleven read tools — is what is served.
+  can be narrower than the read tools — is what is served.
 - When read-only mode is on and the allowlist names a write tool, the server
   refuses to start and names the conflicting tools. Read-only mode never
   silently re-enables a write tool, and disabling it (`0`, `false`, or unset)

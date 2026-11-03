@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { configuredTools, toolNames } from "./policy.js";
+import { configuredTools, toolNames, writeToolNames } from "./policy.js";
 
 const originalTools = process.env.ZENDESK_ALLOWED_TOOLS;
 const originalReadOnly = process.env.ZENDESK_READ_ONLY;
@@ -31,13 +31,9 @@ test("rejects empty, duplicate, and unknown allowlist entries", () => {
   }
 });
 
-const WRITE_TOOL_NAMES = [
-  "zendesk_create_ticket",
-  "zendesk_update_ticket",
-  "zendesk_add_ticket_comment",
-];
+const WRITE_TOOL_NAMES = writeToolNames();
 
-test("read-only mode keeps the eleven read tools and drops the three write tools", () => {
+test("read-only mode keeps the read tools and drops the write tools", () => {
   delete process.env.ZENDESK_ALLOWED_TOOLS;
   const readToolNames = toolNames().filter((tool) => !WRITE_TOOL_NAMES.includes(tool));
   for (const value of ["1", "true", "TRUE", " True "]) {
