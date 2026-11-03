@@ -457,7 +457,7 @@ test("rejects a missing or non-positive user id before calling Zendesk", async (
   const session = await connectContracts(client);
 
   try {
-    for (const userId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "801"]) {
+    for (const userId of [undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "801"]) {
       const result = await callContract(session.client, "zendesk_get_user", {
         userId,
       });
