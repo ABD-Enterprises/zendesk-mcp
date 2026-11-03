@@ -121,37 +121,6 @@ jobs:
       - name: Run the changelog check self-tests
         run: node scripts/check-changelog.mjs --self-test
 
-  tool-tables:
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
-    # Measured 2026-10-31 over the last 25 successful runs: every job in this
-    # workflow finished in under 0.5 min of running time.
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Start with fresh Git metadata on self-hosted runners
-        working-directory: ${{ runner.temp }}
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          set -euo pipefail
-          workspace="${GITHUB_WORKSPACE:?}"
-          test "$workspace" != /
-          rm -rf -- "$workspace/.git"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 20
-      # The generated tool tables and the read-only allowlist are derived from
-      # the connector's tool policy, so a policy that drifts away from the
-      # committed documentation has to fail the build.
-      - name: Check the generated tool tables against the tool policy
-        run: node scripts/generate-tool-tables.mjs --check
-      - name: Run the tool-table generator self-tests
-        run: node --test scripts/generate-tool-tables.test.mjs
-
   manifest-preflight:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}
     # Measured 2026-10-31 over the last 25 successful runs: every job in this

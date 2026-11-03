@@ -26,7 +26,8 @@ contain real customer data or credentials.
   policy in `plugins/zendesk-connector/src/policy.ts`. After changing the
   tool list or the write tools, run the generator from the repository root:
   `node scripts/generate-tool-tables.mjs --write`. `npm run check` fails
-  when the generated sections drift away from the policy.
+  when the generated sections drift away from the policy, and it runs the
+  generator's own tests.
 - Run `npm run check` and `npm pack --dry-run` before opening a pull request.
 
 Ordinary changes add no changelog entry. Write an entry into the `Unreleased`
