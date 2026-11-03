@@ -9,6 +9,7 @@ import {
   sameFilePath,
   type ZendeskConfig,
 } from "./auth.js";
+import { errorMessage } from "./errors.js";
 import { assertUsableConfig } from "./health.js";
 import { configuredTools, toolNames } from "./policy.js";
 
@@ -441,8 +442,4 @@ function probePortFree(port: number): Promise<PortProbeResult> {
       resolve("free");
     });
   });
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

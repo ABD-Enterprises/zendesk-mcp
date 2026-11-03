@@ -1,4 +1,5 @@
 import { ZendeskOAuth, getConfig, type ZendeskConfig } from "./auth.js";
+import { safeJson } from "./json.js";
 import { isCollectionEnvelope, isObjectEnvelope } from "./responseSchemas.js";
 import { PACKAGE_VERSION } from "./version.js";
 
@@ -178,14 +179,6 @@ function readIntegerEnv(
   return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum
     ? parsed
     : fallback;
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
 }
 
 function delay(milliseconds: number): Promise<void> {

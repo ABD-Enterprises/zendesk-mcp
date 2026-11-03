@@ -1,4 +1,5 @@
-import { getConfig, OAUTH_MODES } from "./auth.js";
+import { getConfig } from "./auth.js";
+import { isOAuthMode } from "./oauthModes.js";
 import { configuredTools } from "./policy.js";
 
 export interface HealthCheckOk {
@@ -92,10 +93,7 @@ export function assertUsableConfig(config: unknown): void {
   if (typeof candidate.baseUrl !== "string" || candidate.baseUrl.trim() === "") {
     throw new Error("Zendesk OAuth configuration has no base URL.");
   }
-  if (
-    typeof candidate.mode !== "string" ||
-    !(OAUTH_MODES as readonly string[]).includes(candidate.mode)
-  ) {
+  if (typeof candidate.mode !== "string" || !isOAuthMode(candidate.mode)) {
     throw new Error("Zendesk OAuth configuration has no supported mode.");
   }
 }
