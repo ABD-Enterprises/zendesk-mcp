@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+No changes recorded yet.
+
+## 0.7.0
+
 - **Breaking:** `zendesk_search_tickets` now labels every result with a
   `resultType` field (`ticket`, `user`, `group` or `organization`), and only a
   ticket result carries an `agent_url`. A non-ticket result no longer gets a
@@ -39,6 +43,10 @@
   Windows), refuses an account URL that is not HTTPS (except on the loopback
   interface), refuses a redirect rather than following it, and only shows the
   browser a message the console wrote itself.
+- Release note: 0.6.1 was prepared in the tree but never tagged or published —
+  no `v0.6.1` tag exists and neither the container registry nor npm has a 0.6.1
+  artifact. 0.7.0 is the next release; its tag is the first one expected to run
+  the automated npm publish.
 
 ## 0.6.1
 

@@ -134,15 +134,15 @@ ticket's first comment is public unless `public: false` is passed, because it
 is the ticket's description. Write tools are marked explicitly in their MCP
 annotations.
 
-**Breaking in the unreleased version:** `zendesk_search_tickets` now labels
-every result with a `resultType` (`ticket`, `user`, `group` or
-`organization`), and only a ticket result carries an `agent_url`. A user,
-group or organization result no longer gets a ticket URL, so a consumer that
-reads `agent_url` on every result must check `resultType` first. The
-[tool contracts](docs/tool-contracts.md#agent_url) reference has the details.
+**Upgrading from 0.6.x to 0.7.0.** Four behaviors change what a call does;
+each needs a consumer-side adjustment:
 
-Three more changes travel with it, and all three change what a call does:
-
+- `zendesk_search_tickets` now labels every result with a `resultType`
+  (`ticket`, `user`, `group` or `organization`), and only a ticket result
+  carries an `agent_url`. A user, group or organization result no longer gets
+  a ticket URL, so a consumer that reads `agent_url` on every result must
+  check `resultType` first. The
+  [tool contracts](docs/tool-contracts.md#agent_url) reference has the details.
 - `zendesk_update_ticket` refuses an empty `tags` array. It used to send it,
   and Zendesk reads that as "remove every tag on the ticket", so a call that
   succeeded before now fails. Send the tags the ticket should keep.
@@ -155,6 +155,14 @@ Three more changes travel with it, and all three change what a call does:
   gets a public one. The other way round as well: a call that passed
   `public: false` had the flag ignored and got the account's default, and now
   gets an internal first comment. Pass `public: false` to keep it internal.
+
+Version 0.6.1 was prepared in the tree but never tagged or published, so the
+registry and container repository have no 0.6.1 artifact; 0.7.0 is the first
+release after 0.6.0. Non-breaking improvements in 0.7.0: `zendesk_get_ticket`
+now actually returns the `commentUsers` it always promised, accepts a
+`commentPage` input for long threads, and reports the continuation
+(`commentsNextPage` / `commentsNextPageNumber`); the write tools carry
+accurate MCP annotations and fuller descriptions.
 
 ## Requirements
 
