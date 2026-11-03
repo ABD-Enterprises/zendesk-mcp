@@ -11,7 +11,7 @@ repository, it says so instead of asserting it.
 
 This document changes no code, changes no OAuth defaults, and ships no
 behavior. In particular, it does **not** enable, request, or claim any new
-OAuth scope. Scope strings below are split into two explicit classes:
+OAuth scope. Scope strings below are split into three explicit classes:
 
 - **Known** — strings that appear in this repository today and can be read
   directly in the cited source.
@@ -21,6 +21,9 @@ OAuth scope. Scope strings below are split into two explicit classes:
   naming pattern is not evidence that a scope exists. Confirm every candidate
   before any code references it; a candidate that turns out to be wrong is a
   design error, not a runtime surprise.
+- **Unknown** — no scope name is proposed because this repository provides no
+  reliable basis for one. Do not infer a scope from the resource name; verify
+  it from current endpoint documentation and a sandbox token first.
 
 ## Module boundaries and shared patterns
 
@@ -43,7 +46,7 @@ patterns the existing fourteen tools already establish:
   `zendesk_create_<resource>`, `zendesk_update_<resource>`, and
   `zendesk_delete_<resource>` only where a delete is ever justified — the
   connector ships no delete tool today and that default should not change
-  casually (see "Writes are deferred" below).
+  casually (see [Rollout dependencies](#rollout-dependencies)).
 - **Result envelope.** Collection tools return the shared envelope defined in
   [tool-contracts.md](tool-contracts.md): `count`, `page`, `perPage`,
   `nextPageAvailable`, plus the records under a tool-specific key. Single-record
@@ -83,8 +86,8 @@ From that, two facts are known today:
 - Every known scope string follows the `<resource>:<verb>` pattern with
   `read` and `write` verbs.
 
-Everything else in this document's scope columns is a **candidate**, not a
-fact.
+Every scope column below labels its status as **known**, **candidate**, or
+**unknown**; only known scopes are facts established by this repository.
 
 ## Views module
 
@@ -190,7 +193,9 @@ distinction belongs in the tool description so an LLM caller does not
 implications section below applies in full. Deletes are irreversible and
 should stay unimplemented unless a concrete need appears.
 
-**Pagination/envelope:** standard paginated collection keyed `macros`.
+**Pagination/envelope:** verify pagination parameters, response array key,
+and total behavior against current endpoint documentation and a sandbox
+response before choosing a shared collection envelope.
 
 **Scope:** `macros:read` / `macros:write` — **candidates**, unverified.
 
@@ -217,7 +222,9 @@ part of the connector contract.
 input — silently deactivating a live automation is exactly the kind of
 destructive-adjacent semantics the write deferral exists to scrutinize.
 
-**Pagination/envelope:** standard paginated collection keyed `automations`.
+**Pagination/envelope:** verify pagination parameters, response array key,
+and total behavior against current endpoint documentation and a sandbox
+response before choosing a shared collection envelope.
 
 **Scope:** `automations:read` / `automations:write` — **candidates**,
 unverified.
