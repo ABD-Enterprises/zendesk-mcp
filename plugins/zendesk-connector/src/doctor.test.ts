@@ -88,7 +88,7 @@ test("prints the resolved configuration and the enabled tools on request", async
   assert.match(printed, /OAuth mode: access_token/);
   assert.match(printed, /Scope: read write/);
   // The operator can see what the agent will receive without starting it.
-  assert.match(printed, /Enabled tools \(14 of 14\): zendesk_add_ticket_comment/);
+  assert.match(printed, /Enabled tools \(15 of 15\): zendesk_add_ticket_comment/);
   // Nothing printed carries a credential, on this surface as on the others.
   assert.ok(!printed.includes("invented-access-token"));
   assert.ok(!printed.includes("invented-client-secret"));
@@ -499,7 +499,7 @@ test("names the read-only tool set in the inventory", async () => {
     else process.env.ZENDESK_READ_ONLY = previous;
   }
 
-  assert.match(out.join(""), /Enabled tools \(11 of 14\)/);
+  assert.match(out.join(""), /Enabled tools \(12 of 15\)/);
   assert.ok(!out.join("").includes("zendesk_update_ticket"));
 });
 

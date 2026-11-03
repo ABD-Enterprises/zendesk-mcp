@@ -8,6 +8,7 @@ import { createZendeskServer } from "./server.js";
 const EXAMPLE_TICKET = { id: 42, subject: "Example ticket" };
 const EXAMPLE_COMMENT = { id: 7, body: "Example comment", author_id: 801 };
 const EXAMPLE_COMMENT_USER = { id: 801, name: "Example Comment Author" };
+const EXAMPLE_USER = { id: 801, name: "Example User", email: "user@example.com" };
 // The URL Zendesk points at when a thread has more comments. It is the page
 // after the one the call asked for.
 const EXAMPLE_COMMENT_NEXT_PAGE =
@@ -425,6 +426,50 @@ test("reads the type of a search result the way it is spelled", async () => {
   }
 });
 
+test("reads one user by id and returns the user object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/users/801.json") {
+      return { user: EXAMPLE_USER, unknown_user_field: "kept" };
+    }
+    return { users: [EXAMPLE_USER], count: 1 };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_user", {
+      userId: 801,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/users/801.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the user object, and fields
+    // the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["user"]);
+    assert.deepEqual(payload.user, EXAMPLE_USER);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing or non-positive user id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ user: EXAMPLE_USER }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const userId of [undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "801"]) {
+      const result = await callContract(session.client, "zendesk_get_user", {
+        userId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
 test("refuses an empty tags array instead of clearing a ticket's tags", async () => {
   const { client, requests } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
   const session = await connectContracts(client);
@@ -584,6 +629,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_brands",
       "zendesk_list_groups",
       "zendesk_list_users",
+      "zendesk_get_user",
       "zendesk_list_organizations",
       "zendesk_list_ticket_fields",
       "zendesk_list_ticket_forms",
@@ -637,6 +683,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_brands",
       "zendesk_list_groups",
       "zendesk_list_users",
+      "zendesk_get_user",
       "zendesk_list_organizations",
       "zendesk_list_ticket_fields",
       "zendesk_list_ticket_forms",
@@ -764,7 +811,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);

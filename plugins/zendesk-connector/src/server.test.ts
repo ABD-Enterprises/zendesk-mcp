@@ -79,6 +79,7 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
       tools.tools.map((tool) => tool.name).sort(),
       [
         "zendesk_get_ticket",
+        "zendesk_get_user",
         "zendesk_list_brands",
         "zendesk_list_groups",
         "zendesk_list_organizations",
@@ -97,9 +98,9 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
   }
 });
 
-test("publishes fourteen annotated tools and serves status over MCP", async (t) => {
+test("publishes fifteen annotated tools and serves status over MCP", async (t) => {
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
-  // An ambient read-only flag would publish eleven tools instead of fourteen.
+  // An ambient read-only flag would publish twelve tools instead of fifteen.
   delete process.env.ZENDESK_READ_ONLY;
   t.after(() => {
     if (originalReadOnly === undefined) delete process.env.ZENDESK_READ_ONLY;
@@ -134,7 +135,7 @@ test("publishes fourteen annotated tools and serves status over MCP", async (t) 
     assert.equal(client.getServerVersion()?.version, PACKAGE_VERSION);
 
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 14);
+    assert.equal(tools.tools.length, 15);
     assert.equal(
       tools.tools.find((tool) => tool.name === "zendesk_get_ticket")
         ?.annotations?.readOnlyHint,
@@ -396,6 +397,11 @@ const newlyCoveredTools: {
     name: "zendesk_get_ticket rejects a missing ticket object",
     call: { name: "zendesk_get_ticket", arguments: { ticketId: 9 } },
     fetcher: async () => Response.json({ users: [] }),
+  },
+  {
+    name: "zendesk_get_user rejects a non-object user",
+    call: { name: "zendesk_get_user", arguments: { userId: 5 } },
+    fetcher: async () => Response.json({ user: "not-an-object" }),
   },
   {
     name: "zendesk_get_ticket rejects a malformed comments page",

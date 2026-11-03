@@ -100,6 +100,10 @@ const TOOL_DETAILS = {
     summary: "List users with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_get_user: {
+    summary: "Read one user by id",
+    inputs: "`userId` int (required)",
+  },
   zendesk_list_organizations: {
     summary: "List organizations with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",
