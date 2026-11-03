@@ -17,9 +17,9 @@ Sections 3–5 below are this agent's findings. **Section 6** adds the findings 
 
 Copy this block on its own; the full evidence for every finding is in sections 3–7.
 
-**44 findings — 4 High, 20 Medium, 19 Low, 1 Info.** 36 fixed and merged, 1 closed by decision, **7 open**, each with a filed issue.
+**44 findings — 4 High, 20 Medium, 19 Low, 1 Info.** 36 fixed and merged, 2 closed by decision, **6 open**, each with a filed issue.
 
-**Done.** Every item this review put first is merged; §8 says which pull request each finding landed in. **Still open:** M1 (#42), M2 (#43), M6 (#50), M7 (#51), M8 (#52), M11 (#55) and M13 (#48) — six deferred refactors, and the tag and publish that are the owner's to make.
+**Done.** Every item this review put first is merged; §8 says which pull request each finding landed in. **Still open:** M1 (#42), M2 (#43), M6 (#50), M7 (#51), M8 (#52) and M11 (#55) — six deferred refactors. M13 (#48) is closed by decision: 0.6.1 was never tagged or published, the tree moved to 0.7.0 as the next release, and the tag and publish are the owner's to make once the npm prerequisites in `docs/release-checklist.md` are armed.
 
 | ID | Sev | Area | Finding | Location | Issue | Disposition |
 |---|---|---|---|---|---|---|
@@ -48,7 +48,7 @@ Copy this block on its own; the full evidence for every finding is in sections 3
 | M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | **Merged** — PR #79 |
 | M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open — deferred refactor |
 | M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Merged** — PR #71 |
-| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open — owner action (tag and publish) |
+| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | **Closed by decision** — 0.6.1 never tagged or published; the tree moved to 0.7.0 as the next release |
 | M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | **Merged** — PR #76 |
 | U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | **Merged** — PR #74 |
 | U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | **Merged** — PR #74 |
@@ -86,7 +86,7 @@ Three classes of real defect were found.
 - Both credential leaks are **merged** — PR #29 for the setup path and PR #71 for the runtime path.
 - The security and correctness findings are merged; §8 says which pull request each one landed in.
 - **41 issues** filed, `#30`–`#70`, mapped to findings in §8.
-- **Seven findings are still open**, each with a filed issue: M1, M2, M6, M7, M8, M11 and M13.
+- **Six findings are still open**, each with a filed issue: M1, M2, M6, M7, M8 and M11. M13 (#48) is closed by decision — 0.6.1 was never tagged or published and the tree moved to 0.7.0 as the next release.
 
 ---
 
@@ -1054,7 +1054,7 @@ No write tool is ever executed against a mock server. That is exactly why the su
 
 **Remediation.** Tag and release `v0.6.1`, and point the issue template at the version the reporter is actually running.
 
-**Disposition: open — owner action (tag and publish).** Filed as issue **#48**.
+**Disposition: closed by decision — superseded by the 0.7.0 release preparation.** 0.6.1 was prepared in the tree but never tagged or published, so no 0.6.1 artifact exists anywhere; rather than retro-tag it, the tree moved to 0.7.0 as the next release and the bug template placeholder moved with it. The remaining owner action is unchanged in kind — push the release tag once the npm prerequisites in `docs/release-checklist.md` are armed — but it now targets `v0.7.0`. Filed as issue **#48**.
 
 ### M14 — Low — `npm audit --audit-level=high` hides a live moderate advisory in the production tree
 
@@ -1214,7 +1214,7 @@ are the revisions the review was run against.
 | M10 | Low | Maint | Console duplicates domain constants server↔frontend | `server.mjs:46` | #54 | **Merged** — PR #79 |
 | M11 | Low | Maint | `server.ts` concentrates 12 tool definitions in one function | `server.ts` | #55 | Open — deferred refactor |
 | M12 | Med | Maint | The three write tools are never invoked by any test | `server.test.ts:147` | #47 | **Merged** — PR #71 |
-| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | Open — owner action (tag and publish) |
+| M13 | Med | Maint | Version drift: `0.6.1` vs only `v0.6.0` tagged | `package.json` | #48 | **Closed by decision** — 0.6.1 never tagged or published; the tree moved to 0.7.0 as the next release |
 | M14 | Low | Maint | Audit gate hides a live moderate advisory | `@hono/node-server@2.1.1` | #49 | **Merged** — PR #76 |
 | U1 | **High** | Usability | `commentUsers` is always `undefined` | `server.ts:136` vs `:141` | #56 | **Merged** — PR #74 |
 | U2 | Med | Usability | Search mislabels non-ticket results as tickets | `server.ts:94-100` | #57 | **Merged** — PR #74 |
@@ -1235,11 +1235,11 @@ are the revisions the review was run against.
 | **P2** | Med | Security | Field-name rule missed adjacent credential shapes | `auth.ts:680-684` @ `1111f74` | #31 | **Merged** — PR #71 |
 
 **Roll-up:** 4 High, 20 Medium, 19 Low, 1 Info = **44**.
-**Closed or fixed:** 36 findings, each merged in one of PR #29, #71, #73, #74, #75, #76, #77, #78, #79 and #80; S10 closed by decision. **Open: 7** — M1, M2, M6, M7, M8, M11, M13 — each with a filed issue.
+**Closed or fixed:** 36 findings, each merged in one of PR #29, #71, #73, #74, #75, #76, #77, #78, #79 and #80; S10 closed by decision; M13 closed by decision — 0.6.1 was never tagged or published and the tree moved to 0.7.0 as the next release. **Open: 6** — M1, M2, M6, M7, M8, M11 — each with a filed issue.
 
 ### What is still live on `main`
 
-The security and correctness findings of this review are all merged. 7 findings are still open, and each has a filed issue:
+The security and correctness findings of this review are all merged. 6 findings are still open, and each has a filed issue:
 
 | ID | Issue | What is left |
 |---|---|---|
@@ -1249,7 +1249,12 @@ The security and correctness findings of this review are all merged. 7 findings 
 | M7 | #51 | The token exchange calls the global `fetch` instead of an injected one. |
 | M8 | #52 | Four ways to read an environment variable, four policies for an unknown value. |
 | M11 | #55 | `server.ts` holds the twelve tool definitions in one function. |
-| M13 | #48 | The version in `package.json` is ahead of the tag; the tag and the publish are the owner's to make. |
+
+Closed by decision since this index was written: **M13 (#48)** — 0.6.1 was
+prepared in the tree but never tagged or published; the tree moved to 0.7.0 as
+the next release and the issue template moved with it. The tag and publish
+remain the owner's to make, now targeting `v0.7.0`, once the npm prerequisites
+in `docs/release-checklist.md` are armed.
 
 ---
 
