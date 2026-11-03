@@ -575,11 +575,25 @@ export async function zendesk(path) {
 // to a breakdown that covers only part of the view.
 const VIEW_PAGE_SIZE = 100;
 const VIEW_PAGE_LIMIT = 20;
-// The pages of a view are read a few at a time, so a view of twenty pages
-// costs five round trips instead of twenty when the account states how many
-// tickets the view holds. Without a count the console cannot tell how many
-// pages there are and reads them one at a time.
-const VIEW_PAGE_CONCURRENCY = 5;
+
+// A page the account answers with a 404 is a page past the end of the view
+// when any earlier page of the view was read: the count can overstate the
+// view, and some accounts answer a page beyond the rows they hold with 404
+// instead of an empty page. That is the end of the view, not a failure of
+// the dashboard. A 404 on the first page means the view itself cannot be
+// read, and still fails.
+async function fetchViewPage(viewId, pageNumber) {
+  try {
+    return await zendesk(
+      `/api/v2/views/${viewId}/execute.json?page=${pageNumber}&per_page=${VIEW_PAGE_SIZE}`,
+    );
+  } catch (error) {
+    if (pageNumber > 1 && error instanceof ConsoleError && error.message.endsWith("(404)")) {
+      return null;
+    }
+    throw error;
+  }
+}
 
 async function fetchViewRows(viewId) {
   const rows = [];
@@ -589,33 +603,20 @@ async function fetchViewRows(viewId) {
   let count = null;
   let more = true;
   let page = 1;
+  // Pages are read one at a time. The count can overstate the view and a
+  // next-page link cannot reveal the actual final page before it is read,
+  // so the only way to never ask for a page past the end is to wait for
+  // each page before asking for the next: a page read as empty, or answered
+  // with 404, ends the read and no later page is requested.
   while (more && page <= VIEW_PAGE_LIMIT) {
-    // The first page is fetched on its own: most views fit on one page, and
-    // a window of five would ask for four pages that do not exist. After the
-    // first page the count says how many pages the view holds, and that is
-    // how many are asked for at a time.
-    const remaining = Math.max(1, Math.ceil((count ?? 0) / VIEW_PAGE_SIZE) - (page - 1));
-    const size = Math.min(
-      VIEW_PAGE_CONCURRENCY,
-      remaining,
-      VIEW_PAGE_LIMIT - page + 1,
-    );
-    const pages = await Promise.all(
-      Array.from({ length: size }, (_unused, index) =>
-        zendesk(
-          `/api/v2/views/${viewId}/execute.json?page=${page + index}&per_page=${VIEW_PAGE_SIZE}`,
-        ),
-      ),
-    );
-    for (const view of pages) {
-      for (const row of view.rows || []) rows.push(row);
-      if (typeof view.count === "number") count = view.count;
-    }
-    // Only the last page of the window says whether there is another page:
-    // a page in the middle of the window always does.
-    const last = pages[pages.length - 1];
-    more = Boolean(last && last.next_page);
-    page += size;
+    const view = await fetchViewPage(viewId, page);
+    more = false;
+    if (view === null) break;
+    if (typeof view.count === "number") count = view.count;
+    if ((view.rows || []).length === 0) break;
+    for (const row of view.rows) rows.push(row);
+    more = Boolean(view.next_page);
+    page += 1;
   }
   // The console read the view to its end unless the page limit stopped it.
   return { rows, count, complete: !more };
