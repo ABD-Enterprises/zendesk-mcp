@@ -96,7 +96,7 @@ function OverviewPage({ data }: { data: Overview }) {
 
     {data.metrics.unassigned > 0 && <section className="alert-band">
       <AlertTriangle size={20} />
-      <div><strong>The queue has no assigned agent.</strong><span>{formatCount(data.metrics.unassigned)} {whole ? "active tickets are" : "of the tickets the console read are"} currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
+      <div><strong>Unassigned tickets are waiting.</strong><span>{formatCount(data.metrics.unassigned)} {whole ? "active tickets are" : "of the tickets the console read are"} currently unassigned. Provision the designated agent before enabling email forwarding.</span></div>
       <button onClick={() => location.hash = "controls"}>Review blocker<ChevronRight size={16} /></button>
     </section>}
 
