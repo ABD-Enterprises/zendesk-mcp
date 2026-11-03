@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { ZendeskClient } from "./client.js";
+import { ZendeskClient, INVALID_ENVELOPE_MESSAGE } from "./client.js";
 import { createZendeskServer } from "./server.js";
 
 const EXAMPLE_TICKET = { id: 42, subject: "Example ticket" };
 const EXAMPLE_COMMENT = { id: 7, body: "Example comment", author_id: 801 };
 const EXAMPLE_COMMENT_USER = { id: 801, name: "Example Comment Author" };
 const EXAMPLE_USER = { id: 801, name: "Example User", email: "user@example.com" };
+const EXAMPLE_ORGANIZATION = {
+  id: 3600,
+  name: "Example Organization",
+  domain: "example.com",
+};
 // The URL Zendesk points at when a thread has more comments. It is the page
 // after the one the call asked for.
 const EXAMPLE_COMMENT_NEXT_PAGE =
@@ -470,6 +475,112 @@ test("rejects a missing or non-positive user id before calling Zendesk", async (
   }
 });
 
+test("reads one organization by id and returns the organization object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/organizations/3600.json") {
+      return { organization: EXAMPLE_ORGANIZATION, unknown_organization_field: "kept" };
+    }
+    return { organizations: [EXAMPLE_ORGANIZATION], count: 1 };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_organization", {
+      organizationId: 3600,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/organizations/3600.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the organization object, and
+    // fields the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["organization"]);
+    assert.deepEqual(payload.organization, EXAMPLE_ORGANIZATION);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe organization id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({
+    organization: EXAMPLE_ORGANIZATION,
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const organizationId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "3600",
+    ]) {
+      const result = await callContract(session.client, "zendesk_get_organization", {
+        organizationId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed organization envelope and an API error for an organization", async () => {
+  const { client, requests } = contractClient(() => ({
+    organization: "not-an-object",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(session.client, "zendesk_get_organization", {
+      organizationId: 3600,
+    });
+    assert.equal(malformed.isError, true);
+    // A successful response that does not carry the expected envelope fails
+    // with the fixed message and leaks no part of the raw body.
+    assert.deepEqual(JSON.parse(malformed.text), { error: INVALID_ENVELOPE_MESSAGE });
+    assert.equal(requests.length, 1);
+  } finally {
+    await session.close();
+  }
+
+  // A Zendesk failure surfaces with its HTTP status and Zendesk's own body.
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "organizations:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_get_organization",
+      { organizationId: 3600 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
 test("refuses an empty tags array instead of clearing a ticket's tags", async () => {
   const { client, requests } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
   const session = await connectContracts(client);
@@ -631,6 +742,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_users",
       "zendesk_get_user",
       "zendesk_list_organizations",
+      "zendesk_get_organization",
       "zendesk_list_ticket_fields",
       "zendesk_list_ticket_forms",
       "zendesk_list_views",
@@ -685,6 +797,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_users",
       "zendesk_get_user",
       "zendesk_list_organizations",
+      "zendesk_get_organization",
       "zendesk_list_ticket_fields",
       "zendesk_list_ticket_forms",
       "zendesk_list_views",
@@ -811,7 +924,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);

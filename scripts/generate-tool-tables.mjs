@@ -108,6 +108,10 @@ const TOOL_DETAILS = {
     summary: "List organizations with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_get_organization: {
+    summary: "Read one organization by id",
+    inputs: "`organizationId` int (required)",
+  },
   zendesk_list_ticket_fields: {
     summary: "List all ticket fields (one unpaginated response)",
     inputs: "None",

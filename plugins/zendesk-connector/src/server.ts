@@ -562,6 +562,38 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_get_organization") && server.registerTool(
+    "zendesk_get_organization",
+    {
+      title: "Get Zendesk organization",
+      description:
+        "Get one Zendesk organization by id. Returns the organization " +
+        "object as Zendesk returns it. Pass an organization's id from " +
+        "zendesk_list_organizations, from the organization side-loaded on " +
+        "a ticket by zendesk_get_ticket, or from an organization result " +
+        "of zendesk_search_tickets.",
+      inputSchema: z.object({
+        organizationId: z
+          .number()
+          .int()
+          .positive()
+          .describe("Id of the organization to read."),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ organizationId }) =>
+      runTool("zendesk_get_organization", "read", actorId, async () => {
+        guard("zendesk_get_organization");
+        // The schema guarantees organizationId is a positive integer, so
+        // it is safe to interpolate into the path.
+        const response = await client.request<{ organization: JsonObject }>(
+          `/organizations/${organizationId}.json`,
+          { object: "organization" },
+        );
+        return { organization: response.organization };
+      }),
+  );
+
   allowedTools.has("zendesk_list_ticket_fields") && server.registerTool(
     "zendesk_list_ticket_fields",
     {

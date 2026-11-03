@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 15 tools: 12 read tools and 3 write tools.
+The connector ships 16 tools: 13 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -28,6 +28,7 @@ The connector ships 15 tools: 12 read tools and 3 write tools.
 | `zendesk_list_users` | Read | List users with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_user` | Read | Read one user by id | `userId` int (required) | Yes |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_get_organization` | Read | Read one organization by id | `organizationId` int (required) | Yes |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_views` | Read | List the shared and personal ticket views the authenticated user can see, with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
@@ -161,6 +162,18 @@ Zendesk returns it; unknown fields pass through untouched. The id comes from
 If Zendesk rejects an id the account cannot read, its response surfaces
 through the error contract below.
 
+### zendesk_get_organization
+
+Returns the Zendesk organization payload — `{ "organization" }` — with the
+organization object as Zendesk returns it; unknown fields pass through
+untouched. The id comes from `zendesk_list_organizations`, from the
+organization side-loaded on a ticket by `zendesk_get_ticket`, or from an
+organization result of `zendesk_search_tickets`. If Zendesk rejects an id the
+account cannot read, its response surfaces through the error contract below.
+
+It uses the existing `organizations:read` OAuth scope, so no default-scope
+expansion is needed.
+
 ### Views and view tickets
 
 `zendesk_list_views` returns the shared and personal views the authenticated
@@ -230,11 +243,12 @@ Errors that map from the client layer:
   a message and no status.
 - A successful HTTP response whose body does not match the envelope the tool
   expects — an array of object records for the list, search and comment
-  collections, or an object record for the status and ticket envelopes —
-  fails with the fixed message `Zendesk API returned an unexpected response
-  payload` and no `status` or `details`. The raw response body is never
-  included. A caller that receives this error cannot tell whether a write
-  reached Zendesk, so it must not assume the write was rolled back.
+  collections, or an object record for the status, ticket, user and
+  organization envelopes — fails with the fixed message `Zendesk API returned
+  an unexpected response payload` and no `status` or `details`. The raw
+  response body is never included. A caller that receives this error cannot
+  tell whether a write reached Zendesk, so it must not assume the write was
+  rolled back.
 
 Startup problems — missing OAuth configuration, an unreadable client file, an
 invalid `ZENDESK_ALLOWED_TOOLS` value, or an invalid `ZENDESK_READ_ONLY`
@@ -255,8 +269,8 @@ credentials.
 ## Annotations contract
 
 Every read tool — `zendesk_status`, `zendesk_search_tickets`,
-`zendesk_get_ticket`, `zendesk_get_user`, and the `zendesk_list_*` tools — is
-marked:
+`zendesk_get_ticket`, `zendesk_get_user`, `zendesk_get_organization`, and the
+`zendesk_list_*` tools — is marked:
 
 ```json
 { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
@@ -299,8 +313,9 @@ For example, a read-only deployment allows the read tools:
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_get_user,zendesk_list_organizations,\
-zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
-zendesk_list_views,zendesk_list_view_tickets"
+zendesk_get_organization,zendesk_list_ticket_fields,\
+zendesk_list_ticket_forms,zendesk_list_views,\
+zendesk_list_view_tickets"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 
