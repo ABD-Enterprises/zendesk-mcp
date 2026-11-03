@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 14 tools: 11 read tools and 3 write tools.
+The connector ships 15 tools: 12 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -26,6 +26,7 @@ The connector ships 14 tools: 11 read tools and 3 write tools.
 | `zendesk_list_brands` | Read | List brands with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_groups` | Read | List groups with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_users` | Read | List users with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_get_user` | Read | Read one user by id | `userId` int (required) | Yes |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
@@ -152,6 +153,14 @@ guarantee the order.
 
 With `includeComments` false, the comment fields are absent.
 
+### zendesk_get_user
+
+Returns the Zendesk user payload — `{ "user" }` — with the user object as
+Zendesk returns it; unknown fields pass through untouched. The id comes from
+`zendesk_list_users` or from a user result of `zendesk_search_tickets`.
+If Zendesk rejects an id the account cannot read, its response surfaces
+through the error contract below.
+
 ### Views and view tickets
 
 `zendesk_list_views` returns the shared and personal views the authenticated
@@ -246,7 +255,8 @@ credentials.
 ## Annotations contract
 
 Every read tool — `zendesk_status`, `zendesk_search_tickets`,
-`zendesk_get_ticket`, and the `zendesk_list_*` tools — is marked:
+`zendesk_get_ticket`, `zendesk_get_user`, and the `zendesk_list_*` tools — is
+marked:
 
 ```json
 { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
@@ -288,7 +298,7 @@ For example, a read-only deployment allows the read tools:
 ```sh
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
-zendesk_list_users,zendesk_list_organizations,\
+zendesk_list_users,zendesk_get_user,zendesk_list_organizations,\
 zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
 zendesk_list_views,zendesk_list_view_tickets"
 ```

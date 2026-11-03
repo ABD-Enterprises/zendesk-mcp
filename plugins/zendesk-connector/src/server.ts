@@ -493,6 +493,36 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_get_user") && server.registerTool(
+    "zendesk_get_user",
+    {
+      title: "Get Zendesk user",
+      description:
+        "Get one Zendesk user by id. Returns the user object as Zendesk " +
+        "returns it. Pass a user's id from zendesk_list_users or from a " +
+        "user result of zendesk_search_tickets.",
+      inputSchema: z.object({
+        userId: z
+          .number()
+          .int()
+          .positive()
+          .describe("Id of the user to read."),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ userId }) =>
+      runTool("zendesk_get_user", "read", actorId, async () => {
+        guard("zendesk_get_user");
+        // The schema guarantees userId is a positive integer, so it is
+        // safe to interpolate into the path.
+        const response = await client.request<{ user: JsonObject }>(
+          `/users/${userId}.json`,
+          { object: "user" },
+        );
+        return { user: response.user };
+      }),
+  );
+
   allowedTools.has("zendesk_list_organizations") && server.registerTool(
     "zendesk_list_organizations",
     {
