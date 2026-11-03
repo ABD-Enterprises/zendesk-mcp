@@ -15,12 +15,12 @@ OAuth scope. Scope strings below are split into two explicit classes:
 
 - **Known** — strings that appear in this repository today and can be read
   directly in the cited source.
-- **Candidates** — strings that follow the naming pattern this repository and
-  Zendesk documentation conventionally use (`<resource>:read` /
-  `<resource>:write`), but that are **not verified**. Every candidate must be
-  confirmed against the current Zendesk endpoint documentation and observed
-  sandbox behavior before any code references it. A candidate that turns out
-  to be wrong is a design error, not a runtime surprise.
+- **Candidates** — hypotheses based on the `<resource>:read` /
+  `<resource>:write` pattern visible in this repository, but **not verified**
+  against current Zendesk endpoint documentation or sandbox behavior. The
+  naming pattern is not evidence that a scope exists. Confirm every candidate
+  before any code references it; a candidate that turns out to be wrong is a
+  design error, not a runtime surprise.
 
 ## Module boundaries and shared patterns
 
@@ -122,8 +122,9 @@ for the deferred write tools.
 
 ## Triggers module
 
-Business rules that fire on ticket events. Admin-level configuration; most
-agent accounts cannot read or change these at all.
+Business rules that fire on ticket events. Access may depend on account role
+and plan; verify permissions with current Zendesk documentation and sandbox
+behavior before choosing an initial audience.
 
 **Endpoint family** (verify paths and verbs against current documentation):
 
@@ -153,9 +154,12 @@ agent accounts cannot read or change these at all.
 group ids; the tool documents but cannot validate those references, so the
 design accepts Zendesk-side validation failure as the normal error path.
 
-**Pagination/envelope:** standard paginated collection; expect `count`,
-`next_page`, and a `triggers` array key, confirmed by the client's
-`collection: "triggers"` validation.
+**Pagination/envelope:** expect a paginated collection, but verify the
+presence and meaning of `count`, `next_page`, and the `triggers` array key
+against the current endpoint documentation and sandbox response. At
+implementation time the client's `collection: "triggers"` option can reject
+a response missing that key; it does not establish Zendesk's response
+contract.
 
 **Scope:** `triggers:read` / `triggers:write` — **candidates**, unverified.
 
@@ -224,7 +228,7 @@ Service-level targets per ticket criteria. The least-visible module here:
 SLA policies shape breach calculations across the whole account.
 
 **Endpoint family** (verify against current documentation; the SLA policies
-API has historically been smaller and less uniform than the triggers API):
+API shape and permissions before implementation):
 
 - Read: `GET /api/v2/slas/policies.json`, `GET /api/v2/slas/policies/{id}.json`.
 - Candidate write (deferred): `POST /api/v2/slas/policies.json`,
