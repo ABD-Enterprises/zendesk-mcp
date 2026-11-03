@@ -362,6 +362,110 @@ test("says so when the account's count and the tickets it served disagree", asyn
   assert.equal(body.measured.complete, true);
 });
 
+test("keeps the view count when its first page is empty", async () => {
+  mock.setViewResponse(AGING_VIEW_ID, 200, { count: 0, rows: [] });
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  assert.deepEqual(body.measured, { tickets: 0, total: 0, complete: true });
+});
+
+test("stops reading at an empty page even when the count says more exist", async () => {
+  // The account states a count of 650, which says seven pages, but serves
+  // rows on two pages and an empty third page. The count overstates the
+  // view, and the read has to end at the empty page: no page after it is
+  // requested.
+  const hundred = Array.from({ length: 100 }, (_unused, index) => ({
+    ticket: { id: 900000000400 + index, status: "open" },
+    subject: "invented subject",
+    status: "open",
+    created: daysAgo(1),
+    assignee_id: 900000000900,
+    [REQUEST_TYPE_FIELD_ID]: "Billing",
+    [SYSTEM_FIELD_ID]: "invented system",
+  }));
+  mock.setViewResponse(AGING_VIEW_ID, 200, (url) => {
+    const page = url.searchParams.get("page");
+    if (page === "1" || page === "2") {
+      return { count: 650, rows: hundred, next_page: "the next page" };
+    }
+    return { count: 650, rows: [], next_page: null };
+  });
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  assert.equal(body.connected, true);
+  // The empty page ended the read, so the console knows it read the view
+  // whole and says so; the count is kept as the account gave it.
+  assert.deepEqual(body.measured, { tickets: 200, total: 650, complete: true });
+  assert.equal(body.metrics.active, 650);
+
+  // The count claimed seven pages, but the read ended at the empty page:
+  // pages one and two hold rows, page three is empty, and no page after it
+  // was requested.
+  const agingRequests = mock.state.viewRequests.filter(
+    (request) => request.id === AGING_VIEW_ID,
+  );
+  assert.deepEqual(
+    agingRequests.map((request) => Number(new URLSearchParams(request.query).get("page"))),
+    [1, 2, 3],
+  );
+});
+
+test("does not fail the dashboard when a past-end page answers 404", async () => {
+  // The account states a count of 350, which says four pages, serves rows
+  // on two of them, and answers the page past its end with 404 — a past-end
+  // page is the end of the view, not a failure of the dashboard.
+  const hundred = Array.from({ length: 100 }, (_unused, index) => ({
+    ticket: { id: 900000000500 + index, status: "open" },
+    subject: "invented subject",
+    status: "open",
+    created: daysAgo(1),
+    assignee_id: 900000000900,
+    [REQUEST_TYPE_FIELD_ID]: "Billing",
+    [SYSTEM_FIELD_ID]: "invented system",
+  }));
+  mock.setViewResponse(
+    AGING_VIEW_ID,
+    (url) =>
+      url.searchParams.get("page") === "1" || url.searchParams.get("page") === "2"
+        ? 200
+        : 404,
+    (url) => {
+      const page = url.searchParams.get("page");
+      if (page === "1" || page === "2") {
+        return { count: 350, rows: hundred, next_page: "the next page" };
+      }
+      return { error: "not found" };
+    },
+  );
+  mock.setViewResponse(UNTRIAGED_VIEW_ID, 200, { count: UNTRIAGED_COUNT, rows: [] });
+
+  const { status, body } = await getJson(`${consoleServer.baseUrl}/api/overview`);
+
+  assert.equal(status, 200);
+  assert.equal(body.connected, true);
+  // The 404 ended the read past the rows the account served, so the console
+  // read the view whole and says so; the count is kept as the account gave
+  // it.
+  assert.deepEqual(body.measured, { tickets: 200, total: 350, complete: true });
+  assert.equal(body.metrics.active, 350);
+
+  // The read stopped at the end of the view: the 404 was read as the page
+  // past the end, and no page after it was requested.
+  const agingRequests = mock.state.viewRequests.filter(
+    (request) => request.id === AGING_VIEW_ID,
+  );
+  assert.deepEqual(
+    agingRequests.map((request) => Number(new URLSearchParams(request.query).get("page"))),
+    [1, 2, 3],
+  );
+});
+
 test("reads the dashboard when only a link setting is missing", async () => {
   // The open queue and the request-type report only build a link into the
   // account. A console without them still reads the dashboard.

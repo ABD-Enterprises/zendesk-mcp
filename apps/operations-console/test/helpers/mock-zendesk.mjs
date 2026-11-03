@@ -72,13 +72,18 @@ export async function startMockZendesk() {
         accept: request.headers.accept,
       });
       const configured = state.views.get(id) ?? state.defaultView;
-      // A body may be a function of the request, so a test can answer a
-      // paged view differently per page.
+      // A status or body may be a function of the request, so a test can
+      // answer a paged view differently per page — an account can answer a
+      // page past the end of a view with an error where the count said the
+      // page exists.
+      const status = typeof configured.status === "function"
+        ? configured.status(url)
+        : configured.status;
       const body =
         typeof configured.body === "function"
           ? configured.body(url)
           : configured.body;
-      send(response, configured.status, body);
+      send(response, status, body);
       return;
     }
 
