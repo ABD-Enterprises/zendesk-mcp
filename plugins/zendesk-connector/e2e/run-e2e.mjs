@@ -18,6 +18,11 @@
  * skip message and exits 0. This phase is read-only: it never calls a write
  * tool. Token values are never printed; only tool names and outcomes are
  * logged.
+ *
+ * The view tools are exercised against the account itself rather than a
+ * configured id: the harness lists the views, then reads the tickets of the
+ * first one the account reports. An account with no views at all skips the
+ * second step instead of failing.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -31,6 +36,11 @@ const MESSAGE_TIMEOUT_MS = 30_000;
 const SHUTDOWN_GRACE_MS = 5_000;
 const STDERR_TAIL_LIMIT = 4_000;
 const TEMP_DIR_PREFIX = "zendesk-mcp-e2e-";
+
+// The documented defaults of every paginated tool: the harness calls them
+// without arguments, so the defaults are part of what it checks.
+const DEFAULT_PAGE = 1;
+const DEFAULT_PER_PAGE = 25;
 
 const SERVER_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -84,6 +94,7 @@ async function main() {
   let session;
   let deadlineTimer;
   const results = [];
+  const skipped = [];
   const stderrTail = { text: "" };
 
   try {
@@ -121,7 +132,7 @@ async function main() {
       session.close("the server process exited before the session finished"),
     );
 
-    const run = runSession(session, steps, ticketId, results);
+    const run = runSession(session, steps, ticketId, results, skipped);
     deadlineTimer = setTimeout(() => {
       log(`FAIL overall deadline of ${OVERALL_DEADLINE_MS} ms exceeded`);
       session.close(`the overall deadline of ${OVERALL_DEADLINE_MS} ms exceeded`);
@@ -139,7 +150,11 @@ async function main() {
       return 1;
     } finally {
       const passed = results.filter((entry) => entry.ok).length;
-      log(`${passed} passed, ${results.length - passed} failed`);
+      const failed = results.length - passed;
+      log(
+        `${passed} passed, ${failed} failed` +
+          (skipped.length > 0 ? `, ${skipped.length} skipped` : ""),
+      );
       session.close("the end-to-end run has finished");
     }
   } finally {
@@ -150,7 +165,7 @@ async function main() {
 }
 
 /** Runs the MCP session: initialize, tools/list, then the read-only steps. */
-async function runSession(session, steps, ticketId, results) {
+async function runSession(session, steps, ticketId, results, skipped) {
   await session.request("initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
@@ -159,22 +174,51 @@ async function runSession(session, steps, ticketId, results) {
   await session.notify("notifications/initialized");
 
   const listed = await session.request("tools/list", {});
+  const tools = (listed.tools ?? []).filter(Boolean);
   const available = new Set(
-    (listed.tools ?? []).map((tool) => tool?.name).filter(Boolean),
+    tools.map((tool) => tool?.name).filter(Boolean),
+  );
+  const readOnly = new Set(
+    tools
+      .filter((tool) => tool?.annotations?.readOnlyHint === true)
+      .map((tool) => tool?.name)
+      .filter(Boolean),
   );
   for (const step of steps) {
     if (!available.has(step.tool)) {
       throw new Error(`the server does not list the expected tool ${step.tool}`);
     }
+    // This phase only calls read tools, so each one has to say it is one:
+    // an annotation that claims otherwise is a contract break, and the
+    // harness would be calling a tool it may not safely call.
+    if (!readOnly.has(step.tool)) {
+      throw new Error(`the server does not mark ${step.tool} read-only`);
+    }
   }
 
+  // Values a later step needs from an earlier one — the view id the
+  // account reported, which the view-tickets step reads.
+  const state = {};
+
   for (const step of steps) {
+    const args = typeof step.args === "function" ? step.args(state) : step.args;
+    if (args === undefined) {
+      // The step has nothing to run against in this account, so it is
+      // skipped rather than failed: an account with no views cannot have
+      // tickets in a view.
+      skipped.push(step.tool);
+      log(`SKIP ${step.tool}: ${step.skipReason}`);
+      continue;
+    }
     try {
       const result = await session.request("tools/call", {
         name: step.tool,
-        arguments: step.args,
+        arguments: args,
       });
-      verifyToolResult(step, result, { allowEmptySearch: ticketId === undefined });
+      const data = verifyToolResult(step, result, {
+        allowEmptySearch: ticketId === undefined,
+      });
+      step.capture?.(state, data);
       results.push({ tool: step.tool, ok: true });
       log(`PASS ${step.tool}`);
     } catch (error) {
@@ -202,6 +246,7 @@ function verifyToolResult(step, result, context) {
     throw new Error(`tool returned non-JSON text: ${truncate(text)}`);
   }
   step.verify(data, context);
+  return data;
 }
 
 function buildSteps(ticketId) {
@@ -260,7 +305,75 @@ function buildSteps(ticketId) {
     });
   }
 
+  // The views come last: the view-tickets step reads a view id that only
+  // the views step can report.
+  steps.push({
+    tool: "zendesk_list_views",
+    args: {},
+    verify: (data) => {
+      const views = expectArray(data, "views");
+      expectEnvelope(data, views.length);
+      for (const [index, view] of views.entries()) {
+        expectPresent(view?.id, `views[${index}].id`);
+      }
+    },
+    // The account's own view id, so the next step reads a view that
+    // exists rather than one the harness invented.
+    capture: (state, data) => {
+      const id = data.views[0]?.id;
+      if (typeof id === "number" && Number.isSafeInteger(id) && id > 0) {
+        state.viewId = id;
+      } else if (typeof id === "string" && /^\d+$/.test(id)) {
+        const numericId = Number(id);
+        if (Number.isSafeInteger(numericId) && numericId > 0) {
+          state.viewId = numericId;
+        }
+      }
+    },
+  });
+  steps.push({
+    tool: "zendesk_list_view_tickets",
+    args: (state) => (state.viewId === undefined ? undefined : { viewId: state.viewId }),
+    skipReason: "the account lists no view to read tickets from",
+    verify: (data) => {
+      // A view can hold no tickets at all, so the array's presence is what
+      // is asserted, not its length.
+      const tickets = expectArray(data, "tickets");
+      expectEnvelope(data, tickets.length);
+      for (const [index, ticket] of tickets.entries()) {
+        expectPresent(ticket?.id, `tickets[${index}].id`);
+      }
+    },
+  });
+
   return steps;
+}
+
+/**
+ * The shared list envelope: the page the call asked for, the page size it
+ * used, a total that covers the records it returned, and the flag that says
+ * whether more pages exist.
+ */
+function expectEnvelope(data, recordCount) {
+  if (typeof data?.count !== "number") {
+    throw new Error("expected a numeric count in the tool result");
+  }
+  if (data.count < recordCount) {
+    throw new Error(
+      `expected a count of at least ${recordCount}, received ${String(data.count)}`,
+    );
+  }
+  if (data.page !== DEFAULT_PAGE) {
+    throw new Error(`expected page ${DEFAULT_PAGE}, received ${String(data.page)}`);
+  }
+  if (data.perPage !== DEFAULT_PER_PAGE) {
+    throw new Error(
+      `expected perPage ${DEFAULT_PER_PAGE}, received ${String(data.perPage)}`,
+    );
+  }
+  if (typeof data.nextPageAvailable !== "boolean") {
+    throw new Error("expected a boolean nextPageAvailable in the tool result");
+  }
 }
 
 function listStep(tool, field, { allowEmpty = false } = {}) {

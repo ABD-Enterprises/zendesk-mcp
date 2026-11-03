@@ -85,6 +85,8 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
         "zendesk_list_ticket_fields",
         "zendesk_list_ticket_forms",
         "zendesk_list_users",
+        "zendesk_list_view_tickets",
+        "zendesk_list_views",
         "zendesk_search_tickets",
         "zendesk_status",
       ],
@@ -95,9 +97,9 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
   }
 });
 
-test("publishes twelve annotated tools and serves status over MCP", async (t) => {
+test("publishes fourteen annotated tools and serves status over MCP", async (t) => {
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
-  // An ambient read-only flag would publish nine tools instead of twelve.
+  // An ambient read-only flag would publish eleven tools instead of fourteen.
   delete process.env.ZENDESK_READ_ONLY;
   t.after(() => {
     if (originalReadOnly === undefined) delete process.env.ZENDESK_READ_ONLY;
@@ -132,7 +134,7 @@ test("publishes twelve annotated tools and serves status over MCP", async (t) =>
     assert.equal(client.getServerVersion()?.version, PACKAGE_VERSION);
 
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 12);
+    assert.equal(tools.tools.length, 14);
     assert.equal(
       tools.tools.find((tool) => tool.name === "zendesk_get_ticket")
         ?.annotations?.readOnlyHint,

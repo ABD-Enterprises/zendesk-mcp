@@ -2,7 +2,20 @@
 
 ## Unreleased
 
-No changes recorded yet.
+- Add two read-only tools: `zendesk_list_views` lists the shared and personal
+  ticket views the authenticated user can see, and `zendesk_list_view_tickets`
+  lists the tickets in one view. Both take `page` (default 1) and `perPage`
+  (default 25, max 100) and report `count`, `page`, `perPage` and
+  `nextPageAvailable` beside their records. The view-tickets endpoint
+  documents no total, so its `count` falls back to the length of the page it
+  returned.
+- The default least-privilege OAuth scope now includes `ticket_views:read`,
+  which the two view tools need. A token issued before this change does not
+  carry it: re-run `npm run oauth:setup` in authorization-code mode, let the
+  next token request pick it up in `client_credentials` mode, or obtain a
+  token with the scope in access-token mode. When the OAuth client has allowed
+  scopes configured in Admin Center, add `ticket_views:read` there as well —
+  Zendesk refuses the request with `400 invalid_scope` otherwise.
 
 ## 0.7.0
 

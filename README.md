@@ -125,6 +125,8 @@ events, the allowlist, and the versioning policy — is in the
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination |
+| `zendesk_list_views` | Read | List ticket views with page-based pagination |
+| `zendesk_list_view_tickets` | Read | List the tickets in one view with page-based pagination |
 | `zendesk_create_ticket` | Write | Create a ticket |
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
@@ -300,7 +302,7 @@ same settings in `~/.config/codex-zendesk/client.json`:
   "mode": "authorization_code",
   "clientId": "your-client-identifier",
   "clientSecret": "your-client-secret",
-  "scope": "tickets:read tickets:write users:read organizations:read brands:read groups:read"
+  "scope": "tickets:read tickets:write users:read organizations:read brands:read groups:read ticket_views:read"
 }
 ```
 
@@ -322,8 +324,15 @@ tokens atomically.
 The default least-privilege scopes are:
 
 ```text
-tickets:read tickets:write users:read organizations:read brands:read groups:read
+tickets:read tickets:write users:read organizations:read brands:read groups:read ticket_views:read
 ```
+
+`ticket_views:read` covers the view tools (`zendesk_list_views` and
+`zendesk_list_view_tickets`). A token issued before that scope was part of the
+default does not carry it: re-run `npm run oauth:setup` so the larger grant
+replaces the stored token, or — when the OAuth client has allowed scopes
+configured in Admin Center — add the scope there too, because Zendesk refuses
+the request with `400 invalid_scope` otherwise.
 
 Override them with `ZENDESK_OAUTH_SCOPE` when your workflow needs a different
 set.
@@ -466,7 +475,7 @@ server writes `server_start` and `server_shutdown` events to stderr.
 | `ZENDESK_MAX_RETRY_DELAY_MS` | `10000` | Maximum automatic rate-limit wait, from 0 to 60000 |
 | `ZENDESK_HEALTHCHECK` | | Set to `1` or `true` to validate the configuration and exit instead of serving |
 | `ZENDESK_ALLOWED_TOOLS` | All compiled tools | Comma-separated subset of tool names to serve |
-| `ZENDESK_READ_ONLY` | | Set to `1` or `true` to serve only the nine read tools; a `ZENDESK_ALLOWED_TOOLS` value naming a write tool is then rejected at startup |
+| `ZENDESK_READ_ONLY` | | Set to `1` or `true` to serve only the eleven read tools; a `ZENDESK_ALLOWED_TOOLS` value naming a write tool is then rejected at startup |
 | `ZENDESK_SHUTDOWN_TIMEOUT_MS` | `5000` | Milliseconds before a hung shutdown is force-exited |
 
 Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-and-storage.md).

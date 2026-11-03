@@ -102,15 +102,20 @@ exposed, revoke that client's values in Zendesk without disturbing any other
 deployment. The default least-privilege scopes are:
 
 ```text
-tickets:read tickets:write users:read organizations:read brands:read groups:read
+tickets:read tickets:write users:read organizations:read brands:read groups:read ticket_views:read
 ```
 
 The operations console reads ticket views, and a view is its own scope: it
-needs `ticket_views:read` as well. With no scope configured the console asks
-for `ticket_views:read tickets:read` of its own, and a client that does not
-allow `ticket_views:read` refuses that request with `invalid_scope`. A scope
-that leaves the view scope out — including one copied from the list above —
-is refused before that, with the console naming the scope it needs.
+needs `ticket_views:read` as well, which the list above now carries. With no
+scope configured the console asks for `ticket_views:read tickets:read` of its
+own, and a client that does not allow `ticket_views:read` refuses that
+request with `invalid_scope`. A scope that leaves the view scope out is
+refused before that, with the console naming the scope it needs. A token
+issued before the view scope was part of the default does not carry it, so
+renew it — re-run `npm run oauth:setup` in authorization-code mode, let the
+next token request pick it up in `client_credentials` mode — and allow
+`ticket_views:read` on the Zendesk OAuth client when it has allowed scopes
+configured.
 
 Override them with `ZENDESK_OAUTH_SCOPE` only when a workflow needs a
 different set. The OAuth mode is part of the deployment shape:
@@ -148,17 +153,18 @@ them in the environment or a secret manager, never in the tree.
 
 OAuth scopes bound what the account will allow; `ZENDESK_ALLOWED_TOOLS`
 bounds what the server will ask for, by naming a subset of the tools. A
-read-only deployment allows the nine read tools:
+read-only deployment allows the eleven read tools:
 
 ```sh
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_list_organizations,\
-zendesk_list_ticket_fields,zendesk_list_ticket_forms"
+zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
+zendesk_list_views,zendesk_list_view_tickets"
 ```
 
 The same deployment can set `ZENDESK_READ_ONLY=1` instead, which serves only
-the nine read tools without naming them. The two can be combined only when
+the eleven read tools without naming them. The two can be combined only when
 the allowlist names read tools alone; a write tool in the allowlist under
 read-only mode is rejected at startup. The contract is in
 [tool-contracts.md](tool-contracts.md#allowlist-contract).
@@ -288,14 +294,15 @@ that blast radius to one person's deployments.
 ### Per-user allowlist examples
 
 Different people on one host commonly carry different allowlists. A
-reader gets the nine read tools and nothing that writes:
+reader gets the eleven read tools and nothing that writes:
 
 ```sh
 # Reader: reads only.
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_list_organizations,\
-zendesk_list_ticket_fields,zendesk_list_ticket_forms"
+zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
+zendesk_list_views,zendesk_list_view_tickets"
 ```
 
 A triage role adds the comment tool but still cannot create or edit
@@ -308,6 +315,7 @@ export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_list_groups,\
 zendesk_list_users,zendesk_list_organizations,\
 zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
+zendesk_list_views,zendesk_list_view_tickets,\
 zendesk_add_ticket_comment"
 ```
 
