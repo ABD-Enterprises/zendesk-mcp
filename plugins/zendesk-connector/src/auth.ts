@@ -10,24 +10,20 @@ import { readFileSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { safeJson } from "./json.js";
+import { isOAuthMode, type OAuthMode } from "./oauthModes.js";
+
+// The mode type and the mode list live in `oauthModes.ts`, so the setup can
+// check a mode against the same list without importing this module. They
+// stay exported from here as well, because the other modules that need them
+// read them from this one.
+export { OAUTH_MODES, type OAuthMode } from "./oauthModes.js";
 
 const EXPIRY_SKEW_MS = 60_000;
 const ACCESS_TOKEN_TTL_SECONDS = 3_600;
 const REFRESH_TOKEN_TTL_SECONDS = 2_592_000;
 const DEFAULT_SCOPE =
   "tickets:read tickets:write users:read organizations:read brands:read groups:read ticket_views:read";
-
-export type OAuthMode =
-  | "authorization_code"
-  | "client_credentials"
-  | "access_token";
-
-/** The OAuth modes `getConfig` can produce, in `OAuthMode` order. */
-export const OAUTH_MODES: readonly OAuthMode[] = [
-  "authorization_code",
-  "client_credentials",
-  "access_token",
-];
 
 export interface ZendeskConfig {
   baseUrl: string;
@@ -305,10 +301,6 @@ export function readOAuthClientFile(clientFile: string): OAuthClientFile {
       error instanceof Error ? error.message : String(error),
     );
   }
-}
-
-function isOAuthMode(value: string): value is OAuthMode {
-  return (OAUTH_MODES as readonly string[]).includes(value);
 }
 
 export class ZendeskOAuth {
@@ -660,14 +652,6 @@ function isExpiring(token: StoredToken): boolean {
   if (!token.expires_at) return false;
   const expiresAt = Date.parse(token.expires_at);
   return !Number.isFinite(expiresAt) || expiresAt <= Date.now() + EXPIRY_SKEW_MS;
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
 }
 
 /**

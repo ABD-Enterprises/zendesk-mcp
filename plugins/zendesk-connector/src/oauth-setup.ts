@@ -10,7 +10,6 @@ import { redact } from "./audit.js";
 import {
   CALLBACK_PORT_ERROR,
   INVALID_MODE_MESSAGE,
-  OAUTH_MODES,
   buildConfig,
   env,
   getConfig,
@@ -21,10 +20,12 @@ import {
   resolveCallbackPort,
   writeTokenFile,
   type OAuthClientFile,
-  type OAuthMode,
   type StoredToken,
   type ZendeskConfig,
 } from "./auth.js";
+import { errorMessage } from "./errors.js";
+import { safeJson } from "./json.js";
+import { isOAuthMode } from "./oauthModes.js";
 
 const CALLBACK_PATH = "/callback";
 const TIMEOUT_MS = 5 * 60 * 1000;
@@ -185,7 +186,7 @@ export async function runOAuthSetup(
   }
 
   const requestedMode = env("ZENDESK_OAUTH_MODE") ?? saved.mode;
-  if (requestedMode !== undefined && !isKnownMode(requestedMode)) {
+  if (requestedMode !== undefined && !isOAuthMode(requestedMode)) {
     return fail(INVALID_MODE_MESSAGE);
   }
   // Only the browser flow belongs to the setup, so every other mode is
@@ -762,15 +763,6 @@ export function openBrowser(
   child.unref();
 }
 
-/** Parses JSON, and falls back to the raw text when it is not JSON. */
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
 /**
  * Drops the two fields the exchange request itself carries — code and
  * client_id — from a rejected body before it is echoed. A field named code
@@ -988,16 +980,6 @@ function promptClosedError(): Error {
   const error = new Error("The prompt was closed before the setup finished.");
   (error as Error & { code?: string }).code = "ABORT_ERR";
   return error;
-}
-
-/** True when a value names one of the supported OAuth modes. */
-function isKnownMode(value: string): value is OAuthMode {
-  return (OAUTH_MODES as readonly string[]).includes(value);
-}
-
-/** The message of a failure, without a stack trace. */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
