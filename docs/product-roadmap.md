@@ -92,7 +92,8 @@ new Zendesk credentials or customer-side configuration:
 1. Design the resource modules for the Zendesk resources that are not yet
    in the tool set (views, triggers, macros, automations, SLA policies,
    and Guide content), specifying each module's OAuth scopes and
-   read/write behavior without enabling untested production writes.
+   read/write behavior without enabling untested production writes
+   (design: [resource-module-design.md](resource-module-design.md)).
 2. Extend the brands, groups, users, and organizations tools beyond their
    existing read-only lists.
 3. Investigate the Explore dashboard and report surface and write up the
