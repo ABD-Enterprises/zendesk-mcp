@@ -1,6 +1,16 @@
 import { env, ZendeskAuthError } from "./auth.js";
 
-const ALL_TOOLS = [
+/**
+ * Every tool the connector compiles, in the order the server registers them.
+ *
+ * This list is the single source of truth for the tool surface. The generated
+ * documentation (the tool tables in the repository README, the tool
+ * contracts reference and the plugin README) and the read-only allowlist in
+ * `.env.example` are derived from it by `scripts/generate-tool-tables.mjs`,
+ * so a tool added, renamed or removed here is picked up by the generated
+ * sections or fails the drift check.
+ */
+export const ALL_TOOLS = [
   "zendesk_status",
   "zendesk_search_tickets",
   "zendesk_get_ticket",
@@ -19,11 +29,19 @@ const ALL_TOOLS = [
 
 export type ZendeskToolName = (typeof ALL_TOOLS)[number];
 
-const WRITE_TOOLS: ReadonlySet<string> = new Set([
+/**
+ * The tools that change state in Zendesk. Every other tool only reads, so
+ * read-only mode serves exactly the tools this list leaves out.
+ */
+export const WRITE_TOOLS = [
   "zendesk_create_ticket",
   "zendesk_update_ticket",
   "zendesk_add_ticket_comment",
-]);
+] as const;
+
+export type ZendeskWriteToolName = (typeof WRITE_TOOLS)[number];
+
+const WRITE_TOOL_SET: ReadonlySet<string> = new Set(WRITE_TOOLS);
 
 /** True when `ZENDESK_READ_ONLY` is set to an enabled value; rejects others. */
 function readOnlyEnabled(): boolean {
@@ -39,7 +57,7 @@ export function configuredTools(): ReadonlySet<string> {
   const configured = env("ZENDESK_ALLOWED_TOOLS");
   if (!configured) {
     if (!readOnly) return new Set(ALL_TOOLS);
-    const readTools = ALL_TOOLS.filter((tool) => !WRITE_TOOLS.has(tool));
+    const readTools = ALL_TOOLS.filter((tool) => !WRITE_TOOL_SET.has(tool));
     return new Set(readTools);
   }
   const requested = configured.split(",").map((tool) => tool.trim()).filter(Boolean);
@@ -56,7 +74,7 @@ export function configuredTools(): ReadonlySet<string> {
     );
   }
   if (readOnly) {
-    const writes = requested.filter((tool) => WRITE_TOOLS.has(tool));
+    const writes = requested.filter((tool) => WRITE_TOOL_SET.has(tool));
     if (writes.length > 0) {
       throw new ZendeskAuthError(
         `ZENDESK_READ_ONLY conflicts with write tools in ZENDESK_ALLOWED_TOOLS: ${writes.join(", ")}.`,
@@ -68,6 +86,24 @@ export function configuredTools(): ReadonlySet<string> {
 
 export function toolNames(): readonly ZendeskToolName[] {
   return ALL_TOOLS;
+}
+
+/**
+ * The tools that only read, in the order `ALL_TOOLS` lists them. Read-only
+ * mode serves exactly these.
+ */
+export function readToolNames(): readonly ZendeskToolName[] {
+  return ALL_TOOLS.filter((tool) => !WRITE_TOOL_SET.has(tool));
+}
+
+/** The tools that write, in the order `ALL_TOOLS` lists them. */
+export function writeToolNames(): readonly ZendeskToolName[] {
+  return ALL_TOOLS.filter((tool) => WRITE_TOOL_SET.has(tool));
+}
+
+/** Whether a tool reads or writes. */
+export function toolAccess(tool: ZendeskToolName): "read" | "write" {
+  return WRITE_TOOL_SET.has(tool) ? "write" : "read";
 }
 
 export function assertToolAllowed(

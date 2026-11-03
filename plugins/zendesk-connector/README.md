@@ -20,14 +20,17 @@ export ZENDESK_OAUTH_CLIENT_SECRET="your-oauth-client-secret"
 For deployments that should be read-only, set `ZENDESK_READ_ONLY=1`. To
 narrow the surface further or name an explicit subset, add a tool allowlist:
 
+<!-- BEGIN GENERATED: read-only allowlist example -->
 ```sh
 export ZENDESK_READ_ONLY=1
 # Or, instead, name the read tools explicitly:
-# export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
-# zendesk_list_brands,zendesk_list_groups,zendesk_list_users,\
-# zendesk_list_organizations,zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
+# export ZENDESK_ALLOWED_TOOLS="zendesk_status,\
+# zendesk_search_tickets,zendesk_get_ticket,zendesk_list_brands,\
+# zendesk_list_groups,zendesk_list_users,zendesk_list_organizations,\
+# zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
 # zendesk_list_views,zendesk_list_view_tickets"
 ```
+<!-- END GENERATED: read-only allowlist example -->
 
 Every tool call emits a structured audit event to stderr without ticket
 contents or credentials. Once `zendesk_status` succeeds, events include the
@@ -270,23 +273,24 @@ part of `npm run check` or CI.
 
 ## Tools
 
-- `zendesk_status`: validates configuration and returns the authenticated user.
-- `zendesk_search_tickets`: searches Zendesk with Zendesk search syntax.
-- `zendesk_get_ticket`: reads a ticket with users, organization, and comments.
-- `zendesk_list_brands`: lists brands with page-based pagination.
-- `zendesk_list_groups`: lists groups with page-based pagination.
-- `zendesk_list_users`: lists users with page-based pagination.
-- `zendesk_list_organizations`: lists organizations with page-based pagination.
-- `zendesk_list_ticket_fields`: lists all ticket fields (one unpaginated
-  response).
-- `zendesk_list_ticket_forms`: lists ticket forms with page-based pagination.
-- `zendesk_list_views`: lists the shared and personal ticket views the
-  authenticated user can see, with page-based pagination.
-- `zendesk_list_view_tickets`: lists the tickets in one view, with page-based
-  pagination.
-- `zendesk_create_ticket`: creates a ticket.
-- `zendesk_update_ticket`: updates common ticket fields.
-- `zendesk_add_ticket_comment`: adds a public reply or internal note.
+<!-- BEGIN GENERATED: tool table -->
+The connector ships 14 tools: 11 read tools and 3 write tools.
 
-All fourteen tools use the same OAuth request layer. Use `zendesk_status` to verify
+- `zendesk_status`: verify OAuth and identify the authenticated user.
+- `zendesk_search_tickets`: search Zendesk with Zendesk search syntax.
+- `zendesk_get_ticket`: read a ticket with users, organization, and comments.
+- `zendesk_list_brands`: list brands with page-based pagination.
+- `zendesk_list_groups`: list groups with page-based pagination.
+- `zendesk_list_users`: list users with page-based pagination.
+- `zendesk_list_organizations`: list organizations with page-based pagination.
+- `zendesk_list_ticket_fields`: list all ticket fields (one unpaginated response).
+- `zendesk_list_ticket_forms`: list ticket forms with page-based pagination.
+- `zendesk_list_views`: list the shared and personal ticket views the authenticated user can see, with page-based pagination.
+- `zendesk_list_view_tickets`: list the tickets in one view, with page-based pagination.
+- `zendesk_create_ticket`: create a ticket.
+- `zendesk_update_ticket`: update common ticket fields.
+- `zendesk_add_ticket_comment`: add an internal note or public reply.
+<!-- END GENERATED: tool table -->
+
+Every tool uses the same OAuth request layer. Use `zendesk_status` to verify
 the authenticated user, OAuth mode, scope, and refresh capability.
