@@ -599,6 +599,107 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_list_views") && server.registerTool(
+    "zendesk_list_views",
+    {
+      title: "List Zendesk views",
+      description:
+        "List Zendesk ticket views — the shared and personal views the " +
+        "authenticated user can see — with page-based pagination. count " +
+        "is Zendesk's total when provided, otherwise this page's length; " +
+        "views holds this page, and nextPageAvailable says whether more " +
+        "pages exist — call again with page to continue. Pass a view's id to " +
+        "zendesk_list_view_tickets for the tickets in it.",
+      inputSchema: z.object({
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ page, perPage }) =>
+      runTool("zendesk_list_views", "read", actorId, async () => {
+        guard("zendesk_list_views");
+        const response = await client.request<{
+          views: JsonObject[];
+          count?: number;
+          next_page?: string | null;
+        }>("/views.json", {
+          query: { page, per_page: perPage },
+          collection: "views",
+        });
+        const count =
+          typeof response.count === "number" ? response.count : response.views.length;
+        return {
+          count,
+          page,
+          perPage,
+          nextPageAvailable: Boolean(response.next_page),
+          views: response.views,
+        };
+      }),
+  );
+
+  allowedTools.has("zendesk_list_view_tickets") && server.registerTool(
+    "zendesk_list_view_tickets",
+    {
+      title: "List tickets in a Zendesk view",
+      description:
+        "List the tickets in one Zendesk view, with page-based pagination. " +
+        "The endpoint documents no total, so count falls back to this " +
+        "page's length; nextPageAvailable says whether more pages exist — " +
+        "call again with page to continue. Pass a ticket's id to " +
+        "zendesk_get_ticket for the full record.",
+      inputSchema: z.object({
+        viewId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the view to read tickets from."),
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ viewId, page, perPage }) =>
+      runTool("zendesk_list_view_tickets", "read", actorId, async () => {
+        guard("zendesk_list_view_tickets");
+        // The schema guarantees viewId is a positive integer, so it is
+        // safe to interpolate into the path.
+        const response = await client.request<{
+          tickets: JsonObject[];
+          count?: number;
+          next_page?: string | null;
+        }>(`/views/${viewId}/tickets.json`, {
+          query: { page, per_page: perPage },
+          collection: "tickets",
+        });
+        // The documented response sample carries no count, so the page
+        // length is the fallback, as for ticket forms.
+        const count =
+          typeof response.count === "number"
+            ? response.count
+            : response.tickets.length;
+        return {
+          count,
+          page,
+          perPage,
+          nextPageAvailable: Boolean(response.next_page),
+          tickets: response.tickets,
+        };
+      }),
+  );
+
   return server;
 }
 

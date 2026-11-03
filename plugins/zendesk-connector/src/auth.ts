@@ -15,7 +15,7 @@ const EXPIRY_SKEW_MS = 60_000;
 const ACCESS_TOKEN_TTL_SECONDS = 3_600;
 const REFRESH_TOKEN_TTL_SECONDS = 2_592_000;
 const DEFAULT_SCOPE =
-  "tickets:read tickets:write users:read organizations:read brands:read groups:read";
+  "tickets:read tickets:write users:read organizations:read brands:read groups:read ticket_views:read";
 
 export type OAuthMode =
   | "authorization_code"

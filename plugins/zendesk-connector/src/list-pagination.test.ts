@@ -16,6 +16,15 @@ const EXAMPLE_GROUP = { id: 701, name: "Example Group" };
 const EXAMPLE_USER = { id: 801, name: "Example User" };
 const EXAMPLE_TICKET_FIELD = { id: 901, title: "Example Field", type: "text" };
 const EXAMPLE_FORM = { id: 951, name: "Example Form" };
+const EXAMPLE_VIEW = { id: 8810, title: "Example View", active: true };
+const SECOND_EXAMPLE_VIEW = { id: 8811, title: "Second Example View", active: false };
+const EXAMPLE_VIEW_TICKET = {
+  id: 441,
+  subject: "Example ticket in a view",
+  status: "open",
+};
+const VIEWS_NEXT_PAGE =
+  "https://example.zendesk.com/api/v2/views.json?page=2&per_page=25";
 const EXAMPLE_NEXT_PAGE =
   "https://example.zendesk.com/api/v2/brands.json?page=2&per_page=25";
 const GROUPS_NEXT_PAGE =
@@ -262,6 +271,115 @@ test("falls back to the item count when Zendesk omits count", async () => {
   }
 });
 
+test("lists views with the requested page and reports that another page exists", async () => {
+  const { client, requests } = listClient(() => ({
+    views: [EXAMPLE_VIEW, SECOND_EXAMPLE_VIEW],
+    count: 12,
+    page: 1,
+    per_page: 25,
+    next_page: VIEWS_NEXT_PAGE,
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_views", {});
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.pathname, "/api/v2/views.json");
+    assert.equal(request.searchParams.get("page"), "1");
+    assert.equal(request.searchParams.get("per_page"), "25");
+
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "views"]);
+    assert.equal(payload.count, 12);
+    assert.equal(payload.page, 1);
+    assert.equal(payload.perPage, 25);
+    assert.equal(payload.nextPageAvailable, true);
+    // View records pass through untouched, as the other list resources do.
+    assert.deepEqual(payload.views, [EXAMPLE_VIEW, SECOND_EXAMPLE_VIEW]);
+    assert.equal(JSON.stringify(payload).includes(VIEWS_NEXT_PAGE), false);
+  } finally {
+    await session.close();
+  }
+});
+
+test("lists view tickets with the requested page and falls back to the page length", async () => {
+  // The documented response sample for this endpoint carries no count, so
+  // the envelope falls back to the page's length; continuation is the
+  // `next_page` flag alone.
+  const { client, requests } = listClient(() => ({
+    tickets: [EXAMPLE_VIEW_TICKET],
+    next_page: null,
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_view_tickets", {
+      viewId: EXAMPLE_VIEW.id,
+      page: 2,
+      perPage: 10,
+    });
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.pathname, `/api/v2/views/${EXAMPLE_VIEW.id}/tickets.json`);
+    assert.equal(request.searchParams.get("page"), "2");
+    assert.equal(request.searchParams.get("per_page"), "10");
+
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "tickets"]);
+    assert.equal(payload.count, 1);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.tickets, [EXAMPLE_VIEW_TICKET]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("lists view tickets and reports that another page exists", async () => {
+  const { client, requests } = listClient(() => ({
+    tickets: [EXAMPLE_VIEW_TICKET],
+    next_page:
+      "https://example.zendesk.com/api/v2/views/8810/tickets.json?page=2&per_page=25",
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_view_tickets", {
+      viewId: EXAMPLE_VIEW.id,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "tickets"]);
+    assert.equal(payload.count, 1);
+    assert.equal(payload.page, 1);
+    assert.equal(payload.perPage, 25);
+    assert.equal(payload.nextPageAvailable, true);
+    assert.deepEqual(payload.tickets, [EXAMPLE_VIEW_TICKET]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing or non-positive view id before calling Zendesk", async () => {
+  const { client, requests } = listClient(() => ({ tickets: [] }));
+  const session = await connectLists(client);
+
+  try {
+    for (const viewId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "8810"]) {
+      const result = await callList(session.client, "zendesk_list_view_tickets", {
+        viewId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
 test("rejects a page size above the supported maximum before calling Zendesk", async () => {
   const { client, requests } = listClient(() => ({ brands: [] }));
   const session = await connectLists(client);
@@ -353,7 +471,7 @@ async function listPayload(
 function createListServer(zendesk: ZendeskClient) {
   const original = process.env.ZENDESK_ALLOWED_TOOLS;
   process.env.ZENDESK_ALLOWED_TOOLS =
-    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users,zendesk_list_ticket_fields,zendesk_list_ticket_forms";
+    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users,zendesk_list_ticket_fields,zendesk_list_ticket_forms,zendesk_list_views,zendesk_list_view_tickets";
   try {
     return createZendeskServer(zendesk);
   } finally {

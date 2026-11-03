@@ -587,6 +587,8 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_organizations",
       "zendesk_list_ticket_fields",
       "zendesk_list_ticket_forms",
+      "zendesk_list_views",
+      "zendesk_list_view_tickets",
     ].join(","),
   );
 
@@ -638,6 +640,8 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_organizations",
       "zendesk_list_ticket_fields",
       "zendesk_list_ticket_forms",
+      "zendesk_list_views",
+      "zendesk_list_view_tickets",
     ]) {
       assert.deepEqual(
         annotation(name),

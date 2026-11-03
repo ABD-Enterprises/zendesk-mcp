@@ -37,7 +37,7 @@ const WRITE_TOOL_NAMES = [
   "zendesk_add_ticket_comment",
 ];
 
-test("read-only mode keeps the nine read tools and drops the three write tools", () => {
+test("read-only mode keeps the eleven read tools and drops the three write tools", () => {
   delete process.env.ZENDESK_ALLOWED_TOOLS;
   const readToolNames = toolNames().filter((tool) => !WRITE_TOOL_NAMES.includes(tool));
   for (const value of ["1", "true", "TRUE", " True "]) {

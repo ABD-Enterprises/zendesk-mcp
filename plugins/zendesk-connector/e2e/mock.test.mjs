@@ -38,6 +38,8 @@ const EXERCISED_TOOLS = [
   "zendesk_list_ticket_forms",
   "zendesk_search_tickets",
   "zendesk_get_ticket",
+  "zendesk_list_views",
+  "zendesk_list_view_tickets",
 ];
 
 // The exact set of endpoints the harness is expected to fetch, keyed by
@@ -54,7 +56,13 @@ const EXPECTED_REQUESTS = [
   "GET /api/v2/tickets/601/comments.json",
   "GET /api/v2/users.json",
   "GET /api/v2/users/me.json",
+  "GET /api/v2/views.json",
+  "GET /api/v2/views/401/tickets.json",
 ];
+
+// The view the mock reports first, so the harness reads the tickets of
+// this one.
+const EXAMPLE_VIEW_ID = 401;
 
 test("harness runs the read-only tools against a local mock Zendesk", async (t) => {
   assert.ok(
@@ -94,7 +102,7 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   for (const tool of EXERCISED_TOOLS) {
     assert.match(run.stdout, new RegExp(`^harness: PASS ${tool}$`, "m"));
   }
-  assert.match(run.stdout, /^harness: 9 passed, 0 failed$/m);
+  assert.match(run.stdout, /^harness: 11 passed, 0 failed$/m);
 
   // The harness fetched exactly the expected endpoints, as a set.
   assert.deepEqual(new Set(mock.state.requests), new Set(EXPECTED_REQUESTS));
@@ -112,6 +120,26 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   assert.ok(
     searchUrl.includes("query=type%3Aticket"),
     `expected the search query in ${searchUrl}`,
+  );
+
+  // Both view calls carried the documented page and page size.
+  const viewsUrl = mock.state.fullUrls.find((url) =>
+    url.startsWith("/api/v2/views.json"),
+  );
+  assert.ok(viewsUrl, "the harness never called the views endpoint");
+  assert.ok(
+    viewsUrl.includes("page=1") && viewsUrl.includes("per_page=25"),
+    `expected the default pagination in ${viewsUrl}`,
+  );
+
+  // The view-tickets call used the id the views call reported.
+  const viewTicketsUrl = mock.state.fullUrls.find((url) =>
+    url.startsWith(`/api/v2/views/${EXAMPLE_VIEW_ID}/tickets.json`),
+  );
+  assert.ok(viewTicketsUrl, "the harness never called the view-tickets endpoint");
+  assert.ok(
+    viewTicketsUrl.includes("page=1") && viewTicketsUrl.includes("per_page=25"),
+    `expected the default pagination in ${viewTicketsUrl}`,
   );
 
   // Every request carried the dummy bearer token — and it was never logged.
@@ -158,6 +186,67 @@ test("harness fails when a list tool returns empty records", async (t) => {
 
   assert.notEqual(run.exit, 0, `harness should fail\nstdout:\n${run.stdout}`);
   assert.match(run.stdout, /^harness: FAIL zendesk_list_brands: .*brands.*$/m);
+});
+
+test("harness fails when the views endpoint returns a malformed payload", async (t) => {
+  assert.ok(
+    existsSync(serverBuildPath),
+    `built server not found at ${serverBuildPath} — run \`npm run build\` from plugins/zendesk-connector first`,
+  );
+
+  // The views collection has to be a list of records: a payload that is
+  // not one must fail the run instead of passing it silently.
+  const mock = await startMockZendesk({
+    "GET /api/v2/views.json": () => ({ views: "not-a-list" }),
+  });
+  t.after(() => closeMock(mock));
+
+  const run = await runHarness({
+    extraEnv: {
+      ZENDESK_BASE_URL: `http://127.0.0.1:${mock.port}`,
+      ZENDESK_OAUTH_ACCESS_TOKEN: DUMMY_TOKEN,
+    },
+    removeNames: ["ZENDESK_SUBDOMAIN", "ZENDESK_E2E_TICKET_ID"],
+  });
+
+  assert.notEqual(run.exit, 0, `harness should fail\nstdout:\n${run.stdout}`);
+  assert.match(run.stdout, /^harness: FAIL zendesk_list_views: .*$/m);
+});
+
+test("harness skips the view-tickets step when the account lists no views", async (t) => {
+  assert.ok(
+    existsSync(serverBuildPath),
+    `built server not found at ${serverBuildPath} — run \`npm run build\` from plugins/zendesk-connector first`,
+  );
+
+  // An account with no views cannot have tickets in a view: the list
+  // step passes on the empty list and the view-tickets step is skipped
+  // rather than failed.
+  const mock = await startMockZendesk({
+    "GET /api/v2/views.json": () => ({ count: 0, next_page: null, views: [] }),
+  });
+  t.after(() => closeMock(mock));
+
+  const run = await runHarness({
+    extraEnv: {
+      ZENDESK_BASE_URL: `http://127.0.0.1:${mock.port}`,
+      ZENDESK_OAUTH_ACCESS_TOKEN: DUMMY_TOKEN,
+    },
+    removeNames: ["ZENDESK_SUBDOMAIN", "ZENDESK_E2E_TICKET_ID"],
+  });
+
+  assert.equal(
+    run.exit,
+    0,
+    `harness should pass\nstdout:\n${run.stdout}\nstderr:\n${run.stderr}`,
+  );
+  assert.match(run.stdout, /^harness: PASS zendesk_list_views$/m);
+  assert.match(run.stdout, /^harness: SKIP zendesk_list_view_tickets: .*$/m);
+  assert.match(run.stdout, /^harness: 9 passed, 0 failed, 1 skipped$/m);
+  assert.ok(
+    !mock.state.requests.some((request) => request.includes("/tickets.json")),
+    `the view-tickets endpoint must not be called without a view, received ${JSON.stringify(mock.state.requests)}`,
+  );
 });
 
 test("harness skips cleanly when the sandbox is unconfigured", async (t) => {
@@ -294,6 +383,42 @@ async function startMockZendesk(overrides = {}) {
       ],
       users: [{ id: 7001, name: "Example Agent" }],
       next_page: null,
+    }),
+    "GET /api/v2/views.json": () => ({
+      count: 2,
+      next_page: null,
+      previous_page: null,
+      views: [
+        {
+          id: EXAMPLE_VIEW_ID,
+          name: "Example Open Tickets",
+          title: "Open tickets",
+          active: true,
+          position: 1,
+          default: true,
+          personal: false,
+          shared: true,
+        },
+        {
+          id: 402,
+          name: "Example Personal View",
+          title: "My example view",
+          active: true,
+          position: 2,
+          default: false,
+          personal: true,
+          shared: false,
+        },
+      ],
+    }),
+    // The documented sample of this endpoint carries no count, so the
+    // connector falls back to the length of the page it got.
+    "GET /api/v2/views/401/tickets.json": () => ({
+      tickets: [
+        { id: 601, subject: "Example ticket", status: "open", priority: "normal" },
+      ],
+      next_page: null,
+      previous_page: null,
     }),
     ...overrides,
   };

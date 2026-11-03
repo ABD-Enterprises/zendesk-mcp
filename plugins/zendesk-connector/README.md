@@ -25,7 +25,8 @@ export ZENDESK_READ_ONLY=1
 # Or, instead, name the read tools explicitly:
 # export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,zendesk_get_ticket,\
 # zendesk_list_brands,zendesk_list_groups,zendesk_list_users,\
-# zendesk_list_organizations,zendesk_list_ticket_fields,zendesk_list_ticket_forms"
+# zendesk_list_organizations,zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
+# zendesk_list_views,zendesk_list_view_tickets"
 ```
 
 Every tool call emits a structured audit event to stderr without ticket
@@ -67,6 +68,11 @@ renewed. If the OAuth client has allowed scopes configured, they must also
 include the new pair — Zendesk rejects any other request with
 `400 invalid_scope`. `client_credentials` mode picks the new scope up on its
 next token request.
+
+The same applies to `ticket_views:read`, which the default scope now carries
+for the view tools (`zendesk_list_views` and `zendesk_list_view_tickets`): a
+token issued before that scope was part of the default does not carry it, and
+the view tools return 403 until it is renewed.
 
 For an unattended server-to-server workflow, configure a confidential client and
 set `ZENDESK_OAUTH_MODE=client_credentials`. The connector obtains and renews an
@@ -229,10 +235,13 @@ The end-to-end harness (`e2e/run-e2e.mjs`) spawns the built server
 (`dist/index.js`) and speaks MCP over its stdio, asserting real request to
 response behavior for the read-only surface: `zendesk_status`, the list tools,
 `zendesk_search_tickets`, and — when `ZENDESK_E2E_TICKET_ID` names a ticket —
-`zendesk_get_ticket`. The harness never calls a write tool, never prints token
-values, and always relocates `ZENDESK_OAUTH_CLIENT_FILE` and
-`ZENDESK_OAUTH_TOKEN_FILE` to a private temporary directory, so a run never
-reads the invoking host's `~/.config/codex-zendesk` files.
+`zendesk_get_ticket`. The view tools are exercised against the account itself:
+the harness lists the views and then reads the tickets of the first one the
+account reports, so a step is skipped when the account lists no view at all.
+The harness never calls a write tool, never prints token values, and always
+relocates `ZENDESK_OAUTH_CLIENT_FILE` and `ZENDESK_OAUTH_TOKEN_FILE` to a
+private temporary directory, so a run never reads the invoking host's
+`~/.config/codex-zendesk` files.
 
 ```sh
 npm run e2e:mock
@@ -271,9 +280,13 @@ part of `npm run check` or CI.
 - `zendesk_list_ticket_fields`: lists all ticket fields (one unpaginated
   response).
 - `zendesk_list_ticket_forms`: lists ticket forms with page-based pagination.
+- `zendesk_list_views`: lists the shared and personal ticket views the
+  authenticated user can see, with page-based pagination.
+- `zendesk_list_view_tickets`: lists the tickets in one view, with page-based
+  pagination.
 - `zendesk_create_ticket`: creates a ticket.
 - `zendesk_update_ticket`: updates common ticket fields.
 - `zendesk_add_ticket_comment`: adds a public reply or internal note.
 
-All twelve tools use the same OAuth request layer. Use `zendesk_status` to verify
+All fourteen tools use the same OAuth request layer. Use `zendesk_status` to verify
 the authenticated user, OAuth mode, scope, and refresh capability.

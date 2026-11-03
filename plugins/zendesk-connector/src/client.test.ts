@@ -273,7 +273,7 @@ test("request callers without a collection option stay unvalidated", async () =>
   assert.deepEqual(await client.request("/brands.json"), {});
 });
 
-test("all six list tools reject malformed collection envelopes", async (t) => {
+test("all eight list tools reject malformed collection envelopes", async (t) => {
   const originalAllowedTools = process.env.ZENDESK_ALLOWED_TOOLS;
   const toolNames = [
     "zendesk_list_brands",
@@ -282,6 +282,8 @@ test("all six list tools reject malformed collection envelopes", async (t) => {
     "zendesk_list_organizations",
     "zendesk_list_ticket_fields",
     "zendesk_list_ticket_forms",
+    "zendesk_list_views",
+    "zendesk_list_view_tickets",
   ];
   process.env.ZENDESK_ALLOWED_TOOLS = toolNames.join(",");
   t.after(() => {
@@ -308,7 +310,9 @@ test("all six list tools reject malformed collection envelopes", async (t) => {
 
   try {
     for (const name of toolNames) {
-      const result = await client.callTool({ name, arguments: {} });
+      // The view-tickets tool requires a view id before it reaches Zendesk.
+      const arguments_ = name === "zendesk_list_view_tickets" ? { viewId: 8810 } : {};
+      const result = await client.callTool({ name, arguments: arguments_ });
       assert.equal(result.isError, true, `${name} should reject the malformed envelope`);
       assert.ok(Array.isArray(result.content));
       const firstContent = result.content[0];
