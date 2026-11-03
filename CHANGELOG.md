@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a read-only `zendesk_get_organization` tool: it reads one Zendesk
+  organization by its `organizationId` and returns the organization object as
+  Zendesk returns it. It complements `zendesk_list_organizations` and uses the
+  existing `organizations:read` OAuth scope; no default-scope expansion is
+  needed.
+
 - Add a read-only `zendesk_get_user` tool: it reads one Zendesk user by its
   `userId` and returns the user object as Zendesk returns it. It complements
   `zendesk_list_users` and uses the existing `users:read` OAuth scope; no
