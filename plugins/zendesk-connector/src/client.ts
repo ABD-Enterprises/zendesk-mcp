@@ -1,5 +1,5 @@
 import { ZendeskOAuth, getConfig, type ZendeskConfig } from "./auth.js";
-import { isCollectionEnvelope } from "./responseSchemas.js";
+import { isCollectionEnvelope, isObjectEnvelope } from "./responseSchemas.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 const DEFAULT_MAX_RETRIES = 2;
@@ -21,6 +21,14 @@ export interface ZendeskRequestOptions {
    * unvalidated behavior.
    */
   collection?: string;
+  /**
+   * Optional response envelope validation (issue #50). When set, a
+   * successful response body must be a JSON object whose property with
+   * this name is an object record; anything else fails with a fixed
+   * ZendeskError. Callers that do not set it keep the previous
+   * unvalidated behavior.
+   */
+  object?: string;
 }
 
 export class ZendeskError extends Error {
@@ -123,10 +131,14 @@ export class ZendeskClient {
       // Response-envelope validation runs only here, after retry, OAuth
       // refresh and HTTP-error handling, and only for successful
       // responses. The payload itself is returned untouched so unknown
-      // envelope and record fields stay opaque to the connector.
+      // envelope and record fields stay opaque to the connector. A
+      // malformed successful write is not retried: the write may already
+      // have gone through upstream.
       if (
-        options.collection !== undefined &&
-        !isCollectionEnvelope(payload, options.collection)
+        (options.collection !== undefined &&
+          !isCollectionEnvelope(payload, options.collection)) ||
+        (options.object !== undefined &&
+          !isObjectEnvelope(payload, options.object))
       ) {
         throw new ZendeskError(INVALID_ENVELOPE_MESSAGE);
       }

@@ -194,6 +194,13 @@ Errors that map from the client layer:
   with the same `error` / `status` / `details` shape.
 - The `zendesk_update_ticket` no-fields rejection is a client-side error with
   a message and no status.
+- A successful HTTP response whose body does not match the envelope the tool
+  expects — an array of object records for the list, search and comment
+  collections, or an object record for the status and ticket envelopes —
+  fails with the fixed message `Zendesk API returned an unexpected response
+  payload` and no `status` or `details`. The raw response body is never
+  included. A caller that receives this error cannot tell whether a write
+  reached Zendesk, so it must not assume the write was rolled back.
 
 Startup problems — missing OAuth configuration, an unreadable client file, an
 invalid `ZENDESK_ALLOWED_TOOLS` value, or an invalid `ZENDESK_READ_ONLY`

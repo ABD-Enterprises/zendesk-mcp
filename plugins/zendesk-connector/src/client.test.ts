@@ -323,6 +323,93 @@ test("all six list tools reject malformed collection envelopes", async (t) => {
   }
 });
 
+test("accepts a valid object envelope and preserves unknown fields", async () => {
+  const envelope = {
+    ticket: { id: 7, subject: "Example subject", future_flag: [1, 2] },
+    audit: { via: "api" },
+    unknown_envelope_field: { nested: true },
+  };
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () => Response.json(envelope),
+  );
+
+  // The very same values come back: validation must not strip, default
+  // or rewrite unknown record or envelope fields.
+  assert.deepEqual(
+    await client.request("/tickets.json", { object: "ticket" }),
+    envelope,
+  );
+});
+
+test("accepts an empty object record and an empty collection array", async () => {
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () => Response.json({ ticket: {} }),
+  );
+
+  assert.deepEqual(
+    await client.request("/tickets.json", { object: "ticket" }),
+    { ticket: {} },
+  );
+
+  const emptyCollection = new ZendeskClient(
+    accessTokenConfig(),
+    async () => Response.json({ results: [] }),
+  );
+  assert.deepEqual(
+    await emptyCollection.request("/search.json", { collection: "results" }),
+    { results: [] },
+  );
+});
+
+const malformedObjectEnvelopes: { name: string; body: unknown }[] = [
+  { name: "a missing object key", body: { count: 1 } },
+  { name: "a scalar object", body: { ticket: "oops" } },
+  { name: "a null object", body: { ticket: null } },
+  { name: "an array object", body: { ticket: [{ id: 1 }] } },
+  { name: "an array instead of an object envelope", body: [{ ticket: {} }] },
+  { name: "a string object-envelope body", body: "not-json-object" },
+];
+
+for (const { name, body } of malformedObjectEnvelopes) {
+  test(`rejects ${name} with a fixed error`, async () => {
+    const client = new ZendeskClient(
+      accessTokenConfig(),
+      async () => Response.json(body),
+    );
+
+    await assert.rejects(
+      () => client.request("/tickets.json", { object: "ticket" }),
+      (error: unknown) => {
+        assert.ok(error instanceof ZendeskError);
+        assert.equal(error.message, INVALID_ENVELOPE_MESSAGE);
+        // No status, details, Zod issues or raw response values leak.
+        assert.equal(error.status, undefined);
+        assert.equal(error.details, undefined);
+        assert.ok(!("issues" in error));
+        return true;
+      },
+    );
+  });
+}
+
+test("rejects an empty successful body when an object is required", async () => {
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () => new Response("", { status: 200 }),
+  );
+
+  await assert.rejects(
+    () => client.request("/users/me.json", { object: "user" }),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskError);
+      assert.equal(error.message, INVALID_ENVELOPE_MESSAGE);
+      return true;
+    },
+  );
+});
+
 const malformedEnvelopes: { name: string; body: unknown }[] = [
   { name: "an array instead of an envelope", body: [{ brands: [] }] },
   { name: "a string body", body: "not-json-object" },

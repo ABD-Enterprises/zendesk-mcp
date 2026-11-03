@@ -39,6 +39,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
         guard("zendesk_status");
         const response = await client.request<{ user: JsonObject }>(
           "/users/me.json",
+          { object: "user" },
         );
         const authenticatedId = response.user.id;
         actorId =
@@ -101,6 +102,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           next_page?: string | null;
         }>("/search.json", {
           query: { query, page, per_page: perPage },
+          collection: "results",
         });
 
         return {
@@ -165,6 +167,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           organizations?: JsonObject[];
         }>(`/tickets/${id}.json`, {
           query: { include: "users,organizations" },
+          object: "ticket",
         });
 
         if (!includeComments) {
@@ -180,6 +183,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           next_page?: string | null;
         }>(`/tickets/${id}/comments.json`, {
           query: { include: "users", page: commentPage },
+          collection: "comments",
         });
 
         return {
@@ -264,7 +268,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
         guard("zendesk_create_ticket");
         const response = await client.request<{ ticket: JsonObject }>(
           "/tickets.json",
-          { method: "POST", body: buildTicketPayload(input) },
+          { method: "POST", body: buildTicketPayload(input), object: "ticket" },
         );
         const id = ticketId(response.ticket);
         return {
@@ -322,7 +326,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
         }
         const response = await client.request<{ ticket: JsonObject }>(
           `/tickets/${id}.json`,
-          { method: "PUT", body: buildTicketPayload(updates) },
+          { method: "PUT", body: buildTicketPayload(updates), object: "ticket" },
         );
         return { ...response, agent_url: ticketUrl(client, id) };
       }),
@@ -365,6 +369,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           {
             method: "PUT",
             body: { ticket: { comment: { body, public: isPublic } } },
+            object: "ticket",
           },
         );
         return { ...response, agent_url: ticketUrl(client, id) };
