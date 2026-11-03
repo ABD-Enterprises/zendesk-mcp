@@ -1,13 +1,26 @@
 import { ZendeskOAuth, getConfig, type ZendeskConfig } from "./auth.js";
+import { isCollectionEnvelope } from "./responseSchemas.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_MAX_RETRY_DELAY_MS = 10_000;
 
+/** Fixed message for a successful response whose body fails envelope validation. */
+export const INVALID_ENVELOPE_MESSAGE =
+  "Zendesk API returned an unexpected response payload";
+
 export interface ZendeskRequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
+  /**
+   * Optional response envelope validation (issue #50). When set, a
+   * successful response body must be a JSON object whose property with
+   * this name is an array of object records; anything else fails with a
+   * fixed ZendeskError. Callers that do not set it keep the previous
+   * unvalidated behavior.
+   */
+  collection?: string;
 }
 
 export class ZendeskError extends Error {
@@ -105,6 +118,17 @@ export class ZendeskClient {
             rateLimitResetSeconds: response.headers.get("ratelimit-reset"),
           },
         );
+      }
+
+      // Response-envelope validation runs only here, after retry, OAuth
+      // refresh and HTTP-error handling, and only for successful
+      // responses. The payload itself is returned untouched so unknown
+      // envelope and record fields stay opaque to the connector.
+      if (
+        options.collection !== undefined &&
+        !isCollectionEnvelope(payload, options.collection)
+      ) {
+        throw new ZendeskError(INVALID_ENVELOPE_MESSAGE);
       }
 
       return payload as T;

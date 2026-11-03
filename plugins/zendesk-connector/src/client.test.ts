@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ZendeskClient, ZendeskError } from "./client.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import {
+  INVALID_ENVELOPE_MESSAGE,
+  ZendeskClient,
+  ZendeskError,
+} from "./client.js";
+import { createZendeskServer } from "./server.js";
 import type { ZendeskConfig } from "./auth.js";
 import { PACKAGE_VERSION } from "./version.js";
 
@@ -233,6 +240,191 @@ test("sends the connector version in the User-Agent header", async () => {
 
   await client.request("/tickets.json");
   assert.equal(userAgent, `abd-enterprises-zendesk-mcp/${PACKAGE_VERSION}`);
+});
+
+test("accepts a valid collection envelope and preserves unknown fields", async () => {
+  const envelope = {
+    brands: [
+      { id: 1, name: "Example Brand", future_flag: { nested: [1, 2, 3] } },
+      { url: "https://example.zendesk.com/api/v2/brands/2.json" },
+    ],
+    count: 42,
+    next_page: null,
+    unknown_envelope_field: "kept",
+  };
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () => Response.json(envelope),
+  );
+
+  // The very same values come back: validation must not strip, default
+  // or rewrite unknown record or envelope fields.
+  assert.deepEqual(await client.request("/brands.json", { collection: "brands" }), envelope);
+});
+
+test("request callers without a collection option stay unvalidated", async () => {
+  // Existing request<T> callers keep the previous behavior: no envelope
+  // check runs unless one is asked for.
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () => Response.json({}),
+  );
+
+  assert.deepEqual(await client.request("/brands.json"), {});
+});
+
+test("all six list tools reject malformed collection envelopes", async (t) => {
+  const originalAllowedTools = process.env.ZENDESK_ALLOWED_TOOLS;
+  const toolNames = [
+    "zendesk_list_brands",
+    "zendesk_list_groups",
+    "zendesk_list_users",
+    "zendesk_list_organizations",
+    "zendesk_list_ticket_fields",
+    "zendesk_list_ticket_forms",
+  ];
+  process.env.ZENDESK_ALLOWED_TOOLS = toolNames.join(",");
+  t.after(() => {
+    if (originalAllowedTools === undefined) {
+      delete process.env.ZENDESK_ALLOWED_TOOLS;
+    } else {
+      process.env.ZENDESK_ALLOWED_TOOLS = originalAllowedTools;
+    }
+  });
+
+  const fetcher: typeof fetch = async (input) => {
+    const endpoint = new URL(String(input)).pathname.split("/").at(-1);
+    const collection = endpoint?.replace(/\.json$/, "");
+    return Response.json({ [collection ?? "unknown"]: "not-an-array" });
+  };
+  const zendesk = new ZendeskClient(accessTokenConfig(), fetcher);
+  const server = createZendeskServer(zendesk);
+  const client = new Client({ name: "collection-validation-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+
+  try {
+    for (const name of toolNames) {
+      const result = await client.callTool({ name, arguments: {} });
+      assert.equal(result.isError, true, `${name} should reject the malformed envelope`);
+      assert.ok(Array.isArray(result.content));
+      const firstContent = result.content[0];
+      assert.ok(firstContent && firstContent.type === "text");
+      assert.deepEqual(JSON.parse(firstContent.text), {
+        error: INVALID_ENVELOPE_MESSAGE,
+      });
+    }
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+const malformedEnvelopes: { name: string; body: unknown }[] = [
+  { name: "an array instead of an envelope", body: [{ brands: [] }] },
+  { name: "a string body", body: "not-json-object" },
+  { name: "a missing collection key", body: { count: 1 } },
+  { name: "a scalar collection", body: { brands: "oops" } },
+  { name: "a null collection", body: { brands: null } },
+  { name: "an object collection", body: { brands: { id: 1 } } },
+  { name: "a numeric record", body: { brands: [7] } },
+  { name: "a null record", body: { brands: [null] } },
+  { name: "an array record", body: { brands: [[1, 2]] } },
+  { name: "a string record", body: { brands: ["brand"] } },
+];
+
+for (const { name, body } of malformedEnvelopes) {
+  test(`rejects ${name} with a fixed error`, async () => {
+    const client = new ZendeskClient(
+      accessTokenConfig(),
+      async () => Response.json(body),
+    );
+
+    await assert.rejects(
+      () => client.request("/brands.json", { collection: "brands" }),
+      (error: unknown) => {
+        assert.ok(error instanceof ZendeskError);
+        assert.equal(error.message, INVALID_ENVELOPE_MESSAGE);
+        // No status, details, Zod issues or raw response values leak.
+        assert.equal(error.status, undefined);
+        assert.equal(error.details, undefined);
+        assert.ok(!("issues" in error));
+        return true;
+      },
+    );
+  });
+}
+
+test("rejects an empty successful body when a collection is required", async () => {
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () => new Response("", { status: 200 }),
+  );
+
+  await assert.rejects(
+    () => client.request("/brands.json", { collection: "brands" }),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskError);
+      assert.equal(error.message, INVALID_ENVELOPE_MESSAGE);
+      return true;
+    },
+  );
+});
+
+test("keeps the HTTP error when an error response fails envelope validation", async () => {
+  // Envelope validation runs only after HTTP-error handling, so a failing
+  // status keeps its own error shape even when the body would also fail
+  // the envelope check.
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () =>
+      Response.json(
+        { error: "boom" },
+        { status: 500, statusText: "Internal Server Error" },
+      ),
+  );
+
+  await assert.rejects(
+    () => client.request("/brands.json", { collection: "brands" }),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskError);
+      assert.equal(error.status, 500);
+      assert.equal(
+        error.message,
+        "Zendesk API request failed: HTTP 500 Internal Server Error",
+      );
+      return true;
+    },
+  );
+});
+
+test("validates only the successful response after a retry", async () => {
+  let calls = 0;
+  const client = new ZendeskClient(
+    accessTokenConfig(),
+    async () => {
+      calls += 1;
+      return calls === 1
+        ? Response.json({ error: "rate_limited" }, { status: 429 })
+        : Response.json({ brands: "not-an-array" });
+    },
+    async () => undefined,
+    2,
+    10_000,
+  );
+
+  await assert.rejects(
+    () => client.request("/brands.json", { collection: "brands" }),
+    (error: unknown) => {
+      assert.ok(error instanceof ZendeskError);
+      assert.equal(error.message, INVALID_ENVELOPE_MESSAGE);
+      return true;
+    },
+  );
+  assert.equal(calls, 2);
 });
 
 function accessTokenConfig(): ZendeskConfig {

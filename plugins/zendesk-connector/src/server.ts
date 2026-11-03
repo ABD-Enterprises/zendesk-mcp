@@ -396,6 +396,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           next_page?: string | null;
         }>("/brands.json", {
           query: { page, per_page: perPage },
+          collection: "brands",
         });
         const count =
           typeof response.count === "number" ? response.count : response.brands.length;
@@ -434,6 +435,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           next_page?: string | null;
         }>("/groups.json", {
           query: { page, per_page: perPage },
+          collection: "groups",
         });
         const count =
           typeof response.count === "number" ? response.count : response.groups.length;
@@ -472,6 +474,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           next_page?: string | null;
         }>("/users.json", {
           query: { page, per_page: perPage },
+          collection: "users",
         });
         const count =
           typeof response.count === "number" ? response.count : response.users.length;
@@ -510,6 +513,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           next_page?: string | null;
         }>("/organizations.json", {
           query: { page, per_page: perPage },
+          collection: "organizations",
         });
         const count =
           typeof response.count === "number" ? response.count : response.organizations.length;
@@ -539,7 +543,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
         guard("zendesk_list_ticket_fields");
         const response = await client.request<{
           ticket_fields: JsonObject[];
-        }>("/ticket_fields.json");
+        }>("/ticket_fields.json", { collection: "ticket_fields" });
         const count = response.ticket_fields.length;
         return {
           count,
@@ -576,6 +580,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
           next_page?: string | null;
         }>("/ticket_forms.json", {
           query: { page, per_page: perPage },
+          collection: "ticket_forms",
         });
         const count =
           typeof response.count === "number" ? response.count : response.ticket_forms.length;
