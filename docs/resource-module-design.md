@@ -321,10 +321,10 @@ before scheduling.
   customer-visible text. The redaction rules that already apply to ticket
   content in logs and errors ([SECURITY.md](../SECURITY.md)) extend to these
   payloads without exception.
-- Read tools join the allowlist automatically and compose with
-  `ZENDESK_READ_ONLY=1`; a deployment that wants, say, macros but not triggers
-  configures `ZENDESK_ALLOWED_TOOLS`. No new policy mechanism is needed for
-  any module in this document.
+- Read tools are served when `ZENDESK_READ_ONLY=1` is the only restriction;
+  an explicit `ZENDESK_ALLOWED_TOOLS` list must include whichever new tools a
+  deployment wants. A deployment that wants macros but not triggers can name
+  that subset. No new policy mechanism is needed for any module here.
 
 ### Mock-test strategy
 
