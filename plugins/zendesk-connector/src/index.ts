@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logServerShutdown, logServerStart } from "./audit.js";
-import { isHelpRequested, unknownFlags, unexpectedArguments, usage } from "./cli.js";
+import {
+  isHelpRequested,
+  isVersionRequested,
+  unknownFlags,
+  unexpectedArguments,
+  usage,
+} from "./cli.js";
 import { isDoctorRequested, isToolsRequested, runDoctor } from "./doctor.js";
 import {
   isHealthCheckFlag,
@@ -11,6 +17,7 @@ import {
 import { isLogoutRequested, runLogout } from "./logout.js";
 import { createZendeskServer } from "./server.js";
 import { installShutdownHandlers } from "./shutdown.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 const argv = process.argv.slice(2);
 const wantsTools = isToolsRequested(argv);
@@ -41,6 +48,14 @@ if (isHelpRequested(argv)) {
     `Unexpected argument${unexpected.length > 1 ? "s" : ""}: ${unexpected.join(", ")}\n\n${usage()}`,
   );
   process.exitCode = 2;
+} else if (isVersionRequested(argv)) {
+  // The version is answered from the package manifest, before any mode runs:
+  // it needs no account, no configuration file and no network, so it works on
+  // a machine that has never been set up. It sits ahead of the healthcheck
+  // shortcut because a host that exports ZENDESK_HEALTHCHECK asks for the
+  // version it was given on the command line, not for a healthcheck.
+  process.stdout.write(`${PACKAGE_VERSION}\n`);
+  process.exitCode = 0;
 } else if (
   isHealthCheckFlag(argv) ||
   (!wantsDoctor && !wantsLogout && isHealthCheckRequested())

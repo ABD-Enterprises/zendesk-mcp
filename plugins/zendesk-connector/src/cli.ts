@@ -13,6 +13,9 @@ export const KNOWN_FLAGS = [
   "--tools",
   "--healthcheck",
   "--logout",
+  // The version of the installed connector. It comes from the package
+  // manifest, so it needs no account and no network.
+  "--version",
   // The MCP convention for the stdio transport, which is what the connector
   // always speaks. A host that passes it is not asking for anything else.
   "--stdio",
@@ -26,6 +29,18 @@ export function isHelpRequested(
   argv: string[] = process.argv.slice(2),
 ): boolean {
   return argv.some((argument) => HELP_FLAGS.includes(argument));
+}
+
+/**
+ * Reports whether the process was asked to print the version.
+ *
+ * The version comes from the package manifest, so it is answered without an
+ * account, a configuration file or a network request.
+ */
+export function isVersionRequested(
+  argv: string[] = process.argv.slice(2),
+): boolean {
+  return argv.includes("--version");
 }
 
 /**
@@ -70,11 +85,15 @@ export function usage(): string {
     "  zendesk-mcp --tools        Print the configuration and the tools the agent will receive.",
     "  zendesk-mcp --healthcheck  Print one health line and exit.",
     "  zendesk-mcp --logout       Revoke the OAuth token and remove the token file.",
+    "  zendesk-mcp --version      Print the connector version and exit.",
     "  zendesk-mcp --stdio        Accepted and ignored; the connector always speaks stdio.",
     "  zendesk-mcp --help, -h     Print this message.",
     "",
     "--doctor, --tools and --healthcheck never contact Zendesk, so they are",
     "safe to run without an account. `npm run doctor` runs the preflight.",
+    "",
+    "--version prints the version of the installed connector. It needs no",
+    "account and no network, and it wins over the healthcheck shortcut.",
     "",
     "The command takes flags only. An argument it does not know is refused",
     "rather than served.",
