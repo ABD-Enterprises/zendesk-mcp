@@ -29,7 +29,7 @@ export ZENDESK_READ_ONLY=1
 # zendesk_list_groups,zendesk_list_users,zendesk_get_user,\
 # zendesk_list_organizations,zendesk_get_organization,\
 # zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
-# zendesk_list_views,zendesk_list_view_tickets"
+# zendesk_list_views,zendesk_list_view_tickets,zendesk_get_view"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 
@@ -74,9 +74,9 @@ include the new pair — Zendesk rejects any other request with
 next token request.
 
 The same applies to `ticket_views:read`, which the default scope now carries
-for the view tools (`zendesk_list_views` and `zendesk_list_view_tickets`): a
-token issued before that scope was part of the default does not carry it, and
-the view tools return 403 until it is renewed.
+for the view tools (`zendesk_list_views`, `zendesk_list_view_tickets`, and
+`zendesk_get_view`): a token issued before that scope was part of the default
+does not carry it, and the view tools return 403 until it is renewed.
 
 For an unattended server-to-server workflow, configure a confidential client and
 set `ZENDESK_OAUTH_MODE=client_credentials`. The connector obtains and renews an
@@ -283,7 +283,7 @@ part of `npm run check` or CI.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 16 tools: 13 read tools and 3 write tools.
+The connector ships 17 tools: 14 read tools and 3 write tools.
 
 - `zendesk_status`: verify OAuth and identify the authenticated user.
 - `zendesk_search_tickets`: search Zendesk with Zendesk search syntax.
@@ -298,6 +298,7 @@ The connector ships 16 tools: 13 read tools and 3 write tools.
 - `zendesk_list_ticket_forms`: list ticket forms with page-based pagination.
 - `zendesk_list_views`: list the shared and personal ticket views the authenticated user can see, with page-based pagination.
 - `zendesk_list_view_tickets`: list the tickets in one view, with page-based pagination.
+- `zendesk_get_view`: read one view by id.
 - `zendesk_create_ticket`: create a ticket.
 - `zendesk_update_ticket`: update common ticket fields.
 - `zendesk_add_ticket_comment`: add an internal note or public reply.

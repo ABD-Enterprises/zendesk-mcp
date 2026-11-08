@@ -130,6 +130,10 @@ const TOOL_DETAILS = {
     inputs:
       "`viewId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_get_view: {
+    summary: "Read one view by id",
+    inputs: "`viewId` int (required)",
+  },
 };
 
 // --- Reading the tool policy ------------------------------------------------

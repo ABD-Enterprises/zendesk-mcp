@@ -115,7 +115,7 @@ events, the allowlist, and the versioning policy — is in the
 [tool contracts](docs/tool-contracts.md) reference.
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 16 tools: 13 read tools and 3 write tools.
+The connector ships 17 tools: 14 read tools and 3 write tools.
 
 | Tool | Access | Purpose |
 | --- | --- | --- |
@@ -132,6 +132,7 @@ The connector ships 16 tools: 13 read tools and 3 write tools.
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination |
 | `zendesk_list_views` | Read | List the shared and personal ticket views the authenticated user can see, with page-based pagination |
 | `zendesk_list_view_tickets` | Read | List the tickets in one view, with page-based pagination |
+| `zendesk_get_view` | Read | Read one view by id |
 | `zendesk_create_ticket` | Write | Create a ticket |
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
@@ -336,8 +337,9 @@ The default least-privilege scopes are:
 tickets:read tickets:write users:read organizations:read brands:read groups:read ticket_views:read
 ```
 
-`ticket_views:read` covers the view tools (`zendesk_list_views` and
-`zendesk_list_view_tickets`). A token issued before that scope was part of the
+`ticket_views:read` covers the view tools (`zendesk_list_views`,
+`zendesk_get_view` and `zendesk_list_view_tickets`). A token issued before that
+scope was part of the
 default does not carry it: re-run `npm run oauth:setup` so the larger grant
 replaces the stored token, or — when the OAuth client has allowed scopes
 configured in Admin Center — add the scope there too, because Zendesk refuses

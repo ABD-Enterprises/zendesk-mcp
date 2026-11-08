@@ -762,6 +762,36 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_get_view") && server.registerTool(
+    "zendesk_get_view",
+    {
+      title: "Get Zendesk view",
+      description:
+        "Get one Zendesk ticket view by id. Returns the view object as " +
+        "Zendesk returns it. Pass a view's id from zendesk_list_views.",
+      inputSchema: z.object({
+        viewId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the view to read."),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ viewId }) =>
+      runTool("zendesk_get_view", "read", actorId, async () => {
+        guard("zendesk_get_view");
+        // The schema guarantees viewId is a positive safe integer, so it is
+        // safe to interpolate into the path.
+        const response = await client.request<{ view: JsonObject }>(
+          `/views/${viewId}.json`,
+          { object: "view" },
+        );
+        return { view: response.view };
+      }),
+  );
+
   return server;
 }
 

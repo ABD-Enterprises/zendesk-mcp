@@ -21,8 +21,8 @@
  *
  * The view tools are exercised against the account itself rather than a
  * configured id: the harness lists the views, then reads the tickets of the
- * first one the account reports. An account with no views at all skips the
- * second step instead of failing.
+ * first one the account reports and reads the view itself. An account with
+ * no views at all skips those steps instead of failing.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -343,6 +343,15 @@ function buildSteps(ticketId) {
       for (const [index, ticket] of tickets.entries()) {
         expectPresent(ticket?.id, `tickets[${index}].id`);
       }
+    },
+  });
+  steps.push({
+    tool: "zendesk_get_view",
+    args: (state) => (state.viewId === undefined ? undefined : { viewId: state.viewId }),
+    skipReason: "the account lists no view to read",
+    verify: (data) => {
+      const view = expectObject(data.view, "view");
+      expectPresent(view.id, "view.id");
     },
   });
 
