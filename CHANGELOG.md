@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a read-only `zendesk_get_ticket_form` tool: it reads one Zendesk ticket
+  form by its `ticketFormId` and returns the ticket form object as Zendesk
+  returns it. It complements `zendesk_list_ticket_forms`; no OAuth scope or
+  default-scope changes are made.
+
 - Add a read-only `zendesk_get_ticket_field` tool: it reads one Zendesk ticket
   field by its `ticketFieldId` and returns the ticket field object as Zendesk
   returns it. It complements `zendesk_list_ticket_fields`; no OAuth scope or

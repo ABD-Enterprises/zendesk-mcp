@@ -39,6 +39,7 @@ const EXERCISED_TOOLS = [
   "zendesk_list_ticket_fields",
   "zendesk_get_ticket_field",
   "zendesk_list_ticket_forms",
+  "zendesk_get_ticket_form",
   "zendesk_search_tickets",
   "zendesk_get_ticket",
   "zendesk_list_views",
@@ -54,6 +55,9 @@ const EXAMPLE_GROUP_ID = 502;
 
 // The ticket field the mock reports first, so the harness reads this one.
 const EXAMPLE_TICKET_FIELD_ID = 1;
+
+// The ticket form the mock reports first, so the harness reads this one.
+const EXAMPLE_TICKET_FORM_ID = 1;
 
 // The view the mock reports first, so the harness reads the tickets of
 // this one.
@@ -72,6 +76,7 @@ const EXPECTED_REQUESTS = [
   "GET /api/v2/ticket_fields.json",
   `GET /api/v2/ticket_fields/${EXAMPLE_TICKET_FIELD_ID}.json`,
   "GET /api/v2/ticket_forms.json",
+  `GET /api/v2/ticket_forms/${EXAMPLE_TICKET_FORM_ID}.json`,
   "GET /api/v2/tickets/601.json",
   "GET /api/v2/tickets/601/comments.json",
   "GET /api/v2/users.json",
@@ -119,7 +124,7 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   for (const tool of EXERCISED_TOOLS) {
     assert.match(run.stdout, new RegExp(`^harness: PASS ${tool}$`, "m"));
   }
-  assert.match(run.stdout, /^harness: 15 passed, 0 failed$/m);
+  assert.match(run.stdout, /^harness: 16 passed, 0 failed$/m);
 
   // The harness fetched exactly the expected endpoints, as a set.
   assert.deepEqual(new Set(mock.state.requests), new Set(EXPECTED_REQUESTS));
@@ -260,7 +265,7 @@ test("harness skips the view-tickets step when the account lists no views", asyn
   assert.match(run.stdout, /^harness: PASS zendesk_list_views$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_list_view_tickets: .*$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_get_view: .*$/m);
-  assert.match(run.stdout, /^harness: 12 passed, 0 failed, 2 skipped$/m);
+  assert.match(run.stdout, /^harness: 13 passed, 0 failed, 2 skipped$/m);
   assert.ok(
     !mock.state.requests.some((request) => request.includes("/tickets.json")),
     `the view-tickets endpoint must not be called without a view, received ${JSON.stringify(mock.state.requests)}`,
@@ -400,7 +405,14 @@ async function startMockZendesk(overrides = {}) {
     "GET /api/v2/ticket_forms.json": () => ({
       count: 1,
       next_page: null,
-      ticket_forms: [{ id: 1, name: "Example default form" }],
+      ticket_forms: [{ id: EXAMPLE_TICKET_FORM_ID, name: "Example default form" }],
+    }),
+    [`GET /api/v2/ticket_forms/${EXAMPLE_TICKET_FORM_ID}.json`]: () => ({
+      ticket_form: {
+        id: EXAMPLE_TICKET_FORM_ID,
+        name: "Example default form",
+        active: true,
+      },
     }),
     "GET /api/v2/search.json": () => ({
       count: 1,

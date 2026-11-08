@@ -132,6 +132,10 @@ const TOOL_DETAILS = {
     summary: "List ticket forms with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_get_ticket_form: {
+    summary: "Read one ticket form by id",
+    inputs: "`ticketFormId` int (required)",
+  },
   zendesk_list_views: {
     summary:
       "List the shared and personal ticket views the authenticated user can see, with page-based pagination",
