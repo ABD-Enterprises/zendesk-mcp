@@ -142,6 +142,14 @@ npm run doctor -- --tools
 An explicit `--doctor` or `--logout` flag wins over the `ZENDESK_HEALTHCHECK`
 environment-variable shortcut.
 
+`--version` prints the version of the installed connector and exits 0. It
+comes from the package manifest, so it needs no account, no configuration file
+and no network, and it wins over the `ZENDESK_HEALTHCHECK` shortcut.
+
+```sh
+node dist/index.js --version
+```
+
 `--help` prints the usage of the command line. A flag the connector does not
 know is refused with exit code 2 instead of starting the server: an unknown
 flag used to fall through to the server, which then waited on stdin forever

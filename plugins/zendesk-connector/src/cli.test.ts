@@ -1,11 +1,33 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { HELP_FLAGS, KNOWN_FLAGS, isHelpRequested, unknownFlags, usage } from "./cli.js";
+import {
+  HELP_FLAGS,
+  KNOWN_FLAGS,
+  isHelpRequested,
+  isVersionRequested,
+  unknownFlags,
+  usage,
+} from "./cli.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * A client-file path that does not exist.
+ *
+ * The connector reads this file when it loads a configuration, so pointing it
+ * at a path in the temporary directory keeps a child from reading the OAuth
+ * client file of the machine the tests run on. The path is synthetic.
+ */
+const absentClientFile = join(
+  tmpdir(),
+  "zendesk-mcp-cli-test",
+  "absent-client.json",
+);
 
 test("recognises the flags that ask for the usage", () => {
   assert.equal(isHelpRequested(["--help"]), true);
@@ -14,11 +36,19 @@ test("recognises the flags that ask for the usage", () => {
   assert.equal(isHelpRequested([]), false);
 });
 
+test("recognises the flag that asks for the version", () => {
+  assert.equal(isVersionRequested(["--version"]), true);
+  assert.equal(isVersionRequested(["--doctor", "--version"]), true);
+  assert.equal(isVersionRequested(["--doctor"]), false);
+  assert.equal(isVersionRequested([]), false);
+});
+
 test("names the flags it does not understand", () => {
   assert.deepEqual(
     unknownFlags(["--doctor", "--tools", "--healthcheck", "--logout"]),
     [],
   );
+  assert.deepEqual(unknownFlags(["--version"]), []);
   assert.deepEqual(unknownFlags(["--help", "-h"]), []);
   assert.deepEqual(unknownFlags(["--nonsense"]), ["--nonsense"]);
   assert.deepEqual(unknownFlags(["--doctor", "-x"]), ["-x"]);
@@ -105,6 +135,87 @@ test("--help prints the usage and exits", async () => {
   assert.equal(result.stderr, "");
 });
 
+test("--version prints the version and exits without an account", async () => {
+  // The version comes from the package manifest, so it is answered on a
+  // machine that has never been set up: no configuration file is read, no
+  // request leaves the process, and the server never starts.
+  const result = await runCli(["--version"], {
+    ...withoutZendeskEnv(),
+    ZENDESK_OAUTH_CLIENT_FILE: absentClientFile,
+  });
+
+  assert.equal(result.code, 0);
+  // Exactly the version and one newline: nothing else reaches the shell.
+  assert.equal(result.stdout, `${PACKAGE_VERSION}\n`);
+  // Nothing on stderr: the server did not start, so it logged no start event
+  // and no configuration error.
+  assert.equal(result.stderr, "");
+});
+
+test("--version prints the version with a broken configuration", async () => {
+  // A deliberately invalid configuration must not stop the version, because
+  // the flag never loads one. The values are invented and name no account.
+  const result = await runCli(["--version"], {
+    ...withoutZendeskEnv(),
+    ZENDESK_OAUTH_MODE: "not-a-mode",
+    ZENDESK_SUBDOMAIN: "not a subdomain",
+    ZENDESK_OAUTH_CLIENT_FILE: absentClientFile,
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, `${PACKAGE_VERSION}\n`);
+  assert.equal(result.stderr, "");
+});
+
+test("--version wins over the healthcheck shortcut", async () => {
+  // A host that exports ZENDESK_HEALTHCHECK asks for the version it was
+  // given on the command line, not for a healthcheck.
+  const result = await runCli(["--version"], {
+    ...withoutZendeskEnv(),
+    ZENDESK_HEALTHCHECK: "1",
+    ZENDESK_OAUTH_CLIENT_FILE: absentClientFile,
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, `${PACKAGE_VERSION}\n`);
+  assert.doesNotMatch(result.stdout, /healthcheck/);
+  assert.equal(result.stderr, "");
+});
+
+test("--version wins over the other modes", async () => {
+  // The version is answered before any mode runs, so a mode flag next to it
+  // does not run. The configuration is absent, so a mode that ran would fail
+  // and report the failure on stderr.
+  const result = await runCli(["--version", "--doctor"], {
+    ...withoutZendeskEnv(),
+    ZENDESK_OAUTH_CLIENT_FILE: absentClientFile,
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, `${PACKAGE_VERSION}\n`);
+  assert.equal(result.stderr, "");
+});
+
+test("--version does not outrank the validation of the command line", async () => {
+  // The usage still wins over the version, and a flag the connector does not
+  // know is still refused: the version sits after the validation of the
+  // command line and before the modes.
+  const help = await runCli(["--version", "--help"], withoutZendeskEnv());
+  assert.equal(help.code, 0);
+  assert.match(help.stdout, /zendesk-mcp --doctor/);
+  assert.notEqual(help.stdout, `${PACKAGE_VERSION}\n`);
+
+  const unknown = await runCli(["--version", "--nonsense"], withoutZendeskEnv());
+  assert.equal(unknown.code, 2);
+  assert.match(unknown.stderr, /Unknown option: --nonsense/);
+  assert.equal(unknown.stdout, "");
+
+  const unexpected = await runCli(["--version", "doctro"], withoutZendeskEnv());
+  assert.equal(unexpected.code, 2);
+  assert.match(unexpected.stderr, /Unexpected argument: doctro/);
+  assert.equal(unexpected.stdout, "");
+});
+
 test("an unknown flag is refused instead of starting the server", async () => {
   const result = await runCli(["--nonsense"]);
   assert.equal(result.code, 2);
@@ -128,6 +239,22 @@ test("--tools prints what the agent will receive", async () => {
   // The operator can see what the agent will receive without starting it.
   assert.match(result.stdout, /Enabled tools \(16 of 16\): /);
 });
+
+/**
+ * The environment for a child that must not inherit this host's settings.
+ *
+ * Every `ZENDESK_` variable of the test process is dropped from the child's
+ * environment — a key whose value is undefined is left out of it — so a test
+ * inherits neither a healthcheck shortcut nor an account from the machine it
+ * runs on. The environment of the test process itself is never changed.
+ */
+function withoutZendeskEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of Object.keys(process.env)) {
+    if (name.startsWith("ZENDESK_")) env[name] = undefined;
+  }
+  return env;
+}
 
 /**
  * Runs the built connector with the given arguments.
