@@ -484,6 +484,36 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_get_group") && server.registerTool(
+    "zendesk_get_group",
+    {
+      title: "Get Zendesk group",
+      description:
+        "Get one Zendesk group by id. Returns the group object as Zendesk " +
+        "returns it. Pass a group's id from zendesk_list_groups.",
+      inputSchema: z.object({
+        groupId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the group to read."),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ groupId }) =>
+      runTool("zendesk_get_group", "read", actorId, async () => {
+        guard("zendesk_get_group");
+        // The schema guarantees groupId is a positive safe integer, so it is
+        // safe to interpolate into the path.
+        const response = await client.request<{ group: JsonObject }>(
+          `/groups/${groupId}.json`,
+          { object: "group" },
+        );
+        return { group: response.group };
+      }),
+  );
+
   allowedTools.has("zendesk_list_users") && server.registerTool(
     "zendesk_list_users",
     {

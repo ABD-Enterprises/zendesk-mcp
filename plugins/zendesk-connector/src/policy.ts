@@ -20,6 +20,7 @@ export const ALL_TOOLS = [
   "zendesk_list_brands",
   "zendesk_get_brand",
   "zendesk_list_groups",
+  "zendesk_get_group",
   "zendesk_list_users",
   "zendesk_get_user",
   "zendesk_list_organizations",

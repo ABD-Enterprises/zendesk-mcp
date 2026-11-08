@@ -100,6 +100,10 @@ const TOOL_DETAILS = {
     summary: "List groups with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_get_group: {
+    summary: "Read one group by id",
+    inputs: "`groupId` int (required)",
+  },
   zendesk_list_users: {
     summary: "List users with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",

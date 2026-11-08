@@ -26,8 +26,8 @@ export ZENDESK_READ_ONLY=1
 # Or, instead, name the read tools explicitly:
 # export ZENDESK_ALLOWED_TOOLS="zendesk_status,\
 # zendesk_search_tickets,zendesk_get_ticket,zendesk_list_brands,\
-# zendesk_get_brand,zendesk_list_groups,zendesk_list_users,\
-# zendesk_get_user,zendesk_list_organizations,\
+# zendesk_get_brand,zendesk_list_groups,zendesk_get_group,\
+# zendesk_list_users,zendesk_get_user,zendesk_list_organizations,\
 # zendesk_get_organization,zendesk_list_ticket_fields,\
 # zendesk_list_ticket_forms,zendesk_list_views,\
 # zendesk_list_view_tickets,zendesk_get_view"
@@ -284,7 +284,7 @@ part of `npm run check` or CI.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 18 tools: 15 read tools and 3 write tools.
+The connector ships 19 tools: 16 read tools and 3 write tools.
 
 - `zendesk_status`: verify OAuth and identify the authenticated user.
 - `zendesk_search_tickets`: search Zendesk with Zendesk search syntax.
@@ -292,6 +292,7 @@ The connector ships 18 tools: 15 read tools and 3 write tools.
 - `zendesk_list_brands`: list brands with page-based pagination.
 - `zendesk_get_brand`: read one brand by id.
 - `zendesk_list_groups`: list groups with page-based pagination.
+- `zendesk_get_group`: read one group by id.
 - `zendesk_list_users`: list users with page-based pagination.
 - `zendesk_get_user`: read one user by id.
 - `zendesk_list_organizations`: list organizations with page-based pagination.

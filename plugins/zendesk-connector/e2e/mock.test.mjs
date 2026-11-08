@@ -33,6 +33,7 @@ const EXERCISED_TOOLS = [
   "zendesk_list_brands",
   "zendesk_get_brand",
   "zendesk_list_groups",
+  "zendesk_get_group",
   "zendesk_list_users",
   "zendesk_list_organizations",
   "zendesk_list_ticket_fields",
@@ -47,6 +48,9 @@ const EXERCISED_TOOLS = [
 // The brand the mock reports first, so the harness reads this one.
 const EXAMPLE_BRAND_ID = 501;
 
+// The group the mock reports first, so the harness reads this one.
+const EXAMPLE_GROUP_ID = 502;
+
 // The view the mock reports first, so the harness reads the tickets of
 // this one.
 const EXAMPLE_VIEW_ID = 401;
@@ -58,6 +62,7 @@ const EXPECTED_REQUESTS = [
   "GET /api/v2/brands.json",
   `GET /api/v2/brands/${EXAMPLE_BRAND_ID}.json`,
   "GET /api/v2/groups.json",
+  `GET /api/v2/groups/${EXAMPLE_GROUP_ID}.json`,
   "GET /api/v2/organizations.json",
   "GET /api/v2/search.json",
   "GET /api/v2/ticket_fields.json",
@@ -109,7 +114,7 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   for (const tool of EXERCISED_TOOLS) {
     assert.match(run.stdout, new RegExp(`^harness: PASS ${tool}$`, "m"));
   }
-  assert.match(run.stdout, /^harness: 13 passed, 0 failed$/m);
+  assert.match(run.stdout, /^harness: 14 passed, 0 failed$/m);
 
   // The harness fetched exactly the expected endpoints, as a set.
   assert.deepEqual(new Set(mock.state.requests), new Set(EXPECTED_REQUESTS));
@@ -250,7 +255,7 @@ test("harness skips the view-tickets step when the account lists no views", asyn
   assert.match(run.stdout, /^harness: PASS zendesk_list_views$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_list_view_tickets: .*$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_get_view: .*$/m);
-  assert.match(run.stdout, /^harness: 10 passed, 0 failed, 2 skipped$/m);
+  assert.match(run.stdout, /^harness: 11 passed, 0 failed, 2 skipped$/m);
   assert.ok(
     !mock.state.requests.some((request) => request.includes("/tickets.json")),
     `the view-tickets endpoint must not be called without a view, received ${JSON.stringify(mock.state.requests)}`,
@@ -347,7 +352,17 @@ async function startMockZendesk(overrides = {}) {
     "GET /api/v2/groups.json": () => ({
       count: 1,
       next_page: null,
-      groups: [{ id: 502, name: "Example Support Group" }],
+      groups: [{ id: EXAMPLE_GROUP_ID, name: "Example Support Group" }],
+    }),
+    [`GET /api/v2/groups/${EXAMPLE_GROUP_ID}.json`]: () => ({
+      group: {
+        id: EXAMPLE_GROUP_ID,
+        name: "Example Support Group",
+        description: "The example group the mock account reports",
+        url: `https://example.zendesk.com/api/v2/groups/${EXAMPLE_GROUP_ID}.json`,
+        active: true,
+        default: true,
+      },
     }),
     "GET /api/v2/users.json": () => ({
       count: 2,

@@ -22,9 +22,10 @@
  * The view tools are exercised against the account itself rather than a
  * configured id: the harness lists the views, then reads the tickets of the
  * first one the account reports and reads the view itself. An account with
- * no views at all skips those steps instead of failing. The brand detail tool
- * works the same way: the harness reads the brand the brand list step
- * reports, so an account that lists no brand skips that step too.
+ * no views at all skips those steps instead of failing. The brand and group
+ * detail tools work the same way: the harness reads the brand the brand list
+ * step reports and the group the group list step reports, so an account that
+ * lists no brand or no group skips that step too.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -199,8 +200,9 @@ async function runSession(session, steps, ticketId, results, skipped) {
   }
 
   // Values a later step needs from an earlier one — the view id the
-  // account reported, which the view-tickets step reads, and the brand id,
-  // which the brand detail step reads.
+  // account reported, which the view-tickets step reads, the brand id,
+  // which the brand detail step reads, and the group id, which the group
+  // detail step reads.
   const state = {};
 
   for (const step of steps) {
@@ -208,7 +210,8 @@ async function runSession(session, steps, ticketId, results, skipped) {
     if (args === undefined) {
       // The step has nothing to run against in this account, so it is
       // skipped rather than failed: an account with no views cannot have
-      // tickets in a view, and one with no brand has no brand to read.
+      // tickets in a view, one with no brand has no brand to read, and one
+      // with no group has no group to read.
       skipped.push(step.tool);
       log(`SKIP ${step.tool}: ${step.skipReason}`);
       continue;
@@ -283,7 +286,24 @@ function buildSteps(ticketId) {
         expectPresent(brand.id, "brand.id");
       },
     },
-    listStep("zendesk_list_groups", "groups"),
+    listStep("zendesk_list_groups", "groups", {
+      // The account's own group id, so the next step reads a group that
+      // exists rather than one the harness invented.
+      capture: (state, data) => {
+        const id = positiveIntegerId(data.groups[0]?.id);
+        if (id !== undefined) state.groupId = id;
+      },
+    }),
+    {
+      tool: "zendesk_get_group",
+      args: (state) =>
+        state.groupId === undefined ? undefined : { groupId: state.groupId },
+      skipReason: "the account lists no group to read",
+      verify: (data) => {
+        const group = expectObject(data.group, "group");
+        expectPresent(group.id, "group.id");
+      },
+    },
     listStep("zendesk_list_users", "users"),
     // A brand-new account may genuinely have no organizations, so an empty
     // list is allowed here; the array itself must still be present.

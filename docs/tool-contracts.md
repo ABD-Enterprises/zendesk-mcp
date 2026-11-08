@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 18 tools: 15 read tools and 3 write tools.
+The connector ships 19 tools: 16 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -26,6 +26,7 @@ The connector ships 18 tools: 15 read tools and 3 write tools.
 | `zendesk_list_brands` | Read | List brands with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_brand` | Read | Read one brand by id | `brandId` int (required) | Yes |
 | `zendesk_list_groups` | Read | List groups with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_get_group` | Read | Read one group by id | `groupId` int (required) | Yes |
 | `zendesk_list_users` | Read | List users with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_user` | Read | Read one user by id | `userId` int (required) | Yes |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
@@ -166,6 +167,16 @@ response surfaces through the error contract below.
 It uses the existing `brands:read` OAuth scope, so no default-scope expansion
 is needed.
 
+### zendesk_get_group
+
+Returns the Zendesk group payload — `{ "group" }` — with the group object as
+Zendesk returns it; unknown fields pass through untouched. The id comes from
+`zendesk_list_groups`. If Zendesk rejects an id the account cannot read, its
+response surfaces through the error contract below.
+
+It uses the existing `groups:read` OAuth scope, so no default-scope expansion
+is needed.
+
 ### zendesk_get_user
 
 Returns the Zendesk user payload — `{ "user" }` — with the user object as
@@ -261,7 +272,7 @@ Errors that map from the client layer:
 - A successful HTTP response whose body does not match the envelope the tool
   expects — an array of object records for the list, search and comment
   collections, or an object record for the status, ticket, user,
-  organization, brand and view envelopes — fails with the fixed message
+  organization, brand, group and view envelopes — fails with the fixed message
   `Zendesk API returned an unexpected response payload` and no `status` or
   `details`. The raw response body is never included. A caller that receives
   this error cannot tell whether a write reached Zendesk, so it must not
@@ -286,9 +297,9 @@ credentials.
 ## Annotations contract
 
 Every read tool — `zendesk_status`, `zendesk_search_tickets`,
-`zendesk_get_ticket`, `zendesk_get_brand`, `zendesk_get_user`,
-`zendesk_get_organization`, `zendesk_get_view`, and the `zendesk_list_*` tools
-— is marked:
+`zendesk_get_ticket`, `zendesk_get_brand`, `zendesk_get_group`,
+`zendesk_get_user`, `zendesk_get_organization`, `zendesk_get_view`, and the
+`zendesk_list_*` tools — is marked:
 
 ```json
 { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
@@ -330,8 +341,8 @@ For example, a read-only deployment allows the read tools:
 ```sh
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_get_brand,\
-zendesk_list_groups,zendesk_list_users,zendesk_get_user,\
-zendesk_list_organizations,zendesk_get_organization,\
+zendesk_list_groups,zendesk_get_group,zendesk_list_users,\
+zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
 zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
 zendesk_list_views,zendesk_list_view_tickets,zendesk_get_view"
 ```
