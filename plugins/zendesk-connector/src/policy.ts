@@ -18,6 +18,7 @@ export const ALL_TOOLS = [
   "zendesk_update_ticket",
   "zendesk_add_ticket_comment",
   "zendesk_list_brands",
+  "zendesk_get_brand",
   "zendesk_list_groups",
   "zendesk_list_users",
   "zendesk_get_user",

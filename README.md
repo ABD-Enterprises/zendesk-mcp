@@ -115,7 +115,7 @@ events, the allowlist, and the versioning policy — is in the
 [tool contracts](docs/tool-contracts.md) reference.
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 17 tools: 14 read tools and 3 write tools.
+The connector ships 18 tools: 15 read tools and 3 write tools.
 
 | Tool | Access | Purpose |
 | --- | --- | --- |
@@ -123,6 +123,7 @@ The connector ships 17 tools: 14 read tools and 3 write tools.
 | `zendesk_search_tickets` | Read | Search Zendesk with Zendesk search syntax |
 | `zendesk_get_ticket` | Read | Read a ticket with users, organization, and comments |
 | `zendesk_list_brands` | Read | List brands with page-based pagination |
+| `zendesk_get_brand` | Read | Read one brand by id |
 | `zendesk_list_groups` | Read | List groups with page-based pagination |
 | `zendesk_list_users` | Read | List users with page-based pagination |
 | `zendesk_get_user` | Read | Read one user by id |
@@ -344,6 +345,10 @@ default does not carry it: re-run `npm run oauth:setup` so the larger grant
 replaces the stored token, or — when the OAuth client has allowed scopes
 configured in Admin Center — add the scope there too, because Zendesk refuses
 the request with `400 invalid_scope` otherwise.
+
+`brands:read` covers the brand tools (`zendesk_list_brands` and
+`zendesk_get_brand`); it is part of the default scope, so no default-scope
+expansion is needed for either of them.
 
 Override them with `ZENDESK_OAUTH_SCOPE` when your workflow needs a different
 set.

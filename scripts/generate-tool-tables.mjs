@@ -92,6 +92,10 @@ const TOOL_DETAILS = {
     summary: "List brands with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_get_brand: {
+    summary: "Read one brand by id",
+    inputs: "`brandId` int (required)",
+  },
   zendesk_list_groups: {
     summary: "List groups with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",

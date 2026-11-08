@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a read-only `zendesk_get_brand` tool: it reads one Zendesk brand by its
+  `brandId` and returns the brand object as Zendesk returns it. It complements
+  `zendesk_list_brands` and uses the existing `brands:read` OAuth scope; no
+  default-scope expansion is needed.
+
 - Add a read-only `zendesk_get_view` tool: it reads one Zendesk view by its
   `viewId` and returns the view object as Zendesk returns it. It complements
   `zendesk_list_views` and uses the existing `ticket_views:read` OAuth scope;

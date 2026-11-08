@@ -415,6 +415,36 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_get_brand") && server.registerTool(
+    "zendesk_get_brand",
+    {
+      title: "Get Zendesk brand",
+      description:
+        "Get one Zendesk brand by id. Returns the brand object as Zendesk " +
+        "returns it. Pass a brand's id from zendesk_list_brands.",
+      inputSchema: z.object({
+        brandId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the brand to read."),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ brandId }) =>
+      runTool("zendesk_get_brand", "read", actorId, async () => {
+        guard("zendesk_get_brand");
+        // The schema guarantees brandId is a positive safe integer, so it is
+        // safe to interpolate into the path.
+        const response = await client.request<{ brand: JsonObject }>(
+          `/brands/${brandId}.json`,
+          { object: "brand" },
+        );
+        return { brand: response.brand };
+      }),
+  );
+
   allowedTools.has("zendesk_list_groups") && server.registerTool(
     "zendesk_list_groups",
     {

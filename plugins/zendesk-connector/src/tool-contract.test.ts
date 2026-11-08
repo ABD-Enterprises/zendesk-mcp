@@ -431,6 +431,114 @@ test("reads the type of a search result the way it is spelled", async () => {
   }
 });
 
+const EXAMPLE_BRAND = {
+  id: 501,
+  name: "Example Brand",
+  subdomain: "example",
+};
+
+test("reads one brand by id and returns the brand object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/brands/501.json") {
+      return { brand: EXAMPLE_BRAND, unknown_brand_field: "kept" };
+    }
+    return { brands: [EXAMPLE_BRAND], count: 1 };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_brand", {
+      brandId: 501,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/brands/501.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the brand object, and fields
+    // the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["brand"]);
+    assert.deepEqual(payload.brand, EXAMPLE_BRAND);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe brand id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ brand: EXAMPLE_BRAND }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const brandId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "501",
+    ]) {
+      const result = await callContract(session.client, "zendesk_get_brand", {
+        brandId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed brand envelope and an API error for a brand", async () => {
+  const { client, requests } = contractClient(() => ({
+    brand: "not-an-object",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(session.client, "zendesk_get_brand", {
+      brandId: 501,
+    });
+    assert.equal(malformed.isError, true);
+    // A successful response that does not carry the expected envelope fails
+    // with the fixed message and leaks no part of the raw body.
+    assert.deepEqual(JSON.parse(malformed.text), { error: INVALID_ENVELOPE_MESSAGE });
+    assert.equal(requests.length, 1);
+  } finally {
+    await session.close();
+  }
+
+  // A Zendesk failure surfaces with its HTTP status and Zendesk's own body.
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "brands:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(failingSession.client, "zendesk_get_brand", {
+      brandId: 501,
+    });
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
 test("reads one user by id and returns the user object untouched", async () => {
   const { client, requests } = contractClient((url) => {
     if (url.pathname === "/api/v2/users/801.json") {
@@ -840,6 +948,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_update_ticket",
       "zendesk_add_ticket_comment",
       "zendesk_list_brands",
+      "zendesk_get_brand",
       "zendesk_list_groups",
       "zendesk_list_users",
       "zendesk_get_user",
@@ -896,6 +1005,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_search_tickets",
       "zendesk_get_ticket",
       "zendesk_list_brands",
+      "zendesk_get_brand",
       "zendesk_list_groups",
       "zendesk_list_users",
       "zendesk_get_user",
@@ -1028,7 +1138,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);
