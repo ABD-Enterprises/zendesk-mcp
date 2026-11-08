@@ -40,6 +40,7 @@ const EXERCISED_TOOLS = [
   "zendesk_get_ticket",
   "zendesk_list_views",
   "zendesk_list_view_tickets",
+  "zendesk_get_view",
 ];
 
 // The exact set of endpoints the harness is expected to fetch, keyed by
@@ -58,6 +59,7 @@ const EXPECTED_REQUESTS = [
   "GET /api/v2/users/me.json",
   "GET /api/v2/views.json",
   "GET /api/v2/views/401/tickets.json",
+  "GET /api/v2/views/401.json",
 ];
 
 // The view the mock reports first, so the harness reads the tickets of
@@ -102,7 +104,7 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   for (const tool of EXERCISED_TOOLS) {
     assert.match(run.stdout, new RegExp(`^harness: PASS ${tool}$`, "m"));
   }
-  assert.match(run.stdout, /^harness: 11 passed, 0 failed$/m);
+  assert.match(run.stdout, /^harness: 12 passed, 0 failed$/m);
 
   // The harness fetched exactly the expected endpoints, as a set.
   assert.deepEqual(new Set(mock.state.requests), new Set(EXPECTED_REQUESTS));
@@ -242,7 +244,8 @@ test("harness skips the view-tickets step when the account lists no views", asyn
   );
   assert.match(run.stdout, /^harness: PASS zendesk_list_views$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_list_view_tickets: .*$/m);
-  assert.match(run.stdout, /^harness: 9 passed, 0 failed, 1 skipped$/m);
+  assert.match(run.stdout, /^harness: SKIP zendesk_get_view: .*$/m);
+  assert.match(run.stdout, /^harness: 9 passed, 0 failed, 2 skipped$/m);
   assert.ok(
     !mock.state.requests.some((request) => request.includes("/tickets.json")),
     `the view-tickets endpoint must not be called without a view, received ${JSON.stringify(mock.state.requests)}`,
@@ -419,6 +422,18 @@ async function startMockZendesk(overrides = {}) {
       ],
       next_page: null,
       previous_page: null,
+    }),
+    "GET /api/v2/views/401.json": () => ({
+      view: {
+        id: EXAMPLE_VIEW_ID,
+        name: "Example Open Tickets",
+        title: "Open tickets",
+        active: true,
+        position: 1,
+        default: true,
+        personal: false,
+        shared: true,
+      },
     }),
     ...overrides,
   };

@@ -581,6 +581,108 @@ test("reports a malformed organization envelope and an API error for an organiza
   }
 });
 
+const EXAMPLE_VIEW = {
+  id: 8810,
+  title: "Example View",
+  active: true,
+  conditions: { all: [{ field: "status", operator: "is", value: "open" }] },
+};
+
+test("reads one view by id and returns the view object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/views/8810.json") {
+      return { view: EXAMPLE_VIEW, unknown_view_field: "kept" };
+    }
+    return { views: [EXAMPLE_VIEW], count: 1 };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_view", {
+      viewId: 8810,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/views/8810.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the view object, and fields
+    // the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["view"]);
+    assert.deepEqual(payload.view, EXAMPLE_VIEW);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe view id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ view: EXAMPLE_VIEW }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const viewId of [undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "8810"]) {
+      const result = await callContract(session.client, "zendesk_get_view", {
+        viewId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed view envelope and an API error for a view", async () => {
+  const { client, requests } = contractClient(() => ({
+    view: "not-an-object",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(session.client, "zendesk_get_view", {
+      viewId: 8810,
+    });
+    assert.equal(malformed.isError, true);
+    // A successful response that does not carry the expected envelope fails
+    // with the fixed message and leaks no part of the raw body.
+    assert.deepEqual(JSON.parse(malformed.text), { error: INVALID_ENVELOPE_MESSAGE });
+    assert.equal(requests.length, 1);
+  } finally {
+    await session.close();
+  }
+
+  // A Zendesk failure surfaces with its HTTP status and Zendesk's own body.
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "ticket_views:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(failingSession.client, "zendesk_get_view", {
+      viewId: 8810,
+    });
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
 test("refuses an empty tags array instead of clearing a ticket's tags", async () => {
   const { client, requests } = contractClient(() => ({ ticket: EXAMPLE_TICKET }));
   const session = await connectContracts(client);
@@ -747,6 +849,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_ticket_forms",
       "zendesk_list_views",
       "zendesk_list_view_tickets",
+      "zendesk_get_view",
     ].join(","),
   );
 
@@ -802,6 +905,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_ticket_forms",
       "zendesk_list_views",
       "zendesk_list_view_tickets",
+      "zendesk_get_view",
     ]) {
       assert.deepEqual(
         annotation(name),
@@ -924,7 +1028,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);
