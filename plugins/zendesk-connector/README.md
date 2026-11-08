@@ -29,8 +29,8 @@ export ZENDESK_READ_ONLY=1
 # zendesk_get_brand,zendesk_list_groups,zendesk_get_group,\
 # zendesk_list_users,zendesk_get_user,zendesk_list_organizations,\
 # zendesk_get_organization,zendesk_list_ticket_fields,\
-# zendesk_list_ticket_forms,zendesk_list_views,\
-# zendesk_list_view_tickets,zendesk_get_view"
+# zendesk_get_ticket_field,zendesk_list_ticket_forms,\
+# zendesk_list_views,zendesk_list_view_tickets,zendesk_get_view"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 
@@ -284,7 +284,7 @@ part of `npm run check` or CI.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 19 tools: 16 read tools and 3 write tools.
+The connector ships 20 tools: 17 read tools and 3 write tools.
 
 - `zendesk_status`: verify OAuth and identify the authenticated user.
 - `zendesk_search_tickets`: search Zendesk with Zendesk search syntax.
@@ -298,6 +298,7 @@ The connector ships 19 tools: 16 read tools and 3 write tools.
 - `zendesk_list_organizations`: list organizations with page-based pagination.
 - `zendesk_get_organization`: read one organization by id.
 - `zendesk_list_ticket_fields`: list all ticket fields (one unpaginated response).
+- `zendesk_get_ticket_field`: read one ticket field by id.
 - `zendesk_list_ticket_forms`: list ticket forms with page-based pagination.
 - `zendesk_list_views`: list the shared and personal ticket views the authenticated user can see, with page-based pagination.
 - `zendesk_list_view_tickets`: list the tickets in one view, with page-based pagination.

@@ -26,6 +26,7 @@ export const ALL_TOOLS = [
   "zendesk_list_organizations",
   "zendesk_get_organization",
   "zendesk_list_ticket_fields",
+  "zendesk_get_ticket_field",
   "zendesk_list_ticket_forms",
   "zendesk_list_views",
   "zendesk_list_view_tickets",
