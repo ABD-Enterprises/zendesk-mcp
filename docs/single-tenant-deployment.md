@@ -153,19 +153,20 @@ them in the environment or a secret manager, never in the tree.
 
 OAuth scopes bound what the account will allow; `ZENDESK_ALLOWED_TOOLS`
 bounds what the server will ask for, by naming a subset of the tools. A
-read-only deployment allows the sixteen read tools:
+read-only deployment allows the seventeen read tools:
 
 ```sh
 export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_get_brand,\
 zendesk_list_groups,zendesk_get_group,zendesk_list_users,\
 zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
-zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
-zendesk_list_views,zendesk_get_view,zendesk_list_view_tickets"
+zendesk_list_ticket_fields,zendesk_get_ticket_field,\
+zendesk_list_ticket_forms,zendesk_list_views,\
+zendesk_get_view,zendesk_list_view_tickets"
 ```
 
 The same deployment can set `ZENDESK_READ_ONLY=1` instead, which serves only
-the sixteen read tools without naming them. The two can be combined only when
+the seventeen read tools without naming them. The two can be combined only when
 the allowlist names read tools alone; a write tool in the allowlist under
 read-only mode is rejected at startup. The contract is in
 [tool-contracts.md](tool-contracts.md#allowlist-contract).
@@ -295,7 +296,7 @@ that blast radius to one person's deployments.
 ### Per-user allowlist examples
 
 Different people on one host commonly carry different allowlists. A
-reader gets the sixteen read tools and nothing that writes:
+reader gets the seventeen read tools and nothing that writes:
 
 ```sh
 # Reader: reads only.
@@ -303,8 +304,9 @@ export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_get_brand,\
 zendesk_list_groups,zendesk_get_group,zendesk_list_users,\
 zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
-zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
-zendesk_list_views,zendesk_get_view,zendesk_list_view_tickets"
+zendesk_list_ticket_fields,zendesk_get_ticket_field,\
+zendesk_list_ticket_forms,zendesk_list_views,\
+zendesk_get_view,zendesk_list_view_tickets"
 ```
 
 A triage role adds the comment tool but still cannot create or edit
@@ -317,8 +319,9 @@ export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_get_brand,\
 zendesk_list_groups,zendesk_get_group,zendesk_list_users,\
 zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
-zendesk_list_ticket_fields,zendesk_list_ticket_forms,\
-zendesk_list_views,zendesk_get_view,zendesk_list_view_tickets,\
+zendesk_list_ticket_fields,zendesk_get_ticket_field,\
+zendesk_list_ticket_forms,zendesk_list_views,\
+zendesk_get_view,zendesk_list_view_tickets,\
 zendesk_add_ticket_comment"
 ```
 

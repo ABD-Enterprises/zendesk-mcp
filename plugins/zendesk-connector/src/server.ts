@@ -682,6 +682,37 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
       }),
   );
 
+  allowedTools.has("zendesk_get_ticket_field") && server.registerTool(
+    "zendesk_get_ticket_field",
+    {
+      title: "Get Zendesk ticket field",
+      description:
+        "Get one Zendesk ticket field by id. Returns the ticket field object " +
+        "as Zendesk returns it. Pass a ticket field's id from " +
+        "zendesk_list_ticket_fields.",
+      inputSchema: z.object({
+        ticketFieldId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the ticket field to read."),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ ticketFieldId }) =>
+      runTool("zendesk_get_ticket_field", "read", actorId, async () => {
+        guard("zendesk_get_ticket_field");
+        // The schema guarantees ticketFieldId is a positive safe integer, so
+        // it is safe to interpolate into the path.
+        const response = await client.request<{ ticket_field: JsonObject }>(
+          `/ticket_fields/${ticketFieldId}.json`,
+          { object: "ticket_field" },
+        );
+        return { ticket_field: response.ticket_field };
+      }),
+  );
+
   allowedTools.has("zendesk_list_ticket_forms") && server.registerTool(
     "zendesk_list_ticket_forms",
     {

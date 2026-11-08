@@ -124,6 +124,10 @@ const TOOL_DETAILS = {
     summary: "List all ticket fields (one unpaginated response)",
     inputs: "None",
   },
+  zendesk_get_ticket_field: {
+    summary: "Read one ticket field by id",
+    inputs: "`ticketFieldId` int (required)",
+  },
   zendesk_list_ticket_forms: {
     summary: "List ticket forms with page-based pagination",
     inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",

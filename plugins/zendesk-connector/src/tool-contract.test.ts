@@ -443,6 +443,13 @@ const EXAMPLE_GROUP = {
   description: "Example group for contract tests",
 };
 
+const EXAMPLE_TICKET_FIELD = {
+  id: 4,
+  title: "Description",
+  type: "textarea",
+  active: true,
+};
+
 test("reads one brand by id and returns the brand object untouched", async () => {
   const { client, requests } = contractClient((url) => {
     if (url.pathname === "/api/v2/brands/501.json") {
@@ -797,13 +804,137 @@ test("reports a malformed organization envelope and an API error for an organiza
   }
 });
 
+test("reads one ticket field by id and returns the ticket field object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/ticket_fields/4.json") {
+      return { ticket_field: EXAMPLE_TICKET_FIELD, unknown_ticket_field_field: "kept" };
+    }
+    return { ticket_fields: [EXAMPLE_TICKET_FIELD] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_ticket_field", {
+      ticketFieldId: 4,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/ticket_fields/4.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the ticket field object, and
+    // fields the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["ticket_field"]);
+    assert.deepEqual(payload.ticket_field, EXAMPLE_TICKET_FIELD);
+  } finally {
+    await session.close();
+  }
+});
+
+test("omits the ticket field detail tool from an explicit allowlist that excludes it", async () => {
+  const { client } = contractClient(() => ({ ticket_field: EXAMPLE_TICKET_FIELD }));
+  const session = await connectContracts(client, "zendesk_status");
+
+  try {
+    const tools = await session.client.listTools();
+    assert.deepEqual(
+      tools.tools.map((tool) => tool.name),
+      ["zendesk_status"],
+    );
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe ticket field id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({
+    ticket_field: EXAMPLE_TICKET_FIELD,
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const ticketFieldId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "4",
+    ]) {
+      const result = await callContract(session.client, "zendesk_get_ticket_field", {
+        ticketFieldId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports malformed ticket field envelopes and an API error for a ticket field", async () => {
+  for (const body of [
+    {},
+    { ticket_field: null },
+    { ticket_field: [] },
+    { ticket_field: "not-an-object" },
+  ]) {
+    const { client, requests } = contractClient(() => body);
+    const session = await connectContracts(client);
+
+    try {
+      const malformed = await callContract(session.client, "zendesk_get_ticket_field", {
+        ticketFieldId: 4,
+      });
+      assert.equal(malformed.isError, true);
+      // A successful response that does not carry the expected envelope fails
+      // with the fixed message and leaks no part of the raw body.
+      assert.deepEqual(JSON.parse(malformed.text), { error: INVALID_ENVELOPE_MESSAGE });
+      assert.equal(requests.length, 1);
+    } finally {
+      await session.close();
+    }
+  }
+
+  // A Zendesk failure surfaces with its HTTP status and Zendesk's own body.
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope:
+        "tickets:read tickets:write users:read organizations:read brands:read groups:read ticket_views:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(failingSession.client, "zendesk_get_ticket_field", {
+      ticketFieldId: 4,
+    });
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
 const EXAMPLE_VIEW = {
   id: 8810,
   title: "Example View",
   active: true,
   conditions: { all: [{ field: "status", operator: "is", value: "open" }] },
 };
-
 test("reads one view by id and returns the view object untouched", async () => {
   const { client, requests } = contractClient((url) => {
     if (url.pathname === "/api/v2/views/8810.json") {
@@ -1064,6 +1195,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_organizations",
       "zendesk_get_organization",
       "zendesk_list_ticket_fields",
+      "zendesk_get_ticket_field",
       "zendesk_list_ticket_forms",
       "zendesk_list_views",
       "zendesk_list_view_tickets",
@@ -1122,6 +1254,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_organizations",
       "zendesk_get_organization",
       "zendesk_list_ticket_fields",
+      "zendesk_get_ticket_field",
       "zendesk_list_ticket_forms",
       "zendesk_list_views",
       "zendesk_list_view_tickets",
@@ -1248,7 +1381,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);
