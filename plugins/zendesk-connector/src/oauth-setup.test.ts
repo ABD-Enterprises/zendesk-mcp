@@ -798,55 +798,50 @@ test("opens the authorization URL through the injected launcher", async () => {
 
 /**
  * Drives the browser-authorization flow as far as the token exchange and
- * returns the run's rejection. The fetch stub answers the exchange with the
- * given body and refuses every other URL, so a flow that grows another call
- * fails the test instead of reaching the real network. The launcher is
+ * returns the settled outcome together with everything the exchange was
+ * asked for. The fetch implementation is injected, so the exchange is
+ * answered in memory: no request reaches the network and global fetch is
+ * never touched — the recording wrapper around the injected function is
+ * what sees the request. Even a regression that bypassed the injection
+ * could only reach this test's own loopback callback server, whose
+ * `/oauth/tokens` path is not the callback path and is answered with a
+ * 404: the public network stays out of reach either way. The launcher is
  * injected, so nothing is ever opened.
  */
-async function exchangeFailure(
-  body: string,
-  contentType: string,
-  responseStatus = 200,
-): Promise<{
-  error: Error;
+async function runExchange(fetchImpl: typeof fetch): Promise<{
+  result: StoredToken | Error;
   out: string[];
   requests: string[];
+  inits: Array<RequestInit | undefined>;
+  redirectUri: string;
+  exchangeUrl: string;
 }> {
   const files = await sandbox();
+  const port = await freePort();
+  // The configured base URL is the loopback origin the callback server
+  // already holds, so the exchange URL this flow builds is local too: a
+  // regression that reached it would get the callback server's 404 for the
+  // unrecognized path and fail inside the test — never a public host.
   const config: ZendeskConfig = {
-    baseUrl: "https://acme-tools.zendesk.com",
+    baseUrl: `http://127.0.0.1:${port}`,
     mode: "authorization_code",
     clientId: "example-client-id",
     clientSecret: "example-client-secret",
     tokenFile: files.tokenFile,
     scope: "read",
   };
-  const port = await freePort();
   const redirectUri = `http://127.0.0.1:${port}/callback`;
   const out: string[] = [];
   const opened: string[] = [];
   const requests: string[] = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input) => {
-    const url = String(input);
-    requests.push(url);
-    // Fail closed: the exchange is the only call this flow makes today, so
-    // any other URL is a change this test has not agreed to — and answering
-    // it would put a real request on the wire to a plausible real host.
-    assert.ok(
-      url.endsWith("/oauth/tokens"),
-      `unexpected network call from the flow: ${url}`,
-    );
-    // The body is encoded to bytes the way a network response arrives: a
-    // string body would make the Response constructor append its own
-    // text/plain content type, which would make an absent content-type
-    // header impossible to craft — and an empty one means just that.
-    const headers = new Headers();
-    if (contentType) headers.set("Content-Type", contentType);
-    return new Response(new TextEncoder().encode(body), {
-      status: responseStatus,
-      headers,
-    });
+  const inits: Array<RequestInit | undefined> = [];
+  const recordingFetch = (async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => {
+    requests.push(String(input));
+    inits.push(init);
+    return fetchImpl(input, init);
   }) as typeof fetch;
 
   // The scaffolding mirrors the positive-path test above: the launcher is
@@ -860,10 +855,11 @@ async function exchangeFailure(
     (line) => out.push(line),
     recordingSpawn(opened),
     4_000,
+    recordingFetch,
   ).then(
-    () => {
+    (token) => {
       ended = true;
-      return undefined;
+      return token;
     },
     (error: unknown) => {
       ended = true;
@@ -892,7 +888,7 @@ async function exchangeFailure(
     assert.ok(authorizeUrl !== undefined);
     // The state the run generated, echoed back the way the browser would:
     // with it correct, the server accepts the code and proceeds to the
-    // exchange the stub above is waiting to answer.
+    // exchange the injected fetch is waiting to answer.
     const state = new URL(authorizeUrl).searchParams.get("state");
     assert.ok(state !== null);
     const status = await new Promise<number>((resolve, reject) => {
@@ -907,15 +903,20 @@ async function exchangeFailure(
       request.once("error", reject);
     });
     // The server answers 200 the moment it has the code, before the exchange
-    // runs — so the exchange's rejection is the run's own error, awaited by
-    // the caller, not a status on this response.
+    // runs — so the exchange's outcome is the run's own, awaited by the
+    // caller, not a status on this response.
     assert.equal(status, 200);
 
-    const error = await outcome;
-    assert.ok(error instanceof Error);
-    return { error, out, requests };
+    const result = await outcome;
+    return {
+      result: result as StoredToken | Error,
+      out,
+      requests,
+      inits,
+      redirectUri,
+      exchangeUrl: `http://127.0.0.1:${port}/oauth/tokens`,
+    };
   } finally {
-    globalThis.fetch = originalFetch;
     // An assertion that throws before the callback is sent would otherwise
     // leave the flow's listener bound until its own four-second timeout,
     // holding a port open past the test's end. outcome never rejects — its
@@ -924,6 +925,108 @@ async function exchangeFailure(
     await outcome;
   }
 }
+
+/**
+ * Drives the browser-authorization flow as far as a rejected token exchange
+ * and returns the run's rejection. The injected fetch answers the exchange
+ * with the given body and refuses every other URL, so a flow that grows
+ * another call fails the test instead of reaching the network.
+ */
+async function exchangeFailure(
+  body: string,
+  contentType: string,
+  responseStatus = 200,
+): Promise<{
+  error: Error;
+  out: string[];
+  requests: string[];
+  inits: Array<RequestInit | undefined>;
+  exchangeUrl: string;
+}> {
+  const { result, out, requests, inits, exchangeUrl } = await runExchange(
+    (async (input) => {
+      const url = String(input);
+      // Fail closed: the exchange is the only call this flow makes today, so
+      // any other URL is a change this test has not agreed to. The base URL
+      // is this test's own loopback server, so even an unexpected call
+      // cannot reach the public network.
+      assert.ok(
+        url.endsWith("/oauth/tokens"),
+        `unexpected network call from the flow: ${url}`,
+      );
+      // The body is encoded to bytes the way a network response arrives: a
+      // string body would make the Response constructor append its own
+      // text/plain content type, which would make an absent content-type
+      // header impossible to craft — and an empty one means just that.
+      const headers = new Headers();
+      if (contentType) headers.set("Content-Type", contentType);
+      return new Response(new TextEncoder().encode(body), {
+        status: responseStatus,
+        headers,
+      });
+    }) as typeof fetch,
+  );
+  assert.ok(result instanceof Error);
+  return { error: result, out, requests, inits, exchangeUrl };
+}
+
+test("exchanges the code through the injected fetch", async () => {
+  // The hermetic success path: the injected fetch answers the token
+  // exchange in memory, so the run never touches global fetch — the
+  // recording wrapper around the injected function is what sees the
+  // request. A regression to global fetch would leave the recorded lists
+  // empty; the URL it would reach is this test's own loopback callback
+  // server, answered with a 404, so even then nothing can leave the host.
+  const payload = {
+    access_token: "example-access-token",
+    refresh_token: "example-refresh-token",
+    token_type: "bearer",
+    expires_in: 3600,
+  };
+  const { result, requests, inits, redirectUri, exchangeUrl } = await runExchange(
+    (async () =>
+      new Response(new TextEncoder().encode(JSON.stringify(payload)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch,
+  );
+
+  assert.ok(!(result instanceof Error));
+  // The stored token is shaped the way the connector writes it: the
+  // response fields carry over, the scope falls back to the configured
+  // one when the response names none, and expires_in becomes an absolute
+  // timestamp.
+  assert.equal(result.access_token, payload.access_token);
+  assert.equal(result.refresh_token, payload.refresh_token);
+  assert.equal(result.token_type, "bearer");
+  assert.equal(result.scope, "read");
+  assert.ok(result.expires_at !== undefined);
+  assert.ok(
+    Math.abs(Date.parse(result.expires_at) - (Date.now() + 3_600_000)) <
+      5_000,
+  );
+  // Exactly the one expected call went out, and it was the exchange.
+  assert.deepEqual(requests, [exchangeUrl]);
+  // The request carries the code and the configured parameters exactly as
+  // the authorization-code grant spells them.
+  const init = inits[0];
+  assert.ok(init !== undefined);
+  assert.equal(init.method, "POST");
+  assert.deepEqual(init.headers, {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  });
+  assert.deepEqual(JSON.parse(String(init.body)), {
+    grant_type: "authorization_code",
+    code: "example-code",
+    client_id: "example-client-id",
+    client_secret: "example-client-secret",
+    redirect_uri: redirectUri,
+    scope: "read",
+    expires_in: 3600,
+    refresh_token_expires_in: 2592000,
+  });
+});
 
 test("never prints a token from a rejected token-exchange body", async () => {
   // The exchange can fail *after* Zendesk has already handed back a real
@@ -936,7 +1039,7 @@ test("never prints a token from a rejected token-exchange body", async () => {
   // there — so the assertion below binds to redact() rather than passing
   // because the secret was never present to begin with.
   const leakedToken = "example-access-token-must-not-be-printed";
-  const { error, out, requests } = await exchangeFailure(
+  const { error, out, requests, inits, exchangeUrl } = await exchangeFailure(
     JSON.stringify({
       access_token: leakedToken,
       client_secret: "example-client-secret",
@@ -952,7 +1055,18 @@ test("never prints a token from a rejected token-exchange body", async () => {
   assert.ok(!error.message.includes(leakedToken));
   assert.ok(!error.message.includes("example-client-secret"));
   // Exactly the one expected call went out, and it was the exchange.
-  assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+  assert.deepEqual(requests, [exchangeUrl]);
+  // The rejected exchange still carried the same request the success path
+  // sends: the injected fetch saw it, and the one-time code went out in the
+  // body exactly once.
+  const init = inits[0];
+  assert.ok(init !== undefined);
+  assert.equal(init.method, "POST");
+  const sent = JSON.parse(String(init.body));
+  assert.equal(sent.grant_type, "authorization_code");
+  assert.equal(sent.code, "example-code");
+  assert.equal(sent.client_id, "example-client-id");
+  assert.equal(sent.client_secret, "example-client-secret");
   // The run reported the authorization URL exactly once, as in the flow
   // test above: the fix narrows what the error carries, not what the run
   // prints before it.
@@ -970,7 +1084,7 @@ test("describes a non-object exchange body by media type and size", async () => 
   // therefore named by its media type and size and nothing more.
   const leakedToken = "example-plaintext-token-must-not-be-printed";
   const body = `access_token=${leakedToken}`;
-  const { error, requests } = await exchangeFailure(body, "text/plain");
+  const { error, requests, exchangeUrl } = await exchangeFailure(body, "text/plain");
 
   assert.match(error.message, /Zendesk token exchange failed: HTTP 200/);
   assert.ok(!error.message.includes(leakedToken));
@@ -979,7 +1093,7 @@ test("describes a non-object exchange body by media type and size", async () => 
       `(non-object text/plain body of ${Buffer.byteLength(body, "utf8")} bytes)`,
     ),
   );
-  assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+  assert.deepEqual(requests, [exchangeUrl]);
 });
 
 test("never echoes an unfiltered rejected exchange body", async () => {
@@ -1219,7 +1333,7 @@ test("never echoes an unfiltered rejected exchange body", async () => {
   ];
 
   for (const testCase of cases) {
-    const { error, requests } = await exchangeFailure(
+    const { error, requests, exchangeUrl } = await exchangeFailure(
       testCase.body,
       testCase.contentType,
       testCase.status,
@@ -1245,7 +1359,7 @@ test("never echoes an unfiltered rejected exchange body", async () => {
         `${testCase.name} echoed ${value}: ${error.message}`,
       );
     }
-    assert.deepEqual(requests, ["https://acme-tools.zendesk.com/oauth/tokens"]);
+    assert.deepEqual(requests, [exchangeUrl]);
   }
 });
 

@@ -455,8 +455,10 @@ export function callbackServerPort(redirectUri: string): number {
  * The real authorization: a loopback callback server, the browser, and the
  * token exchange. Exported so a test can pin the port the listener binds;
  * the browser launcher is a parameter so such a test can also prove that
- * nothing is opened, and the wait deadline is a parameter so a test can
- * bound a failure path instead of sitting out the production timeout.
+ * nothing is opened, the wait deadline is a parameter so a test can bound a
+ * failure path instead of sitting out the production timeout, and the fetch
+ * implementation is a parameter so a test can answer the token exchange in
+ * memory without touching global fetch.
  */
 export async function authorizeWithBrowser(
   config: ZendeskConfig,
@@ -464,6 +466,7 @@ export async function authorizeWithBrowser(
   writeOut: (line: string) => void,
   spawnImpl?: BrowserSpawn,
   timeoutMs?: number,
+  fetchImpl: typeof fetch = globalThis.fetch,
 ): Promise<StoredToken> {
   const port = callbackServerPort(redirectUri);
   const state = randomBytes(24).toString("hex");
@@ -483,7 +486,7 @@ export async function authorizeWithBrowser(
     spawnImpl,
     timeoutMs,
   });
-  return exchangeCode(config, redirectUri, code);
+  return exchangeCode(config, redirectUri, code, fetchImpl);
 }
 
 /** The loopback callback server's settings. */
@@ -575,13 +578,18 @@ function waitForAuthorizationCode(
   });
 }
 
-/** Exchanges an authorization code for the token the connector stores. */
+/**
+ * Exchanges an authorization code for the token the connector stores. The
+ * fetch implementation is injectable so a test can answer the exchange in
+ * memory; the default is the global fetch, exactly what production uses.
+ */
 async function exchangeCode(
   config: ZendeskConfig,
   redirectUri: string,
   code: string,
+  fetchImpl: typeof fetch = globalThis.fetch,
 ): Promise<StoredToken> {
-  const response = await fetch(`${config.baseUrl}/oauth/tokens`, {
+  const response = await fetchImpl(`${config.baseUrl}/oauth/tokens`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
