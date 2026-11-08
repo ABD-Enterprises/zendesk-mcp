@@ -437,6 +437,12 @@ const EXAMPLE_BRAND = {
   subdomain: "example",
 };
 
+const EXAMPLE_GROUP = {
+  id: 502,
+  name: "Example Support Group",
+  description: "Example group for contract tests",
+};
+
 test("reads one brand by id and returns the brand object untouched", async () => {
   const { client, requests } = contractClient((url) => {
     if (url.pathname === "/api/v2/brands/501.json") {
@@ -529,6 +535,108 @@ test("reports a malformed brand envelope and an API error for a brand", async ()
   try {
     const result = await callContract(failingSession.client, "zendesk_get_brand", {
       brandId: 501,
+    });
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+test("reads one group by id and returns the group object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/groups/502.json") {
+      return { group: EXAMPLE_GROUP, unknown_group_field: "kept" };
+    }
+    return { groups: [EXAMPLE_GROUP], count: 1 };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_group", {
+      groupId: 502,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/groups/502.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the group object, and fields
+    // the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["group"]);
+    assert.deepEqual(payload.group, EXAMPLE_GROUP);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe group id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ group: EXAMPLE_GROUP }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const groupId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "502",
+    ]) {
+      const result = await callContract(session.client, "zendesk_get_group", {
+        groupId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed group envelope and an API error for a group", async () => {
+  const { client, requests } = contractClient(() => ({
+    group: "not-an-object",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(session.client, "zendesk_get_group", {
+      groupId: 502,
+    });
+    assert.equal(malformed.isError, true);
+    // A successful response that does not carry the expected envelope fails
+    // with the fixed message and leaks no part of the raw body.
+    assert.deepEqual(JSON.parse(malformed.text), { error: INVALID_ENVELOPE_MESSAGE });
+    assert.equal(requests.length, 1);
+  } finally {
+    await session.close();
+  }
+
+  // A Zendesk failure surfaces with its HTTP status and Zendesk's own body.
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "groups:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(failingSession.client, "zendesk_get_group", {
+      groupId: 502,
     });
     assert.equal(result.isError, true);
     const payload = JSON.parse(result.text);
@@ -949,6 +1057,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_add_ticket_comment",
       "zendesk_list_brands",
       "zendesk_get_brand",
+      "zendesk_get_group",
       "zendesk_list_groups",
       "zendesk_list_users",
       "zendesk_get_user",
@@ -1006,6 +1115,7 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_get_ticket",
       "zendesk_list_brands",
       "zendesk_get_brand",
+      "zendesk_get_group",
       "zendesk_list_groups",
       "zendesk_list_users",
       "zendesk_get_user",
@@ -1138,7 +1248,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);

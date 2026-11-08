@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a read-only `zendesk_get_group` tool: it reads one Zendesk group by its
+  `groupId` and returns the group object as Zendesk returns it. It complements
+  `zendesk_list_groups` and uses the existing `groups:read` OAuth scope; no
+  default-scope expansion is needed.
+
 - Add a read-only `zendesk_get_brand` tool: it reads one Zendesk brand by its
   `brandId` and returns the brand object as Zendesk returns it. It complements
   `zendesk_list_brands` and uses the existing `brands:read` OAuth scope; no
