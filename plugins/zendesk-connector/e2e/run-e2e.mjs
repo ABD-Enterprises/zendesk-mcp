@@ -22,11 +22,12 @@
  * The view tools are exercised against the account itself rather than a
  * configured id: the harness lists the views, then reads the tickets of the
  * first one the account reports and reads the view itself. An account with
- * no views at all skips those steps instead of failing. The brand, group and
- * ticket-field detail tools work the same way: the harness reads the brand
- * the brand list step reports, the group the group list step reports and the
- * ticket field the ticket-field list step reports, so an account that lists
- * no brand, no group or no ticket field skips that step too.
+ * no views at all skips those steps instead of failing. The brand, group,
+ * ticket-field and ticket-form detail tools work the same way: the harness
+ * reads the brand the brand list step reports, the group the group list step
+ * reports, the ticket field the ticket-field list step reports and the
+ * ticket form the ticket-form list step reports, so an account that lists no
+ * brand, no group, no ticket field or no ticket form skips that step too.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -203,7 +204,8 @@ async function runSession(session, steps, ticketId, results, skipped) {
   // Values a later step needs from an earlier one — the view id the
   // account reported, which the view-tickets step reads, the brand id,
   // which the brand detail step reads, the group id, which the group
-  // detail step reads, and the ticket-field id, which the ticket-field
+  // detail step reads, the ticket-field id, which the ticket-field
+  // detail step reads, and the ticket-form id, which the ticket-form
   // detail step reads.
   const state = {};
 
@@ -213,8 +215,9 @@ async function runSession(session, steps, ticketId, results, skipped) {
       // The step has nothing to run against in this account, so it is
       // skipped rather than failed: an account with no views cannot have
       // tickets in a view, one with no brand has no brand to read, one
-      // with no group has no group to read, and one with no ticket field
-      // has no ticket field to read.
+      // with no group has no group to read, one with no ticket field has
+      // no ticket field to read, and one with no ticket form has no
+      // ticket form to read.
       skipped.push(step.tool);
       log(`SKIP ${step.tool}: ${step.skipReason}`);
       continue;
@@ -331,7 +334,26 @@ function buildSteps(ticketId) {
         expectPresent(ticketField.id, "ticket_field.id");
       },
     },
-    listStep("zendesk_list_ticket_forms", "ticket_forms"),
+    listStep("zendesk_list_ticket_forms", "ticket_forms", {
+      // The account's own ticket-form id, so the next step reads a ticket
+      // form that exists rather than one the harness invented.
+      capture: (state, data) => {
+        const id = positiveIntegerId(data.ticket_forms[0]?.id);
+        if (id !== undefined) state.ticketFormId = id;
+      },
+    }),
+    {
+      tool: "zendesk_get_ticket_form",
+      args: (state) =>
+        state.ticketFormId === undefined
+          ? undefined
+          : { ticketFormId: state.ticketFormId },
+      skipReason: "the account lists no ticket form to read",
+      verify: (data) => {
+        const ticketForm = expectObject(data.ticket_form, "ticket_form");
+        expectPresent(ticketForm.id, "ticket_form.id");
+      },
+    },
     {
       tool: "zendesk_search_tickets",
       args: { query: "type:ticket" },

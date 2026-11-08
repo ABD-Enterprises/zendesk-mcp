@@ -115,7 +115,7 @@ events, the allowlist, and the versioning policy — is in the
 [tool contracts](docs/tool-contracts.md) reference.
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 20 tools: 17 read tools and 3 write tools.
+The connector ships 21 tools: 18 read tools and 3 write tools.
 
 | Tool | Access | Purpose |
 | --- | --- | --- |
@@ -133,6 +133,7 @@ The connector ships 20 tools: 17 read tools and 3 write tools.
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) |
 | `zendesk_get_ticket_field` | Read | Read one ticket field by id |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination |
+| `zendesk_get_ticket_form` | Read | Read one ticket form by id |
 | `zendesk_list_views` | Read | List the shared and personal ticket views the authenticated user can see, with page-based pagination |
 | `zendesk_list_view_tickets` | Read | List the tickets in one view, with page-based pagination |
 | `zendesk_get_view` | Read | Read one view by id |
