@@ -22,7 +22,9 @@
  * The view tools are exercised against the account itself rather than a
  * configured id: the harness lists the views, then reads the tickets of the
  * first one the account reports and reads the view itself. An account with
- * no views at all skips those steps instead of failing.
+ * no views at all skips those steps instead of failing. The brand detail tool
+ * works the same way: the harness reads the brand the brand list step
+ * reports, so an account that lists no brand skips that step too.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -197,7 +199,8 @@ async function runSession(session, steps, ticketId, results, skipped) {
   }
 
   // Values a later step needs from an earlier one — the view id the
-  // account reported, which the view-tickets step reads.
+  // account reported, which the view-tickets step reads, and the brand id,
+  // which the brand detail step reads.
   const state = {};
 
   for (const step of steps) {
@@ -205,7 +208,7 @@ async function runSession(session, steps, ticketId, results, skipped) {
     if (args === undefined) {
       // The step has nothing to run against in this account, so it is
       // skipped rather than failed: an account with no views cannot have
-      // tickets in a view.
+      // tickets in a view, and one with no brand has no brand to read.
       skipped.push(step.tool);
       log(`SKIP ${step.tool}: ${step.skipReason}`);
       continue;
@@ -262,7 +265,24 @@ function buildSteps(ticketId) {
         expectPresent(user.id, "user.id");
       },
     },
-    listStep("zendesk_list_brands", "brands"),
+    listStep("zendesk_list_brands", "brands", {
+      // The account's own brand id, so the next step reads a brand that
+      // exists rather than one the harness invented.
+      capture: (state, data) => {
+        const id = positiveIntegerId(data.brands[0]?.id);
+        if (id !== undefined) state.brandId = id;
+      },
+    }),
+    {
+      tool: "zendesk_get_brand",
+      args: (state) =>
+        state.brandId === undefined ? undefined : { brandId: state.brandId },
+      skipReason: "the account lists no brand to read",
+      verify: (data) => {
+        const brand = expectObject(data.brand, "brand");
+        expectPresent(brand.id, "brand.id");
+      },
+    },
     listStep("zendesk_list_groups", "groups"),
     listStep("zendesk_list_users", "users"),
     // A brand-new account may genuinely have no organizations, so an empty
@@ -320,15 +340,8 @@ function buildSteps(ticketId) {
     // The account's own view id, so the next step reads a view that
     // exists rather than one the harness invented.
     capture: (state, data) => {
-      const id = data.views[0]?.id;
-      if (typeof id === "number" && Number.isSafeInteger(id) && id > 0) {
-        state.viewId = id;
-      } else if (typeof id === "string" && /^\d+$/.test(id)) {
-        const numericId = Number(id);
-        if (Number.isSafeInteger(numericId) && numericId > 0) {
-          state.viewId = numericId;
-        }
-      }
+      const id = positiveIntegerId(data.views[0]?.id);
+      if (id !== undefined) state.viewId = id;
     },
   });
   steps.push({
@@ -385,7 +398,7 @@ function expectEnvelope(data, recordCount) {
   }
 }
 
-function listStep(tool, field, { allowEmpty = false } = {}) {
+function listStep(tool, field, { allowEmpty = false, capture } = {}) {
   return {
     tool,
     args: {},
@@ -395,7 +408,24 @@ function listStep(tool, field, { allowEmpty = false } = {}) {
         throw new Error(`expected at least one record in ${field}`);
       }
     },
+    capture,
   };
+}
+
+/**
+ * The id of a record the account reported, when it is a positive integer the
+ * connector can pass on. Zendesk does not always send ids as numbers, so a
+ * string of digits is accepted too; anything else is no usable id.
+ */
+function positiveIntegerId(value) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    const numericId = Number(value);
+    if (Number.isSafeInteger(numericId) && numericId > 0) return numericId;
+  }
+  return undefined;
 }
 
 function expectArray(data, field) {

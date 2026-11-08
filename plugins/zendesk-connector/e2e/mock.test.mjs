@@ -31,6 +31,7 @@ const DUMMY_TOKEN = "example-e2e-dummy-token";
 const EXERCISED_TOOLS = [
   "zendesk_status",
   "zendesk_list_brands",
+  "zendesk_get_brand",
   "zendesk_list_groups",
   "zendesk_list_users",
   "zendesk_list_organizations",
@@ -43,11 +44,19 @@ const EXERCISED_TOOLS = [
   "zendesk_get_view",
 ];
 
+// The brand the mock reports first, so the harness reads this one.
+const EXAMPLE_BRAND_ID = 501;
+
+// The view the mock reports first, so the harness reads the tickets of
+// this one.
+const EXAMPLE_VIEW_ID = 401;
+
 // The exact set of endpoints the harness is expected to fetch, keyed by
 // pathname; compared as a set so no assertion depends on hand-written sort
 // order (and so default page/per_page query parameters cannot break it).
 const EXPECTED_REQUESTS = [
   "GET /api/v2/brands.json",
+  `GET /api/v2/brands/${EXAMPLE_BRAND_ID}.json`,
   "GET /api/v2/groups.json",
   "GET /api/v2/organizations.json",
   "GET /api/v2/search.json",
@@ -61,10 +70,6 @@ const EXPECTED_REQUESTS = [
   "GET /api/v2/views/401/tickets.json",
   "GET /api/v2/views/401.json",
 ];
-
-// The view the mock reports first, so the harness reads the tickets of
-// this one.
-const EXAMPLE_VIEW_ID = 401;
 
 test("harness runs the read-only tools against a local mock Zendesk", async (t) => {
   assert.ok(
@@ -104,7 +109,7 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   for (const tool of EXERCISED_TOOLS) {
     assert.match(run.stdout, new RegExp(`^harness: PASS ${tool}$`, "m"));
   }
-  assert.match(run.stdout, /^harness: 12 passed, 0 failed$/m);
+  assert.match(run.stdout, /^harness: 13 passed, 0 failed$/m);
 
   // The harness fetched exactly the expected endpoints, as a set.
   assert.deepEqual(new Set(mock.state.requests), new Set(EXPECTED_REQUESTS));
@@ -245,7 +250,7 @@ test("harness skips the view-tickets step when the account lists no views", asyn
   assert.match(run.stdout, /^harness: PASS zendesk_list_views$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_list_view_tickets: .*$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_get_view: .*$/m);
-  assert.match(run.stdout, /^harness: 9 passed, 0 failed, 2 skipped$/m);
+  assert.match(run.stdout, /^harness: 10 passed, 0 failed, 2 skipped$/m);
   assert.ok(
     !mock.state.requests.some((request) => request.includes("/tickets.json")),
     `the view-tickets endpoint must not be called without a view, received ${JSON.stringify(mock.state.requests)}`,
@@ -327,7 +332,17 @@ async function startMockZendesk(overrides = {}) {
     "GET /api/v2/brands.json": () => ({
       count: 1,
       next_page: null,
-      brands: [{ id: 501, name: "Example Brand", subdomain: "example" }],
+      brands: [{ id: EXAMPLE_BRAND_ID, name: "Example Brand", subdomain: "example" }],
+    }),
+    [`GET /api/v2/brands/${EXAMPLE_BRAND_ID}.json`]: () => ({
+      brand: {
+        id: EXAMPLE_BRAND_ID,
+        name: "Example Brand",
+        subdomain: "example",
+        active: true,
+        default: true,
+        url: `https://example.zendesk.com/brand/${EXAMPLE_BRAND_ID}`,
+      },
     }),
     "GET /api/v2/groups.json": () => ({
       count: 1,
