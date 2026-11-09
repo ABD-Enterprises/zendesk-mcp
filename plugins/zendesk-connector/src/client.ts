@@ -1,4 +1,4 @@
-import { ZendeskOAuth, getConfig, type ZendeskConfig } from "./auth.js";
+import { ZendeskOAuth, env, getConfig, type ZendeskConfig } from "./auth.js";
 import { safeJson } from "./json.js";
 import { isCollectionEnvelope, isObjectEnvelope } from "./responseSchemas.js";
 import { PACKAGE_VERSION } from "./version.js";
@@ -167,14 +167,27 @@ function getRetryAfterSeconds(response: Response): number {
   return Number.isFinite(reset) ? Math.max(0, reset) : 1;
 }
 
+/**
+ * Reads a retry limit from the environment.
+ *
+ * The value is read through the shared `env` helper, so the rules the
+ * connector applies to every environment variable apply here too: the value
+ * is trimmed, and an empty value or a literal `${...}` placeholder counts as
+ * unset. An unset, empty, whitespace-only or placeholder value falls back to
+ * the default rather than reaching the number parser.
+ *
+ * A value that is present is read as a JavaScript number, so `0x10` means 16
+ * and `1e1` means 10. A value that is not an integer inside the allowed
+ * range falls back to the default as well.
+ */
 function readIntegerEnv(
   name: string,
   fallback: number,
   minimum: number,
   maximum: number,
 ): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
+  const raw = env(name);
+  if (raw === undefined) return fallback;
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum
     ? parsed

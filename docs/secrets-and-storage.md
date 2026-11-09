@@ -49,11 +49,16 @@ Three settings read their value differently:
   same error when it checks the setup callback; both read the value through
   one parser, so the two commands cannot disagree about the port.
 - `ZENDESK_MAX_RETRIES` and `ZENDESK_MAX_RETRY_DELAY_MS` are read as JavaScript
-  numbers, and whitespace around a number is ignored. `0x10` means 16 and
-  `1e1` means 10 — inside the range of the longest wait, but outside the range
-  of the count, which then uses its default. A value that is not an integer
-  inside the allowed range falls back to the default, and a value of only
-  whitespace counts as 0 rather than as unset.
+  numbers, and they follow the two rules above: the value is trimmed, and an
+  empty value or a literal `${...}` placeholder counts as unset. A value that
+  is unset, empty, only whitespace, or a placeholder therefore uses the
+  default — two retries and ten thousand milliseconds. A value that is present
+  is read as a JavaScript number, so `0x10` means 16 and `1e1` means 10 —
+  inside the range of the longest wait, but outside the range of the count,
+  which then uses its default. Zero is a value of its own: it turns the
+  retries off, and it is the shortest wait the connector accepts. A value that
+  is not an integer inside the allowed range — the count from 0 to 5, the
+  longest wait from 0 to 60000 — falls back to the default as well.
 
 ### The client file
 
