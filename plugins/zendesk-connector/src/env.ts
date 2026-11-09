@@ -16,10 +16,10 @@
  *   `oauth:setup` and the doctor must report the same failure for the same
  *   input. It never routes through {@link env}.
  * - The operations console is a separate app with its own `configValue()`
- *   that mirrors this rule for its own `ZENDESK_CONSOLE_*` settings; it
- *   deliberately does not read the connector's account or credential
- *   variables, so an exported `ZENDESK_BASE_URL` cannot redirect the client
- *   secret to a different account.
+ *   for its `ZENDESK_CONSOLE_*` settings; it deliberately does not read the
+ *   connector's account or credential variables, so an exported
+ *   `ZENDESK_BASE_URL` cannot redirect the client secret to a different
+ *   account.
  *
  * What an unset value means is a per-variable policy decided by the reader:
  * most settings fall back to the saved client file or a default, while
