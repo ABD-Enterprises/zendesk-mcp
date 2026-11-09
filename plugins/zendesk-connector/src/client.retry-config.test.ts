@@ -24,7 +24,9 @@ const DEFAULT_DELAY_MS = 10_000;
 
 function accessTokenConfig(): ZendeskConfig {
   return {
-    baseUrl: "https://example.zendesk.com",
+    // If the injected fetcher is ever bypassed, this points only at loopback
+    // and fails closed instead of making an external request.
+    baseUrl: "http://127.0.0.1:1",
     mode: "access_token",
     accessToken: "oauth-access-token",
     tokenFile: "/unused/oauth.json",
@@ -100,7 +102,7 @@ function runScenario(options: {
   })();
 }
 
-test("env is restored after a scenario even when construction throws", async () => {
+test("scenario restores prior retry env values after constructing the client", async () => {
   const savedRetries = process.env[RETRIES_ENV];
   const savedDelay = process.env[DELAY_ENV];
   try {
@@ -111,6 +113,8 @@ test("env is restored after a scenario even when construction throws", async () 
       rateLimitedCalls: 1,
       retryAfterSeconds: "0",
     });
+    assert.equal(outcome.calls, 2);
+    assert.deepEqual(outcome.sleeps, [0]);
     // The scenario must restore the values that were present before it ran.
     assert.equal(process.env[RETRIES_ENV], "1");
     assert.equal(process.env[DELAY_ENV], "1");
@@ -332,14 +336,13 @@ test("documented defaults hold when both settings are unset", async () => {
   const outcome = await runScenario({
     env: { [RETRIES_ENV]: undefined, [DELAY_ENV]: undefined },
     rateLimitedCalls: DEFAULT_RETRIES,
-    retryAfterSeconds: "1",
+    retryAfterSeconds: String(DEFAULT_DELAY_MS / 1000),
   });
   assert.equal(outcome.error, undefined);
   assert.deepEqual(outcome.result, { tickets: [] });
   assert.equal(outcome.calls, DEFAULT_RETRIES + 1);
   assert.deepEqual(
     outcome.sleeps,
-    Array.from({ length: DEFAULT_RETRIES }, () => 1000),
+    Array.from({ length: DEFAULT_RETRIES }, () => DEFAULT_DELAY_MS),
   );
-  assert.equal(DEFAULT_DELAY_MS > 1000, true);
 });
