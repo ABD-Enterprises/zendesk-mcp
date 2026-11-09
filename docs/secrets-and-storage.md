@@ -57,6 +57,11 @@ unusable — value then means is decided per variable:
 | `ZENDESK_HEALTHCHECK` | `health.ts` | the flag is off | any value other than `1` or case-insensitive `true` is ignored |
 | `ZENDESK_SHUTDOWN_TIMEOUT_MS` | `shutdown.ts` | the default (5000 ms) | a non-integer or non-positive value silently uses the default |
 
+Retry counts accept integers from 0 to 5, with 0 disabling retries; the maximum
+delay accepts integers from 0 to 60000 ms, with 0 as the shortest wait. Both
+settings use JavaScript `Number` parsing (`0x10` is 16 and `1e1` is 10); a
+non-integer or out-of-range value uses the default.
+
 The callback port deliberately uses stricter handling:
 
 - `ZENDESK_OAUTH_CALLBACK_PORT` must be written as a run of decimal digits.
