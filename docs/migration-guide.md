@@ -205,9 +205,10 @@ Verify with reads first, and verify the calls the breaking change touched.
   error contract's unexpected-payload failure is the exception: a caller
   receiving it cannot tell whether a write reached Zendesk
   ([error contract](tool-contracts.md#error-contract)).
-- Read the instance's audit stream afterwards. The audit event contract does
-  not change with a version bump, so a changed event shape is a signal rather
-  than a new format ([audit contract](tool-contracts.md#audit-contract)).
+- Read the instance's audit stream afterwards and compare it with the target
+  release's documented audit contract. A shape change that was not called out
+  in the release notes is a signal rather than a new format
+  ([audit contract](tool-contracts.md#audit-contract)).
 
 ### Writes
 
@@ -229,9 +230,11 @@ The procedure is in the [operations guide](operations.md#rollback): stop new
 traffic, restore the previous artifact and the configuration that shipped with
 it, verify, resume traffic. Two points belong to a migration specifically:
 
-- Roll back per instance. Instances that passed verification stay on the new
-  release; the ones that failed return to the previous artifact. A migration
-  is not all-or-nothing across a host.
+- Roll back at the granularity the deployment supports. Independently installed
+  instances that passed verification can stay on the new release while failed
+  ones return to the previous artifact. A shared checkout or global install
+  must be treated as one unit because every instance pointing to it moves
+  together.
 - A rollback restores the software, not the credentials. If the attempt
   exposed a credential — a token written to a log, a client file copied
   somewhere shared — revoke it in Zendesk. Rolling back leaves it valid
