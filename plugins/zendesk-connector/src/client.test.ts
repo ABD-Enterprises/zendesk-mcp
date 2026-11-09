@@ -209,8 +209,8 @@ test("reads the longest wait from the environment and falls back to the default"
   // A wait of five seconds is five thousand milliseconds, which is inside the
   // default of ten thousand and is slept out. An unset value, an empty
   // value, a value of only whitespace and a `${...}` placeholder all count
-  // as unset, so the default applies to each of them; a zero is a value of
-  // its own and turns the retries off.
+  // as unset, so the default applies to each of them. A zero delay cap is a
+  // valid value, but it rejects this fixture's positive five-second wait.
   const previous = process.env.ZENDESK_MAX_RETRY_DELAY_MS;
   const previousCount = process.env.ZENDESK_MAX_RETRIES;
   try {
