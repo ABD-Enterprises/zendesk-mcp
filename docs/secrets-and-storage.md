@@ -40,7 +40,7 @@ Three rules govern how the connector reads them:
   as unset. A templating step that fails therefore leaves the connector
   unconfigured instead of authenticating with a literal placeholder string.
 
-Every variable below follows those rules through the one shared reader,
+The settings in the table below follow those rules through the one shared reader,
 `env()` in `plugins/zendesk-connector/src/env.ts`. What an unset — or
 unusable — value then means is decided per variable:
 
@@ -57,7 +57,7 @@ unusable — value then means is decided per variable:
 | `ZENDESK_HEALTHCHECK` | `health.ts` | the flag is off | any value other than `1` or case-insensitive `true` is ignored |
 | `ZENDESK_SHUTDOWN_TIMEOUT_MS` | `shutdown.ts` | the default (5000 ms) | a non-integer or non-positive value silently uses the default |
 
-Two settings read their value differently:
+The callback port deliberately uses stricter handling:
 
 - `ZENDESK_OAUTH_CALLBACK_PORT` must be written as a run of decimal digits.
   Anything else — an empty value, a `${...}` placeholder, or a number written
@@ -65,18 +65,6 @@ Two settings read their value differently:
   `npm run oauth:setup` stops with that error. `npm run doctor` reports the
   same error when it checks the setup callback; both read the value through
   one parser, so the two commands cannot disagree about the port.
-- `ZENDESK_MAX_RETRIES` and `ZENDESK_MAX_RETRY_DELAY_MS` are read as JavaScript
-  numbers, and they follow the two rules above: the value is trimmed, and an
-  empty value or a literal `${...}` placeholder counts as unset. A value that
-  is unset, empty, only whitespace, or a placeholder therefore uses the
-  default — two retries and ten thousand milliseconds. A value that is present
-  is read as a JavaScript number, so `0x10` means 16 and `1e1` means 10 —
-  inside the range of the longest wait, but outside the range of the count,
-  which then uses its default. Zero is a value of its own: it turns the
-  retries off, and it is the shortest wait the connector accepts. A value that
-  is not an integer inside the allowed range — the count from 0 to 5, the
-  longest wait from 0 to 60000 — falls back to the default as well.
-
 ### The client file
 
 The client file defaults to `~/.config/codex-zendesk/client.json` and holds the
