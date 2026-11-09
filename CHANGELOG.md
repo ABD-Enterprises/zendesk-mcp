@@ -52,6 +52,18 @@
   token with the scope in access-token mode. When the OAuth client has allowed
   scopes configured in Admin Center, add `ticket_views:read` there as well —
   Zendesk refuses the request with `400 invalid_scope` otherwise.
+- **Breaking:** the two retry settings now read their value through the same
+  environment helper as every other variable, so the value is trimmed and an
+  empty or whitespace-only value counts as unset and uses the default.
+  `ZENDESK_MAX_RETRIES` therefore allows the default two automatic `429`
+  retries, and `ZENDESK_MAX_RETRY_DELAY_MS` allows the default
+  10000-millisecond (10-second) maximum automatic rate-limit wait. A
+  whitespace-only value used to be parsed as the number zero, which turned the
+  automatic retries off and capped the rate-limit wait at no wait at all. A
+  deployment that needs the previous behavior must set the variable
+  explicitly to `0`: `ZENDESK_MAX_RETRIES=0` leaves the automatic retries off,
+  and `ZENDESK_MAX_RETRY_DELAY_MS=0` accepts no wait at all, so only a
+  rate-limited response that asks for no delay is retried.
 
 ## 0.7.0
 
