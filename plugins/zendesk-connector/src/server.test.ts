@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { INVALID_ENVELOPE_MESSAGE, ZendeskClient } from "./client.js";
+import { ALL_TOOLS } from "./policy.js";
 import { createZendeskServer } from "./server.js";
 import { PACKAGE_VERSION } from "./version.js";
 
@@ -104,13 +105,18 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
   }
 });
 
-test("publishes twenty-one annotated tools and serves status over MCP", async (t) => {
+test("publishes every policy tool in order and serves status over MCP", async (t) => {
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
+  const originalTools = process.env.ZENDESK_ALLOWED_TOOLS;
   // An ambient read-only flag would publish eighteen tools instead of twenty-one.
   delete process.env.ZENDESK_READ_ONLY;
+  // An ambient allowlist would publish a subset instead of the whole policy.
+  delete process.env.ZENDESK_ALLOWED_TOOLS;
   t.after(() => {
     if (originalReadOnly === undefined) delete process.env.ZENDESK_READ_ONLY;
     else process.env.ZENDESK_READ_ONLY = originalReadOnly;
+    if (originalTools === undefined) delete process.env.ZENDESK_ALLOWED_TOOLS;
+    else process.env.ZENDESK_ALLOWED_TOOLS = originalTools;
   });
   const fetcher: typeof fetch = async (_input, init) => {
     assert.equal(
@@ -141,7 +147,13 @@ test("publishes twenty-one annotated tools and serves status over MCP", async (t
     assert.equal(client.getServerVersion()?.version, PACKAGE_VERSION);
 
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 21);
+    // The published surface must be the policy exactly, in the policy order.
+    // The count alone would not notice a domain module that left a tool out
+    // and one that registered its tools in the wrong order.
+    assert.deepEqual(
+      tools.tools.map((tool) => tool.name),
+      [...ALL_TOOLS],
+    );
     assert.equal(
       tools.tools.find((tool) => tool.name === "zendesk_get_ticket")
         ?.annotations?.readOnlyHint,
