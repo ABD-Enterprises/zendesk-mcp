@@ -180,6 +180,13 @@ now actually returns the `commentUsers` it always promised, accepts a
 (`commentsNextPage` / `commentsNextPageNumber`); the write tools carry
 accurate MCP annotations and fuller descriptions.
 
+The general procedure for moving an existing deployment to a target release —
+reading that release's breaking changes, mapping them onto the tool clients
+and the deployment's configuration, staging and validating the change — is in
+the [migration guide](docs/migration-guide.md). No release migrates a
+deployment automatically: the operator makes every change, and the
+release-specific facts stay in the changelog and in this README.
+
 ## Requirements
 
 - Node.js 20 or newer

@@ -100,9 +100,9 @@ new Zendesk credentials or customer-side configuration:
 3. Record the current browser-only boundary for this product while Explore API
    endpoints and scopes remain unverified
    ([explore-boundary.md](explore-boundary.md)).
-4. Plan and draft migration and breaking-change documentation for
-   existing deployments; upgrade and rollback guidance already exists in
-   `docs/operations.md`.
+4. Document the migration and breaking-change process for
+   existing deployments ([migration-guide.md](migration-guide.md)); upgrade
+   and rollback guidance already exists in `docs/operations.md`.
 
 ## Explicit non-goals
 
