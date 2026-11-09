@@ -1,4 +1,5 @@
-import { env, ZendeskAuthError } from "./auth.js";
+import { env } from "./env.js";
+import { ZendeskAuthError } from "./auth.js";
 
 /**
  * Every tool the connector compiles, in the order the server registers them.

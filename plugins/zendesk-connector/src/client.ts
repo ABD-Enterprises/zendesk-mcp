@@ -1,4 +1,5 @@
-import { ZendeskOAuth, env, getConfig, type ZendeskConfig } from "./auth.js";
+import { env } from "./env.js";
+import { ZendeskOAuth, getConfig, type ZendeskConfig } from "./auth.js";
 import { safeJson } from "./json.js";
 import { isCollectionEnvelope, isObjectEnvelope } from "./responseSchemas.js";
 import { PACKAGE_VERSION } from "./version.js";

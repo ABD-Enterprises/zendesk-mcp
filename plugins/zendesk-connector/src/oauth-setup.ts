@@ -11,7 +11,6 @@ import {
   CALLBACK_PORT_ERROR,
   INVALID_MODE_MESSAGE,
   buildConfig,
-  env,
   getConfig,
   isValidCallbackPort,
   oauthClientFilePath,
@@ -23,6 +22,7 @@ import {
   type StoredToken,
   type ZendeskConfig,
 } from "./auth.js";
+import { env } from "./env.js";
 import { errorMessage } from "./errors.js";
 import { safeJson } from "./json.js";
 import { isOAuthMode } from "./oauthModes.js";

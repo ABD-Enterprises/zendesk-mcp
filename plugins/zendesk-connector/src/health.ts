@@ -1,4 +1,5 @@
 import { getConfig } from "./auth.js";
+import { env } from "./env.js";
 import { isOAuthMode } from "./oauthModes.js";
 import { configuredTools } from "./policy.js";
 
@@ -35,10 +36,10 @@ export function isHealthCheckFlag(argv: string[]): boolean {
  */
 export function isHealthCheckRequested(
   argv: string[] = process.argv.slice(2),
-  env: NodeJS.ProcessEnv = process.env,
+  envMap: NodeJS.ProcessEnv = process.env,
 ): boolean {
   if (isHealthCheckFlag(argv)) return true;
-  const flag = env.ZENDESK_HEALTHCHECK?.trim().toLowerCase();
+  const flag = env("ZENDESK_HEALTHCHECK", envMap)?.toLowerCase();
   return flag === "1" || flag === "true";
 }
 

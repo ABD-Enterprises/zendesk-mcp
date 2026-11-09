@@ -250,6 +250,14 @@ test("reads the watchdog timeout from the environment", () => {
     resolveShutdownTimeoutMs({ ZENDESK_SHUTDOWN_TIMEOUT_MS: "0" }),
     5000,
   );
+  assert.equal(
+    resolveShutdownTimeoutMs({ ZENDESK_SHUTDOWN_TIMEOUT_MS: "   " }),
+    5000,
+  );
+  assert.equal(
+    resolveShutdownTimeoutMs({ ZENDESK_SHUTDOWN_TIMEOUT_MS: "${TIMEOUT}" }),
+    5000,
+  );
 });
 
 test("arms the watchdog with the configured timeout", () => {
