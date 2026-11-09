@@ -12,6 +12,11 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { safeJson } from "./json.js";
 import { isOAuthMode, type OAuthMode } from "./oauthModes.js";
+import { env } from "./env.js";
+
+// The shared environment reader lives in `env.ts`; it is re-exported here
+// because this module is where existing importers expect to find it.
+export { env } from "./env.js";
 
 // The mode type and the mode list live in `oauthModes.ts`, so the setup can
 // check a mode against the same list without importing this module. They
@@ -640,12 +645,6 @@ function validateBaseUrl(value: string): string {
     );
   }
   return url.origin;
-}
-
-/** Reads a trimmed env value; empty and literal `${...}` placeholders count as unset. */
-export function env(name: string): string | undefined {
-  const value = process.env[name]?.trim();
-  return value && !/^\$\{[^}]+\}$/.test(value) ? value : undefined;
 }
 
 function isExpiring(token: StoredToken): boolean {

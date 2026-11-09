@@ -171,6 +171,15 @@ test("detects the healthcheck flag and environment variable", () => {
   assert.equal(isHealthCheckRequested(["--other"], {}), false);
 });
 
+test("treats an empty, whitespace or placeholder healthcheck value as unset", () => {
+  assert.equal(isHealthCheckRequested([], { ZENDESK_HEALTHCHECK: "" }), false);
+  assert.equal(isHealthCheckRequested([], { ZENDESK_HEALTHCHECK: "   " }), false);
+  assert.equal(
+    isHealthCheckRequested([], { ZENDESK_HEALTHCHECK: "${FLAG}" }),
+    false,
+  );
+});
+
 function config(overrides: Partial<ZendeskConfig> = {}): ZendeskConfig {
   return {
     baseUrl: "https://example.zendesk.com",

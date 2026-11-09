@@ -1,4 +1,5 @@
 import type { ShutdownLogEvent, ShutdownTrigger } from "./audit.js";
+import { env } from "./env.js";
 
 /** The termination signals the server reacts to. */
 export type ShutdownSignal = "SIGINT" | "SIGTERM";
@@ -126,10 +127,10 @@ export function installShutdownHandlers(
 
 /** Reads the watchdog timeout from the environment, falling back to 5000 ms. */
 export function resolveShutdownTimeoutMs(
-  env: NodeJS.ProcessEnv = process.env,
+  envMap: NodeJS.ProcessEnv = process.env,
 ): number {
-  const raw = env.ZENDESK_SHUTDOWN_TIMEOUT_MS?.trim();
-  if (!raw) return DEFAULT_SHUTDOWN_TIMEOUT_MS;
+  const raw = env("ZENDESK_SHUTDOWN_TIMEOUT_MS", envMap);
+  if (raw === undefined) return DEFAULT_SHUTDOWN_TIMEOUT_MS;
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     return DEFAULT_SHUTDOWN_TIMEOUT_MS;

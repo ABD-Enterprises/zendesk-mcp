@@ -40,7 +40,24 @@ Three rules govern how the connector reads them:
   as unset. A templating step that fails therefore leaves the connector
   unconfigured instead of authenticating with a literal placeholder string.
 
-Three settings read their value differently:
+Every variable below follows those rules through the one shared reader,
+`env()` in `plugins/zendesk-connector/src/env.ts`. What an unset — or
+unusable — value then means is decided per variable:
+
+| Variable | Read by | An unset value | An unusable value |
+| --- | --- | --- | --- |
+| `ZENDESK_SUBDOMAIN`, `ZENDESK_BASE_URL` | `auth.ts` (`resolveBaseUrl`) | falls back to the client file, then to "unconfigured" | a URL that is not HTTPS (except localhost HTTP) or a subdomain with invalid characters fails startup |
+| `ZENDESK_OAUTH_MODE` | `auth.ts` (`buildConfig`), `oauth-setup.ts` | falls back to the client file, then inferred from the credentials | anything that is not one of the three modes fails startup (`ZENDESK_OAUTH_MODE must be authorization_code, client_credentials, or access_token`) |
+| `ZENDESK_OAUTH_CLIENT_ID`, `ZENDESK_OAUTH_CLIENT_SECRET`, `ZENDESK_OAUTH_ACCESS_TOKEN` | `auth.ts` (`buildConfig`) | falls back to the client file (the access token has no file field) | a missing credential for the selected mode fails startup |
+| `ZENDESK_OAUTH_SCOPE` | `auth.ts` (`buildConfig`) | falls back to the client file, then to the built-in default scope | — |
+| `ZENDESK_OAUTH_CLIENT_FILE`, `ZENDESK_OAUTH_TOKEN_FILE` | `auth.ts` | client file: the default client-file path; token file: the client's `tokenFile` field, then the default token-file path | an explicitly set but unreadable client file fails startup |
+| `ZENDESK_MAX_RETRIES`, `ZENDESK_MAX_RETRY_DELAY_MS` | `client.ts` (`readIntegerEnv`) | the default (2 retries, 10000 ms) | a non-integer or out-of-range value silently uses the default |
+| `ZENDESK_READ_ONLY` | `policy.ts` | read-only mode off | anything that is not `1`, `true`, `0` or `false` fails startup |
+| `ZENDESK_ALLOWED_TOOLS` | `policy.ts` | the full tool list (or the read tools in read-only mode) | an empty, duplicate, unknown or read-only-conflicting list fails startup |
+| `ZENDESK_HEALTHCHECK` | `health.ts` | the flag is off | any value other than `1` or `true` is ignored |
+| `ZENDESK_SHUTDOWN_TIMEOUT_MS` | `shutdown.ts` | the default (5000 ms) | a non-integer or non-positive value silently uses the default |
+
+Two settings read their value differently:
 
 - `ZENDESK_OAUTH_CALLBACK_PORT` must be written as a run of decimal digits.
   Anything else — an empty value, a `${...}` placeholder, or a number written
@@ -129,8 +146,16 @@ The operations console reads the same client file, from
 `client_credentials` grant. It does not read `ZENDESK_OAUTH_CLIENT_ID` or
 `ZENDESK_OAUTH_CLIENT_SECRET` from the environment, and it neither writes nor
 reads a token file: its access token lives in the process memory for the
-lifetime of the console. The console applies the same owner-only rule to the
-client file it reads, and refuses to use a file that is accessible to group
+lifetime of the console. The boundary is deliberate: taking the account URL
+from an exported `ZENDESK_BASE_URL` while taking the client secret from the
+client file could send the secret to an account the file does not name, so the
+console follows the file for credentials and never the environment. Its own
+`ZENDESK_CONSOLE_*` settings are read by its own `configValue()` in
+`apps/operations-console/server.mjs`, which mirrors the connector's rule —
+trimmed, with an empty or literal `${...}` value counting as unset — as a
+separate implementation rather than a shared import, because the console is a
+standalone app. The console applies the same owner-only rule to the client
+file it reads, and refuses to use a file that is accessible to group
 or other (except on Windows, where Node reports synthetic permission bits
 regardless of the file's ACLs and the check is skipped there): the console
 keeps running, and its dashboard answers `503` with the reason.
