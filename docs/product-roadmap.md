@@ -71,8 +71,9 @@ of scope.
   read-only lists.
 - Add views, triggers, macros, automations, and SLA resources.
 - Add Guide categories, sections, and articles.
-- Investigate and add supported Explore dashboard/report operations where the
-  Zendesk API exposes them; otherwise document the browser-only boundary.
+- Investigate and add supported Explore dashboard/report operations when a
+  documented and sandbox-verified API surface exists; until then, follow this
+  product's browser-only boundary ([explore-boundary.md](explore-boundary.md)).
 - Keep each module's OAuth scopes and read/write behavior explicit.
 
 ### v1.0: Supported product
@@ -96,8 +97,9 @@ new Zendesk credentials or customer-side configuration:
    (design: [resource-module-design.md](resource-module-design.md)).
 2. Extend the brands, groups, users, and organizations tools beyond their
    existing read-only lists.
-3. Investigate the Explore dashboard and report surface and write up the
-   browser-only boundary where the Zendesk API does not expose it.
+3. Record the current browser-only boundary for this product while Explore API
+   endpoints and scopes remain unverified
+   ([explore-boundary.md](explore-boundary.md)).
 4. Plan and draft migration and breaking-change documentation for
    existing deployments; upgrade and rollback guidance already exists in
    `docs/operations.md`.
