@@ -127,12 +127,16 @@ test("waits one second when the rate-limit reset header is not a number", async 
   assert.deepEqual(sleeps, [1000, 1000]);
 });
 
-test("reads the retry limit the way the example environment file says", async () => {
+test("reads the retry limit from the environment and falls back to the default", async () => {
   // Whitespace around a number is ignored, a value that is not an integer
-  // inside the allowed range falls back to the default of two, and a value of
-  // only whitespace counts as 0 rather than as unset.
+  // inside the allowed range falls back to the default of two, and a value
+  // that is only whitespace counts as unset rather than as zero.
   const previous = process.env.ZENDESK_MAX_RETRIES;
   try {
+    // An unset value uses the default of two retries.
+    delete process.env.ZENDESK_MAX_RETRIES;
+    assert.equal(await rateLimitedCalls(), 3);
+
     process.env.ZENDESK_MAX_RETRIES = " 3 ";
     assert.equal(await rateLimitedCalls(), 4);
 
@@ -143,8 +147,29 @@ test("reads the retry limit the way the example environment file says", async ()
     process.env.ZENDESK_MAX_RETRIES = "6";
     assert.equal(await rateLimitedCalls(), 3);
 
+    // An empty value, a value of only whitespace and a `${...}` placeholder
+    // count as unset, so the default of two is used for each of them.
+    process.env.ZENDESK_MAX_RETRIES = "";
+    assert.equal(await rateLimitedCalls(), 3);
+
     process.env.ZENDESK_MAX_RETRIES = " ";
+    assert.equal(await rateLimitedCalls(), 3);
+
+    process.env.ZENDESK_MAX_RETRIES = "${ZENDESK_MAX_RETRIES}";
+    assert.equal(await rateLimitedCalls(), 3);
+
+    // Zero is a value of its own: it turns the retries off.
+    process.env.ZENDESK_MAX_RETRIES = "0";
     assert.equal(await rateLimitedCalls(), 1);
+
+    // A number written as a hexadecimal or an exponent is read as the
+    // JavaScript number it names. Sixteen and ten are both outside the range
+    // of the count, so the default of two is used for each of them.
+    process.env.ZENDESK_MAX_RETRIES = "0x10";
+    assert.equal(await rateLimitedCalls(), 3);
+
+    process.env.ZENDESK_MAX_RETRIES = "1e1";
+    assert.equal(await rateLimitedCalls(), 3);
   } finally {
     if (previous === undefined) delete process.env.ZENDESK_MAX_RETRIES;
     else process.env.ZENDESK_MAX_RETRIES = previous;
@@ -172,6 +197,64 @@ test("reads the longest wait the way the example environment file says", async (
     // thousand is used and the wait is too long again.
     process.env.ZENDESK_MAX_RETRY_DELAY_MS = "60001";
     assert.equal(await rateLimitedCalls({ "retry-after": "30" }), 1);
+  } finally {
+    if (previous === undefined) delete process.env.ZENDESK_MAX_RETRY_DELAY_MS;
+    else process.env.ZENDESK_MAX_RETRY_DELAY_MS = previous;
+    if (previousCount === undefined) delete process.env.ZENDESK_MAX_RETRIES;
+    else process.env.ZENDESK_MAX_RETRIES = previousCount;
+  }
+});
+
+test("reads the longest wait from the environment and falls back to the default", async () => {
+  // A wait of five seconds is five thousand milliseconds, which is inside the
+  // default of ten thousand and is slept out. An unset value, an empty
+  // value, a value of only whitespace and a `${...}` placeholder all count
+  // as unset, so the default applies to each of them. A zero delay cap is a
+  // valid value, but it rejects this fixture's positive five-second wait.
+  const previous = process.env.ZENDESK_MAX_RETRY_DELAY_MS;
+  const previousCount = process.env.ZENDESK_MAX_RETRIES;
+  try {
+    // The count of retries is read from the environment as well, and the
+    // sends below assume its default of two: an operator who exports it must
+    // not change what the suite measures.
+    delete process.env.ZENDESK_MAX_RETRIES;
+
+    delete process.env.ZENDESK_MAX_RETRY_DELAY_MS;
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 3);
+
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 3);
+
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = " ";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 3);
+
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "${ZENDESK_MAX_RETRY_DELAY_MS}";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 3);
+
+    // Zero is a value of its own: no wait is ever slept out.
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "0";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 1);
+
+    // Whitespace around a number is ignored, so four thousand is read as
+    // four thousand and the five-second wait is too long.
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = " 4000 ";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 1);
+
+    // A number written as a hexadecimal or an exponent is read as the
+    // JavaScript number it names: sixteen and one thousand milliseconds.
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "0x10";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 1);
+
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "1e3";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 1);
+
+    // A value that is not a number, and a value that is not an integer,
+    // fall back to the default of ten thousand.
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "abc";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 3);
+
+    process.env.ZENDESK_MAX_RETRY_DELAY_MS = "1.5";
+    assert.equal(await rateLimitedCalls({ "retry-after": "5" }), 3);
   } finally {
     if (previous === undefined) delete process.env.ZENDESK_MAX_RETRY_DELAY_MS;
     else process.env.ZENDESK_MAX_RETRY_DELAY_MS = previous;

@@ -511,6 +511,19 @@ server writes `server_start` and `server_shutdown` events to stderr.
 
 Secret storage and secret-manager patterns: [Secrets and storage](docs/secrets-and-storage.md).
 
+**Compatibility note:** the two retry settings now follow the same environment
+rules as the other variables: the value is trimmed, and an empty or
+whitespace-only value counts as unset and uses the default in the table above.
+A whitespace-only `ZENDESK_MAX_RETRIES` therefore allows the default two
+automatic `429` retries, and a whitespace-only `ZENDESK_MAX_RETRY_DELAY_MS`
+allows the default 10000-millisecond (10-second) maximum automatic rate-limit
+wait. A whitespace-only value used to be parsed as the number zero, which
+turned the automatic retries off and capped the rate-limit wait at no wait at
+all. Set the variable explicitly to `0` to keep that behavior:
+`ZENDESK_MAX_RETRIES=0` leaves the automatic retries off, and
+`ZENDESK_MAX_RETRY_DELAY_MS=0` accepts no wait at all, so only a rate-limited
+response that asks for no delay is retried.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
