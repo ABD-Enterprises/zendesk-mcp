@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Pull requests are now welcome with a DCO sign-off (`git commit -s`): `CONTRIBUTING.md` says so, and a new `dco` workflow checks the sign-off on pull requests from outside contributors.
 - Add read-only `zendesk_list_triggers` and `zendesk_get_trigger` tools: they
   list Zendesk triggers (the business rules that fire on ticket events) with
   page-based pagination and read one trigger by its `triggerId`, returning
