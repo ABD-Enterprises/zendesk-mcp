@@ -34,7 +34,7 @@
 - [ ] Confirm npm trusted publishing is armed (one-time per package, plus a
   per-release variable check): on npmjs.com, for
   `@abd-enterprises/zendesk-mcp`, Settings → Trusted Publisher → GitHub
-  Actions, register `ABD-Enterprises/zendesk-mcp` with workflow file
+  Actions, register `SureForgeTech/zendesk-mcp` with workflow file
   `release.yml` (the caller — GitHub's OIDC `workflow_ref` claim names the
   calling workflow of a reusable-workflow job), and grant **Allow npm
   publish** — configurations created
