@@ -150,6 +150,14 @@ const TOOL_DETAILS = {
     summary: "Read one view by id",
     inputs: "`viewId` int (required)",
   },
+  zendesk_list_triggers: {
+    summary: "List triggers (ticket business rules) with page-based pagination",
+    inputs: "`page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_get_trigger: {
+    summary: "Read one trigger by id",
+    inputs: "`triggerId` int (required)",
+  },
 };
 
 // --- Reading the tool policy ------------------------------------------------

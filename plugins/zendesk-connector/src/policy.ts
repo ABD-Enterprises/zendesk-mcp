@@ -33,6 +33,8 @@ export const ALL_TOOLS = [
   "zendesk_list_views",
   "zendesk_list_view_tickets",
   "zendesk_get_view",
+  "zendesk_list_triggers",
+  "zendesk_get_trigger",
 ] as const;
 
 export type ZendeskToolName = (typeof ALL_TOOLS)[number];

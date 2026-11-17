@@ -28,6 +28,12 @@
  * reports, the ticket field the ticket-field list step reports and the
  * ticket form the ticket-form list step reports, so an account that lists no
  * brand, no group, no ticket field or no ticket form skips that step too.
+ *
+ * The trigger tools follow the list-then-read pattern too, and they name
+ * one extra skip: reading triggers needs an OAuth scope the default scope
+ * does not include, so a token the account denies answers HTTP 403. A step
+ * marked allowForbidden treats that denial as a skip, keeping the harness
+ * useful on sandboxes whose client is not granted the trigger scope.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -227,6 +233,13 @@ async function runSession(session, steps, ticketId, results, skipped) {
         name: step.tool,
         arguments: args,
       });
+      // A step the account denies for want of an OAuth scope is a skip, not
+      // a failure: the sandbox simply cannot exercise this tool.
+      if (step.allowForbidden && isForbiddenToolResult(result)) {
+        skipped.push(step.tool);
+        log(`SKIP ${step.tool}: the sandbox token lacks the scope this tool needs`);
+        continue;
+      }
       const data = verifyToolResult(step, result, {
         allowEmptySearch: ticketId === undefined,
       });
@@ -432,7 +445,54 @@ function buildSteps(ticketId) {
     },
   });
 
+  // The triggers come last, after the views: they follow the same
+  // list-then-read pattern, and a sandbox whose token lacks the trigger
+  // scope answers 403, which these steps skip instead of failing.
+  steps.push({
+    tool: "zendesk_list_triggers",
+    args: {},
+    allowForbidden: true,
+    verify: (data) => {
+      const triggers = expectArray(data, "triggers");
+      expectEnvelope(data, triggers.length);
+      for (const [index, trigger] of triggers.entries()) {
+        expectPresent(trigger?.id, `triggers[${index}].id`);
+      }
+    },
+    // The account's own trigger id, so the next step reads a trigger that
+    // exists rather than one the harness invented.
+    capture: (state, data) => {
+      const id = positiveIntegerId(data.triggers[0]?.id);
+      if (id !== undefined) state.triggerId = id;
+    },
+  });
+  steps.push({
+    tool: "zendesk_get_trigger",
+    args: (state) =>
+      state.triggerId === undefined ? undefined : { triggerId: state.triggerId },
+    skipReason: "the account lists no trigger to read",
+    allowForbidden: true,
+    verify: (data) => {
+      const trigger = expectObject(data.trigger, "trigger");
+      expectPresent(trigger.id, "trigger.id");
+    },
+  });
+
   return steps;
+}
+
+/**
+ * True when a tool answered that the token is not allowed to run it: the
+ * connector reports the HTTP status alongside the error, so a 403 result is
+ * the account denying the scope, distinct from a missing record.
+ */
+function isForbiddenToolResult(result) {
+  if (!result?.isError) return false;
+  try {
+    return JSON.parse(toolText(result))?.status === 403;
+  } catch {
+    return false;
+  }
 }
 
 /**

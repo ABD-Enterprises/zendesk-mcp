@@ -1066,6 +1066,118 @@ const EXAMPLE_VIEW = {
   active: true,
   conditions: { all: [{ field: "status", operator: "is", value: "open" }] },
 };
+
+const EXAMPLE_TRIGGER = {
+  id: 481,
+  title: "Example trigger",
+  active: true,
+  position: 1,
+  conditions: { all: [{ field: "status", operator: "is", value: "open" }] },
+  actions: [{ field: "notification_user", value: ["7001", "Example notice"] }],
+};
+
+test("reads one trigger by id and returns the trigger object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/triggers/481.json") {
+      return { trigger: EXAMPLE_TRIGGER, unknown_trigger_field: "kept" };
+    }
+    return { triggers: [EXAMPLE_TRIGGER], count: 1 };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_trigger", {
+      triggerId: 481,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/triggers/481.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the trigger object, and fields
+    // the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["trigger"]);
+    assert.deepEqual(payload.trigger, EXAMPLE_TRIGGER);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe trigger id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ trigger: EXAMPLE_TRIGGER }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const triggerId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "481",
+    ]) {
+      const result = await callContract(session.client, "zendesk_get_trigger", {
+        triggerId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed trigger envelope and an API error for a trigger", async () => {
+  const { client, requests } = contractClient(() => ({
+    trigger: "not-an-object",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(session.client, "zendesk_get_trigger", {
+      triggerId: 481,
+    });
+    assert.equal(malformed.isError, true);
+    // A successful response that does not carry the expected envelope fails
+    // with the fixed message and leaks no part of the raw body.
+    assert.deepEqual(JSON.parse(malformed.text), { error: INVALID_ENVELOPE_MESSAGE });
+    assert.equal(requests.length, 1);
+  } finally {
+    await session.close();
+  }
+
+  // A Zendesk failure surfaces with its HTTP status and Zendesk's own body.
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "triggers:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(failingSession.client, "zendesk_get_trigger", {
+      triggerId: 481,
+    });
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
 test("reads one view by id and returns the view object untouched", async () => {
   const { client, requests } = contractClient((url) => {
     if (url.pathname === "/api/v2/views/8810.json") {
@@ -1332,6 +1444,8 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_views",
       "zendesk_list_view_tickets",
       "zendesk_get_view",
+      "zendesk_list_triggers",
+      "zendesk_get_trigger",
     ].join(","),
   );
 
@@ -1392,6 +1506,8 @@ test("marks the write tools that overwrite or send as destructive, and pins the 
       "zendesk_list_views",
       "zendesk_list_view_tickets",
       "zendesk_get_view",
+      "zendesk_list_triggers",
+      "zendesk_get_trigger",
     ]) {
       assert.deepEqual(
         annotation(name),
@@ -1514,7 +1630,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_get_trigger,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);

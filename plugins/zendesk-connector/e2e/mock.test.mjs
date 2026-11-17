@@ -45,7 +45,12 @@ const EXERCISED_TOOLS = [
   "zendesk_list_views",
   "zendesk_list_view_tickets",
   "zendesk_get_view",
+  "zendesk_list_triggers",
+  "zendesk_get_trigger",
 ];
+
+// The trigger the mock reports first, so the harness reads this one.
+const EXAMPLE_TRIGGER_ID = 481;
 
 // The brand the mock reports first, so the harness reads this one.
 const EXAMPLE_BRAND_ID = 501;
@@ -84,6 +89,8 @@ const EXPECTED_REQUESTS = [
   "GET /api/v2/views.json",
   "GET /api/v2/views/401/tickets.json",
   "GET /api/v2/views/401.json",
+  "GET /api/v2/triggers.json",
+  `GET /api/v2/triggers/${EXAMPLE_TRIGGER_ID}.json`,
 ];
 
 test("harness runs the read-only tools against a local mock Zendesk", async (t) => {
@@ -124,7 +131,7 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   for (const tool of EXERCISED_TOOLS) {
     assert.match(run.stdout, new RegExp(`^harness: PASS ${tool}$`, "m"));
   }
-  assert.match(run.stdout, /^harness: 16 passed, 0 failed$/m);
+  assert.match(run.stdout, /^harness: 18 passed, 0 failed$/m);
 
   // The harness fetched exactly the expected endpoints, as a set.
   assert.deepEqual(new Set(mock.state.requests), new Set(EXPECTED_REQUESTS));
@@ -265,10 +272,54 @@ test("harness skips the view-tickets step when the account lists no views", asyn
   assert.match(run.stdout, /^harness: PASS zendesk_list_views$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_list_view_tickets: .*$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_get_view: .*$/m);
-  assert.match(run.stdout, /^harness: 13 passed, 0 failed, 2 skipped$/m);
+  assert.match(run.stdout, /^harness: 15 passed, 0 failed, 2 skipped$/m);
   assert.ok(
     !mock.state.requests.some((request) => request.includes("/tickets.json")),
     `the view-tickets endpoint must not be called without a view, received ${JSON.stringify(mock.state.requests)}`,
+  );
+});
+
+test("harness skips the trigger steps when the token lacks the trigger scope", async (t) => {
+  assert.ok(
+    existsSync(serverBuildPath),
+    `built server not found at ${serverBuildPath} — run \`npm run build\` from plugins/zendesk-connector first`,
+  );
+
+  // A sandbox whose OAuth client is not granted the trigger scope answers
+  // 403: the trigger steps skip rather than fail, and nothing else changes.
+  const mock = await startMockZendesk({
+    "GET /api/v2/triggers.json": () => ({
+      status: 403,
+      body: {
+        error: "Forbidden",
+        description: "You do not have permission to view triggers",
+      },
+    }),
+  });
+  t.after(() => closeMock(mock));
+
+  const run = await runHarness({
+    extraEnv: {
+      ZENDESK_BASE_URL: `http://127.0.0.1:${mock.port}`,
+      ZENDESK_OAUTH_ACCESS_TOKEN: DUMMY_TOKEN,
+    },
+    removeNames: ["ZENDESK_SUBDOMAIN", "ZENDESK_E2E_TICKET_ID"],
+  });
+
+  assert.equal(
+    run.exit,
+    0,
+    `harness should pass\nstdout:\n${run.stdout}\nstderr:\n${run.stderr}`,
+  );
+  assert.match(
+    run.stdout,
+    /^harness: SKIP zendesk_list_triggers: the sandbox token lacks the scope this tool needs$/m,
+  );
+  assert.match(run.stdout, /^harness: SKIP zendesk_get_trigger: .*$/m);
+  assert.match(run.stdout, /^harness: 15 passed, 0 failed, 2 skipped$/m);
+  assert.ok(
+    !mock.state.requests.some((request) => request.includes("/triggers/")),
+    `the trigger detail endpoint must not be called without a trigger, received ${JSON.stringify(mock.state.requests)}`,
   );
 });
 
@@ -491,6 +542,34 @@ async function startMockZendesk(overrides = {}) {
         shared: true,
       },
     }),
+    "GET /api/v2/triggers.json": () => ({
+      count: 1,
+      next_page: null,
+      triggers: [
+        {
+          id: EXAMPLE_TRIGGER_ID,
+          title: "Example trigger",
+          active: true,
+          position: 1,
+          conditions: { all: [{ field: "status", operator: "is", value: "open" }] },
+          actions: [
+            { field: "notification_user", value: ["7001", "Example notice"] },
+          ],
+        },
+      ],
+    }),
+    [`GET /api/v2/triggers/${EXAMPLE_TRIGGER_ID}.json`]: () => ({
+      trigger: {
+        id: EXAMPLE_TRIGGER_ID,
+        title: "Example trigger",
+        active: true,
+        position: 1,
+        conditions: { all: [{ field: "status", operator: "is", value: "open" }] },
+        actions: [
+          { field: "notification_user", value: ["7001", "Example notice"] },
+        ],
+      },
+    }),
     ...overrides,
   };
 
@@ -507,8 +586,21 @@ async function startMockZendesk(overrides = {}) {
       response.end(JSON.stringify({ error: "no mock route" }));
       return;
     }
+    // An override may answer with a status other than 200 by returning
+    // { status, body } instead of a bare payload.
+    const answered = route();
+    if (
+      answered &&
+      typeof answered === "object" &&
+      "status" in answered &&
+      "body" in answered
+    ) {
+      response.writeHead(answered.status, { "content-type": "application/json" });
+      response.end(JSON.stringify(answered.body));
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(route()));
+    response.end(JSON.stringify(answered));
   });
 
   await new Promise((resolve, reject) => {

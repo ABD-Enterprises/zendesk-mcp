@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 21 tools: 18 read tools and 3 write tools.
+The connector ships 23 tools: 20 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -38,6 +38,8 @@ The connector ships 21 tools: 18 read tools and 3 write tools.
 | `zendesk_list_views` | Read | List the shared and personal ticket views the authenticated user can see, with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_view_tickets` | Read | List the tickets in one view, with page-based pagination | `viewId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_view` | Read | Read one view by id | `viewId` int (required) | Yes |
+| `zendesk_list_triggers` | Read | List triggers (ticket business rules) with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_get_trigger` | Read | Read one trigger by id | `triggerId` int (required) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `public` bool (default true); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of non-empty strings (optional) | Yes |
 | `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one non-empty string (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
@@ -370,7 +372,8 @@ zendesk_list_groups,zendesk_get_group,zendesk_list_users,\
 zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
 zendesk_list_ticket_fields,zendesk_get_ticket_field,\
 zendesk_list_ticket_forms,zendesk_get_ticket_form,zendesk_list_views,\
-zendesk_list_view_tickets,zendesk_get_view"
+zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\
+zendesk_get_trigger"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 

@@ -137,8 +137,9 @@ behavior before choosing an initial audience.
   evaluation order is significant; reordering is a global side effect that
   deserves its own deliberation, not a bundled parameter).
 
-**Initial read surface:** `zendesk_list_triggers`,
-`zendesk_get_trigger`. Example envelope (invented values):
+**Initial read surface:** shipped (`zendesk_list_triggers`,
+`zendesk_get_trigger`), following the views module's list-then-read pattern.
+Example envelope (invented values):
 
 ```json
 {
@@ -165,6 +166,11 @@ a response missing that key; it does not establish Zendesk's response
 contract.
 
 **Scope:** `triggers:read` / `triggers:write` — **candidates**, unverified.
+The read tools shipped before sandbox verification: they fail with the
+account's own 403 when the token lacks the scope, which the list tool's
+description says plainly. Confirm the scope string against current endpoint
+documentation and a sandbox token, and update this marking, before any write
+tool is scheduled.
 
 ## Macros module
 
