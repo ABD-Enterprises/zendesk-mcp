@@ -586,4 +586,4 @@ Zendesk sandbox before enabling write tools against a production account.
 MIT. See [LICENSE](LICENSE).
 
 Zendesk is a trademark of Zendesk, Inc. This project is independently maintained
-by ABD Enterprises and is not affiliated with or endorsed by Zendesk, Inc.
+by SureForgeTech and is not affiliated with or endorsed by Zendesk, Inc.
