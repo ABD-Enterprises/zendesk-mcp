@@ -589,7 +589,7 @@ Zendesk sandbox before enabling write tools against a production account.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
 
 Zendesk is a trademark of Zendesk, Inc. This project is independently maintained
 by SureForgeTech and is not affiliated with or endorsed by Zendesk, Inc.
