@@ -13,6 +13,8 @@ check confirms the sign-off on pull requests from outside contributors. Every
 pull request gets review and must pass the required checks before a maintainer
 merges it.
 
+CodeRabbit (free open-source plan) may comment on pull requests. Its reviews are advice only and never required. On repositories with fewer than 10 stars it does not run on its own; comment `@coderabbitai review` to trigger it.
+
 - For how to write a good issue, see the
   [SureForgeTech contributing guide](https://github.com/SureForgeTech/.github/blob/main/CONTRIBUTING.md).
 - Do not report security problems in a public issue; follow

@@ -36,7 +36,7 @@ jobs:
           missing=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" \
             --jq '.[] | select((.parents | length) == 1) | select((.commit.message | test("(^|\n)Signed-off-by: [^\n]+ <[^>\n]+>(\n|$)")) | not) | .sha[0:12]')
           if [ -n "$missing" ]; then
-            echo "These commits are missing a Signed-off-by line (use git commit -s, then git push --force-with-lease):"
+            echo "These commits are missing a Signed-off-by line (amend them with git commit -s, then force-push the branch with --force-with-lease):"
             echo "$missing"
             exit 1
           fi
