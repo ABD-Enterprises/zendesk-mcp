@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report security issues through GitHub's private vulnerability reporting for
-`ABD-Enterprises/zendesk-mcp`. Do not open a public issue for suspected
+`SureForgeTech/zendesk-mcp`. Do not open a public issue for suspected
 credential exposure, authentication bypasses, or vulnerabilities that could
 modify or disclose Zendesk data.
 
@@ -74,7 +74,7 @@ An incident here is one of the following:
 - Ticket data leaked through a log sink.
 
 Contact: report through GitHub's private vulnerability reporting for
-`ABD-Enterprises/zendesk-mcp`, the channel named under "Reporting a
+`SureForgeTech/zendesk-mcp`, the channel named under "Reporting a
 vulnerability" above. Owner-defined placeholder contact:
 `security@example.invalid`, a reserved example address the owner replaces
 with a real monitored contact; this repository names no person or address.

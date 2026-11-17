@@ -13,7 +13,7 @@ The shortest path from a clean machine to a running server (requires
 [Node.js 20 or newer](#requirements)):
 
 ```sh
-git clone https://github.com/ABD-Enterprises/zendesk-mcp.git
+git clone https://github.com/SureForgeTech/zendesk-mcp.git
 cd zendesk-mcp/plugins/zendesk-connector
 npm ci
 npm run build
@@ -198,7 +198,7 @@ release-specific facts stay in the changelog and in this README.
 ## Install from GitHub
 
 ```sh
-git clone https://github.com/ABD-Enterprises/zendesk-mcp.git
+git clone https://github.com/SureForgeTech/zendesk-mcp.git
 cd zendesk-mcp/plugins/zendesk-connector
 npm ci
 npm run build

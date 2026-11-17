@@ -6,11 +6,11 @@
   "author": "ABD Enterprises",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ABD-Enterprises/zendesk-mcp.git"
+    "url": "git+https://github.com/SureForgeTech/zendesk-mcp.git"
   },
-  "homepage": "https://github.com/ABD-Enterprises/zendesk-mcp#readme",
+  "homepage": "https://github.com/SureForgeTech/zendesk-mcp#readme",
   "bugs": {
-    "url": "https://github.com/ABD-Enterprises/zendesk-mcp/issues"
+    "url": "https://github.com/SureForgeTech/zendesk-mcp/issues"
   },
   "keywords": [
     "zendesk",
