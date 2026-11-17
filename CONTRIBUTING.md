@@ -3,9 +3,9 @@
 ## How to contribute
 
 Issues are welcome: bug reports, questions and ideas. Pull requests from
-outside contributors are not accepted for now, so that the project keeps a
-single copyright holder; a pull request from outside may be closed without
-review. Open an issue describing the change instead.
+outside contributors are not accepted for now: the maintainers write all
+changes themselves, so every change is written and reviewed by the maintainers.
+A pull request from outside may be closed without review. Open an issue describing the change instead.
 
 - For how to write a good issue, see the
   [SureForgeTech contributing guide](https://github.com/SureForgeTech/.github/blob/main/CONTRIBUTING.md).
