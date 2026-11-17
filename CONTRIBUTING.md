@@ -1,8 +1,18 @@
 # Contributing
 
-Contributions to Zendesk MCP are welcome.
+## How to contribute
 
-## Development setup
+Issues are welcome: bug reports, questions and ideas. Pull requests from
+outside contributors are not accepted for now: the maintainers write all
+changes themselves, so every change is written and reviewed by the maintainers.
+A pull request from outside may be closed without review. Open an issue describing the change instead.
+
+- For how to write a good issue, see the
+  [SureForgeTech contributing guide](https://github.com/SureForgeTech/.github/blob/main/CONTRIBUTING.md).
+- Do not report security problems in a public issue; follow
+  [SECURITY.md](SECURITY.md).
+
+## For maintainers: development setup
 
 ```sh
 cd plugins/zendesk-connector
@@ -13,7 +23,7 @@ npm run check
 Use Node.js 20 or newer. Tests must not depend on a live Zendesk account or
 contain real customer data or credentials.
 
-## Pull requests
+## For maintainers: pull requests
 
 - Keep changes focused and explain user-visible behavior.
 - Add or update tests for authentication, HTTP, or tool-contract changes.
