@@ -23,6 +23,20 @@ const EXAMPLE_VIEW_TICKET = {
   subject: "Example ticket in a view",
   status: "open",
 };
+const EXAMPLE_TRIGGER = {
+  id: 481,
+  title: "Example trigger",
+  active: true,
+  position: 1,
+};
+const SECOND_EXAMPLE_TRIGGER = {
+  id: 482,
+  title: "Second example trigger",
+  active: false,
+  position: 2,
+};
+const TRIGGERS_NEXT_PAGE =
+  "https://example.zendesk.com/api/v2/triggers.json?page=2&per_page=25";
 const VIEWS_NEXT_PAGE =
   "https://example.zendesk.com/api/v2/views.json?page=2&per_page=25";
 const EXAMPLE_NEXT_PAGE =
@@ -244,6 +258,56 @@ test("lists ticket forms with the requested page and reports the last page", asy
     assert.equal(payload.perPage, 10);
     assert.equal(payload.nextPageAvailable, false);
     assert.deepEqual(payload.ticket_forms, [EXAMPLE_FORM]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("lists triggers with the requested page and reports that another page exists", async () => {
+  const { client, requests } = listClient(() => ({
+    triggers: [EXAMPLE_TRIGGER, SECOND_EXAMPLE_TRIGGER],
+    count: 7,
+    page: 1,
+    per_page: 25,
+    next_page: TRIGGERS_NEXT_PAGE,
+  }));
+  const session = await connectLists(client);
+
+  try {
+    const payload = await listPayload(session.client, "zendesk_list_triggers", {});
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.pathname, "/api/v2/triggers.json");
+    assert.equal(request.searchParams.get("page"), "1");
+    assert.equal(request.searchParams.get("per_page"), "25");
+
+    assert.deepEqual(Object.keys(payload), [...ENVELOPE_KEYS, "triggers"]);
+    assert.equal(payload.count, 7);
+    assert.equal(payload.page, 1);
+    assert.equal(payload.perPage, 25);
+    assert.equal(payload.nextPageAvailable, true);
+    // Trigger records pass through untouched, as the other list resources do.
+    assert.deepEqual(payload.triggers, [EXAMPLE_TRIGGER, SECOND_EXAMPLE_TRIGGER]);
+    assert.equal(JSON.stringify(payload).includes(TRIGGERS_NEXT_PAGE), false);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing or non-positive trigger id before calling Zendesk", async () => {
+  const { client, requests } = listClient(() => ({ trigger: EXAMPLE_TRIGGER }));
+  const session = await connectLists(client);
+
+  try {
+    for (const triggerId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "481"]) {
+      const result = await callList(session.client, "zendesk_get_trigger", {
+        triggerId,
+      });
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
   } finally {
     await session.close();
   }
@@ -471,7 +535,7 @@ async function listPayload(
 function createListServer(zendesk: ZendeskClient) {
   const original = process.env.ZENDESK_ALLOWED_TOOLS;
   process.env.ZENDESK_ALLOWED_TOOLS =
-    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users,zendesk_list_ticket_fields,zendesk_list_ticket_forms,zendesk_list_views,zendesk_list_view_tickets";
+    "zendesk_list_brands,zendesk_list_organizations,zendesk_list_groups,zendesk_list_users,zendesk_list_ticket_fields,zendesk_list_ticket_forms,zendesk_list_views,zendesk_list_view_tickets,zendesk_list_triggers,zendesk_get_trigger";
   try {
     return createZendeskServer(zendesk);
   } finally {

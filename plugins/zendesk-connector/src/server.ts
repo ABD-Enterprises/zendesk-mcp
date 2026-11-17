@@ -8,6 +8,7 @@ import { registerStatusTool } from "./tools/status.js";
 import { registerTicketTools } from "./tools/tickets.js";
 import { registerTicketMetadataTools } from "./tools/ticketMetadata.js";
 import { registerViewTools } from "./tools/views.js";
+import { registerTriggerTools } from "./tools/triggers.js";
 
 export function createZendeskServer(client = new ZendeskClient()): McpServer {
   const allowedTools = configuredTools();
@@ -35,6 +36,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
   registerDirectoryTools(register, ctx);
   registerTicketMetadataTools(register, ctx);
   registerViewTools(register, ctx);
+  registerTriggerTools(register, ctx);
 
   return server;
 }

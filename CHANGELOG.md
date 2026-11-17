@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add read-only `zendesk_list_triggers` and `zendesk_get_trigger` tools: they
+  list Zendesk triggers (the business rules that fire on ticket events) with
+  page-based pagination and read one trigger by its `triggerId`, returning
+  the trigger object as Zendesk returns it. Reading triggers can require an
+  account role and a trigger read scope the default scope does not include;
+  no OAuth scope or default-scope changes are made, so a deployment grants
+  the scope deliberately in its OAuth client and `ZENDESK_OAUTH_SCOPE`. The
+  hermetic end-to-end harness exercises both tools and skips them when the
+  sandbox token is denied with HTTP 403.
+
 - Add a read-only `zendesk_get_ticket_form` tool: it reads one Zendesk ticket
   form by its `ticketFormId` and returns the ticket form object as Zendesk
   returns it. It complements `zendesk_list_ticket_forms`; no OAuth scope or

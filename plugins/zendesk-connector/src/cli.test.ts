@@ -237,7 +237,7 @@ test("--tools prints what the agent will receive", async () => {
   assert.match(result.stdout, /OAuth mode: client_credentials/);
   assert.match(result.stdout, /Scope: /);
   // The operator can see what the agent will receive without starting it.
-  assert.match(result.stdout, /Enabled tools \(21 of 21\): /);
+  assert.match(result.stdout, /Enabled tools \(23 of 23\): /);
 });
 
 /**
