@@ -2,7 +2,7 @@
   "name": "@abd-enterprises/zendesk-mcp",
   "version": "0.7.0",
   "description": "OAuth-only MCP server for Zendesk Support ticket workflows.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "SureForgeTech",
   "repository": {
     "type": "git",
