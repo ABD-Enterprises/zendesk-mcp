@@ -1,7 +1,7 @@
 # Zendesk MCP
 
 An OAuth-only Model Context Protocol server for Zendesk Support, maintained by
-[ABD Enterprises](https://github.com/ABD-Enterprises).
+[SureForgeTech](https://github.com/SureForgeTech).
 
 Zendesk MCP gives MCP-compatible clients a constrained set of tools to search,
 read, create, and update support tickets. It does not accept Zendesk API-token
@@ -13,8 +13,8 @@ The shortest path from a clean machine to a running server (requires
 [Node.js 20 or newer](#requirements)):
 
 ```sh
-git clone https://github.com/SureForgeTech/zendesk-mcp.git
-cd zendesk-mcp/plugins/zendesk-connector
+git clone https://github.com/SureForgeTech/sureforge-zendesk.git
+cd sureforge-zendesk/plugins/zendesk-connector
 npm ci
 npm run build
 ```
@@ -198,8 +198,8 @@ release-specific facts stay in the changelog and in this README.
 ## Install from GitHub
 
 ```sh
-git clone https://github.com/SureForgeTech/zendesk-mcp.git
-cd zendesk-mcp/plugins/zendesk-connector
+git clone https://github.com/SureForgeTech/sureforge-zendesk.git
+cd sureforge-zendesk/plugins/zendesk-connector
 npm ci
 npm run build
 ```
@@ -225,7 +225,7 @@ Use Node.js to start the built server from its absolute path:
   "mcpServers": {
     "zendesk": {
       "command": "node",
-      "args": ["/absolute/path/to/zendesk-mcp/plugins/zendesk-connector/dist/index.js"]
+      "args": ["/absolute/path/to/sureforge-zendesk/plugins/zendesk-connector/dist/index.js"]
     }
   }
 }
@@ -236,19 +236,25 @@ environment configuration.
 
 ## Container image
 
+**Not published yet.** The release workflow builds a container image, but no
+image has been published under `ghcr.io/sureforgetech` so far. Until one is,
+run the server from a checkout or the npm package as described above. The rest
+of this section describes the intended image and will apply once the first one
+is published; replace the placeholder reference below with the real one then.
+
 Every released version publishes a container image to GitHub Container
 Registry. The image tag is the version without its leading `v`, so the image
 reference follows this pattern:
 
 ```text
-ghcr.io/abd-enterprises/zendesk-mcp:<version>
+ghcr.io/sureforgetech/<image>:<version>
 ```
 
 Images are published per version tag only. The release workflow does not
 publish a `latest` tag, so pull the version you intend to run:
 
 ```sh
-docker pull ghcr.io/abd-enterprises/zendesk-mcp:<version>
+docker pull ghcr.io/sureforgetech/<image>:<version>
 ```
 
 The image entrypoint is the STDIO MCP server, so keep stdin attached and map
@@ -260,7 +266,7 @@ docker run --rm -i \
   -e ZENDESK_OAUTH_MODE=client_credentials \
   -e ZENDESK_OAUTH_CLIENT_ID=your-client-identifier \
   -e ZENDESK_OAUTH_CLIENT_SECRET=your-client-secret \
-  ghcr.io/abd-enterprises/zendesk-mcp:<version>
+  ghcr.io/sureforgetech/<image>:<version>
 ```
 
 `ZENDESK_SUBDOMAIN` (or `ZENDESK_BASE_URL`) and the OAuth credentials are
@@ -284,7 +290,7 @@ docker run --rm -i \
   -e ZENDESK_OAUTH_CLIENT_FILE=/secrets/client.json \
   -e ZENDESK_OAUTH_TOKEN_FILE=/secrets/oauth.json \
   -v "$HOME/.config/codex-zendesk:/secrets" \
-  ghcr.io/abd-enterprises/zendesk-mcp:<version>
+  ghcr.io/sureforgetech/<image>:<version>
 ```
 
 The container runs as the unprivileged `node` user, so the mounted client
