@@ -168,6 +168,16 @@ const TOOL_DETAILS = {
     inputs:
       "`ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_list_organization_users: {
+    summary: "List the users of an organization with page-based pagination",
+    inputs:
+      "`organizationId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_list_user_organizations: {
+    summary: "List the organizations of a user with page-based pagination",
+    inputs:
+      "`userId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
 };
 
 // --- Reading the tool policy ------------------------------------------------

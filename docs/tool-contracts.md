@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 25 tools: 22 read tools and 3 write tools.
+The connector ships 27 tools: 24 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -31,6 +31,8 @@ The connector ships 25 tools: 22 read tools and 3 write tools.
 | `zendesk_get_user` | Read | Read one user by id | `userId` int (required) | Yes |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_organization` | Read | Read one organization by id | `organizationId` int (required) | Yes |
+| `zendesk_list_organization_users` | Read | List the users of an organization with page-based pagination | `organizationId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_user_organizations` | Read | List the organizations of a user with page-based pagination | `userId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
 | `zendesk_get_ticket_field` | Read | Read one ticket field by id | `ticketFieldId` int (required) | Yes |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
@@ -270,6 +272,42 @@ envelope above. The endpoint reports a total when the account's response
 carries one and falls back to the page's length otherwise. The records name
 the file and how to read it; the connector does not download the content.
 
+### Ticket events
+
+`zendesk_list_ticket_events` returns the events on one ticket — the audit
+trail: every change to the ticket, who made it and when, and which automation
+fired — under the `events` key, with the shared list envelope above. The
+endpoint reports a total when the account's response carries one and falls
+back to the page's length otherwise. The events carry the ticket's history,
+not its current fields; `zendesk_get_ticket` reads those.
+
+### Ticket attachments
+
+`zendesk_list_ticket_attachments` returns the files attached to one ticket —
+what the customer sent — under the `attachments` key, with the shared list
+envelope above. The endpoint reports a total when the account's response
+carries one and falls back to the page's length otherwise. The records name
+the file and how to read it; the connector does not download the content.
+
+### Organization and user relationships
+
+`zendesk_list_organization_users` returns the users who belong to one
+organization, under the `users` key, with the shared list envelope above. The
+endpoint reports a total when the account's response carries one and falls
+back to the page's length otherwise. The user's id comes from the users
+themselves; `zendesk_get_user` reads one.
+
+`zendesk_list_user_organizations` returns the organizations one user belongs
+to, under the `organizations` key, with the same envelope. The organization's
+id comes from the organizations themselves; `zendesk_get_organization` reads
+one.
+
+The two tools read the same relationship from both sides: which users an
+organization has, and which organizations a user has. The organization tools
+need the `organizations:read` OAuth scope and the user tools the
+`users:read` scope; both are in the default scope, so no default-scope
+change is made.
+
 ### Write results
 
 `zendesk_create_ticket`, `zendesk_update_ticket`, and
@@ -398,6 +436,7 @@ export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_get_brand,\
 zendesk_list_groups,zendesk_get_group,zendesk_list_users,\
 zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
+zendesk_list_organization_users,zendesk_list_user_organizations,\
 zendesk_list_ticket_fields,zendesk_get_ticket_field,\
 zendesk_list_ticket_forms,zendesk_get_ticket_form,zendesk_list_views,\
 zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\

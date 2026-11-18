@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add read-only `zendesk_list_organization_users` and
+  `zendesk_list_user_organizations` tools: they read the organization and
+  user relationship from both sides — which users an organization has, and
+  which organizations a user belongs to — with page-based pagination. They
+  need no OAuth scope or default-scope change: `organizations:read` and
+  `users:read` already cover them.
+
 - Add a read-only `zendesk_list_ticket_attachments` tool: it lists the files
   attached to one ticket with page-based pagination. The records name the
   file and how to read it; the connector does not download the content. It
