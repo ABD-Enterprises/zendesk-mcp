@@ -29,7 +29,10 @@ function runScript(arguments_, input) {
     input,
     encoding: "utf8",
   });
-  if (result.error) {
+  // The script can exit before it reads stdin - a usage error, for example -
+  // and the write to the closed pipe then fails with EPIPE. The exit status
+  // is still the script's own, so a failed write is not a failure here.
+  if (result.error && result.error.code !== "EPIPE") {
     throw result.error;
   }
   return result.status;
@@ -168,4 +171,12 @@ test("aborts when the inspect status is missing", () => {
 
 test("aborts when the inspect status is not a number", () => {
   assert.equal(runScript(["not-a-number"], "manifest unknown"), 1);
+});
+
+test("a failed write to a script that never reads its input is not a failure", () => {
+  // The script exits before it reads stdin on a usage error, and the write
+  // to the closed pipe then fails with EPIPE. The input is larger than the
+  // pipe buffer, so the write cannot complete before the script is gone:
+  // that turns the race into a certainty and pins the behaviour above.
+  assert.equal(runScript([], "x".repeat(512 * 1024)), 1);
 });
