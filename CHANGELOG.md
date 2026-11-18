@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add read-only `zendesk_list_group_users` and `zendesk_list_group_memberships`
+  tools: they read who belongs to a group — the users themselves, and the
+  memberships that name each member and their role — with page-based
+  pagination. They need no OAuth scope or default-scope change:
+  `groups:read` already covers them.
+
 - Add read-only `zendesk_list_organization_users` and
   `zendesk_list_user_organizations` tools: they read the organization and
   user relationship from both sides — which users an organization has, and
