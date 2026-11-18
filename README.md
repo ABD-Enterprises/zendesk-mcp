@@ -381,13 +381,14 @@ expansion is needed for either of them.
 expansion is needed for either of them.
 
 The macro tools (`zendesk_list_macros` and `zendesk_get_macro`) need a scope
-the default scope does not include, like the trigger tools need `triggers:read`.
-The module design ([docs/resource-module-design.md](docs/resource-module-design.md))
-names `macros:read` as a candidate, not yet verified against a sandbox. Grant
-it deliberately on the Zendesk OAuth client and set `ZENDESK_OAUTH_SCOPE` to
+the default scope does not include, as the trigger tools do with
+`triggers:read`. The module design
+([docs/resource-module-design.md](docs/resource-module-design.md)) names both
+scope strings as candidates, not yet verified against a sandbox. Grant the
+scope deliberately on the Zendesk OAuth client and set `ZENDESK_OAUTH_SCOPE` to
 include it; a token without it gets the account's own HTTP 403, which the tool
 surfaces as an error rather than an empty list. The default scope is unchanged
-until the scope string is verified.
+until the scope strings are verified.
 
 Override them with `ZENDESK_OAUTH_SCOPE` when your workflow needs a different
 set.

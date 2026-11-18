@@ -250,13 +250,6 @@ cannot read, its response surfaces through the error contract below.
 
 All three view tools need the `ticket_views:read` OAuth scope.
 
-
-
-
-
-
-
-
 ### Ticket audits
 
 `zendesk_list_ticket_audits` returns the audits of one ticket — its history:
