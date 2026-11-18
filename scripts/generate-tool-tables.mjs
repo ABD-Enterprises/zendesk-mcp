@@ -195,10 +195,8 @@ const TOOL_DETAILS = {
   },
   zendesk_get_macro: {
     summary: "Read one macro by id",
-    inputs:
-      "`macroId` int (required)",
+    inputs: "`macroId` int (required)",
   },
-
 };
 
 // --- Reading the tool policy ------------------------------------------------

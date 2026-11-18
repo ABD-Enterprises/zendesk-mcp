@@ -508,7 +508,9 @@ function buildSteps(ticketId) {
     tool: "zendesk_get_trigger",
     args: (state) =>
       state.triggerId === undefined ? undefined : { triggerId: state.triggerId },
-    skipReason: "the account lists no trigger to read",
+    // A missing triggerId means either the account lists no trigger or the
+    // list step was skipped for want of the scope — both read the same here.
+    skipReason: "the account lists no trigger the token can read",
     allowForbidden: true,
     verify: (data) => {
       const trigger = expectObject(data.trigger, "trigger");

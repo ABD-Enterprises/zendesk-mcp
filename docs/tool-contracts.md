@@ -110,8 +110,8 @@ The list tools and `zendesk_search_tickets` return a shared envelope:
   entirely when Zendesk reports no total, because a search total can be
   approximate or absent.
 - The items follow under a tool-specific key: `brands`, `groups`, `users`,
-  `organizations`, `ticket_fields`, `ticket_forms`, `views`, `tickets`, or
-  `results` for search.
+  `organizations`, `ticket_fields`, `ticket_forms`, `views`, `tickets`,
+  `triggers`, or `results` for search.
 
 Each search result additionally gains a `resultType` field that names the kind
 of record the search returned — `ticket`, `user`, `group` or `organization` —
@@ -250,6 +250,24 @@ cannot read, its response surfaces through the error contract below.
 
 All three view tools need the `ticket_views:read` OAuth scope.
 
+### Triggers
+
+`zendesk_list_triggers` returns the account's triggers — the business rules
+that fire on ticket events — under the `triggers` key, with the shared list
+envelope above.
+
+`zendesk_get_trigger` returns the Zendesk trigger payload — `{ "trigger" }` —
+with the trigger object as Zendesk returns it, conditions and actions
+included; unknown fields pass through untouched. The id comes from
+`zendesk_list_triggers`. If Zendesk rejects an id the account cannot read,
+its response surfaces through the error contract below.
+
+The module design names `triggers:read` as a candidate scope pending sandbox
+verification. The default scope excludes it. Grant it on the Zendesk OAuth
+client and include it in `ZENDESK_OAUTH_SCOPE` when using the trigger tools.
+The connector surfaces permission denials as HTTP 403 errors.
+[Resource module design](resource-module-design.md)
+
 ### Ticket audits
 
 `zendesk_list_ticket_audits` returns the audits of one ticket — its history:
@@ -319,11 +337,11 @@ unknown fields pass through untouched. The id comes from `zendesk_list_macros`.
 If Zendesk rejects an id the account cannot read, its response surfaces
 through the error contract below.
 
-The macro tools need the `macros:read` OAuth scope, which the default scope
-does not include: grant it deliberately on the Zendesk OAuth client and set
-`ZENDESK_OAUTH_SCOPE` to include it. A token without it gets the account's
-own HTTP 403, which the tool surfaces as an error rather than an empty list.
-The default scope is unchanged until the scope string is verified.
+`macros:read` is a candidate OAuth scope outside the default set. Whether
+Zendesk offers a per-resource macros scope is unverified. Use the broad
+`read` scope as the fallback if Zendesk rejects `macros:read`. Grant the
+scope on the Zendesk OAuth client and include it in `ZENDESK_OAUTH_SCOPE`.
+The connector surfaces permission denials as HTTP 403 errors.
 
 ### Write results
 

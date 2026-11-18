@@ -380,15 +380,17 @@ expansion is needed for either of them.
 `zendesk_get_group`); it is part of the default scope, so no default-scope
 expansion is needed for either of them.
 
-The macro tools (`zendesk_list_macros` and `zendesk_get_macro`) need a scope
-the default scope does not include, as the trigger tools do with
-`triggers:read`. The module design
-([docs/resource-module-design.md](docs/resource-module-design.md)) names both
-scope strings as candidates, not yet verified against a sandbox. Grant the
-scope deliberately on the Zendesk OAuth client and set `ZENDESK_OAUTH_SCOPE` to
-include it; a token without it gets the account's own HTTP 403, which the tool
-surfaces as an error rather than an empty list. The default scope is unchanged
-until the scope strings are verified.
+The module design names `triggers:read` for the trigger tools
+(`zendesk_list_triggers` and `zendesk_get_trigger`) and `macros:read` for the
+macro tools (`zendesk_list_macros` and `zendesk_get_macro`) as candidate
+scopes pending sandbox verification. Neither candidate is included in the
+default scope. [Resource module design](docs/resource-module-design.md)
+
+Whether Zendesk offers a per-resource macros scope is unverified. Use the
+broad `read` scope as the fallback if Zendesk rejects `macros:read`.
+Grant the scope you need on the Zendesk OAuth client and include it in
+`ZENDESK_OAUTH_SCOPE`. If Zendesk denies a request for insufficient scope,
+the connector surfaces the HTTP 403 as an error.
 
 Override them with `ZENDESK_OAUTH_SCOPE` when your workflow needs a different
 set.
@@ -592,7 +594,9 @@ npm pack --dry-run
 ```
 
 The tests use mock HTTP responses and in-memory MCP transports. They do not
-require a Zendesk account.
+require a Zendesk account. `npm run check` also runs the DCO sign-off check's
+self-test, which needs the GitHub CLI (`gh`) on the path; it uses no account
+and no network beyond loopback.
 
 ## Security
 
