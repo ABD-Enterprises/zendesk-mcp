@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 24 tools: 21 read tools and 3 write tools.
+The connector ships 25 tools: 22 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -41,6 +41,7 @@ The connector ships 24 tools: 21 read tools and 3 write tools.
 | `zendesk_list_triggers` | Read | List triggers (ticket business rules) with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_trigger` | Read | Read one trigger by id | `triggerId` int (required) | Yes |
 | `zendesk_list_ticket_events` | Read | List the events of a ticket with page-based pagination | `ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_ticket_attachments` | Read | List the attachments of a ticket with page-based pagination | `ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `public` bool (default true); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of non-empty strings (optional) | Yes |
 | `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one non-empty string (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
@@ -252,6 +253,23 @@ endpoint reports a total when the account's response carries one and falls
 back to the page's length otherwise. The events carry the ticket's history,
 not its current fields; `zendesk_get_ticket` reads those.
 
+### Ticket events
+
+`zendesk_list_ticket_events` returns the events on one ticket — the audit
+trail: every change to the ticket, who made it and when, and which automation
+fired — under the `events` key, with the shared list envelope above. The
+endpoint reports a total when the account's response carries one and falls
+back to the page's length otherwise. The events carry the ticket's history,
+not its current fields; `zendesk_get_ticket` reads those.
+
+### Ticket attachments
+
+`zendesk_list_ticket_attachments` returns the files attached to one ticket —
+what the customer sent — under the `attachments` key, with the shared list
+envelope above. The endpoint reports a total when the account's response
+carries one and falls back to the page's length otherwise. The records name
+the file and how to read it; the connector does not download the content.
+
 ### Write results
 
 `zendesk_create_ticket`, `zendesk_update_ticket`, and
@@ -383,7 +401,8 @@ zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
 zendesk_list_ticket_fields,zendesk_get_ticket_field,\
 zendesk_list_ticket_forms,zendesk_get_ticket_form,zendesk_list_views,\
 zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\
-zendesk_get_trigger,zendesk_list_ticket_events"
+zendesk_get_trigger,zendesk_list_ticket_events,\
+zendesk_list_ticket_attachments"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 

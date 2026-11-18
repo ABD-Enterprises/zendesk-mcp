@@ -163,6 +163,11 @@ const TOOL_DETAILS = {
     inputs:
       "`ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_list_ticket_attachments: {
+    summary: "List the attachments of a ticket with page-based pagination",
+    inputs:
+      "`ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
 };
 
 // --- Reading the tool policy ------------------------------------------------
