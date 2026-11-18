@@ -28,13 +28,15 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           ASSOCIATION: ${{ github.event.pull_request.author_association }}
           AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+        # Messages are checked with carriage returns removed, so a commit written with
+        # Windows line endings is recognised as signed off.
         run: |
           case "$ASSOCIATION" in
             OWNER|MEMBER|COLLABORATOR) echo "Maintainer pull request: sign-off not required."; exit 0 ;;
           esac
           if [ "$AUTHOR_TYPE" = "Bot" ]; then echo "Bot pull request: sign-off not required."; exit 0; fi
           missing=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" \
-            --jq '.[] | select((.parents | length) == 1) | select((.commit.message | test("(^|\n)Signed-off-by: [^\n]+ <[^>\n]+>(\n|$)")) | not) | .sha[0:12]')
+            --jq '.[] | select((.parents | length) == 1) | select((.commit.message | gsub("\r"; "") | test("(^|\n)Signed-off-by: [^\n]+ <[^>\n]+>(\n|$)")) | not) | .sha[0:12]')
           if [ -n "$missing" ]; then
             echo "These commits are missing a Signed-off-by line (amend them with git commit -s, then force-push the branch with --force-with-lease):"
             echo "$missing"
