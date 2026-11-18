@@ -9,8 +9,9 @@
 //
 // The filter runs against a local mock server on an ephemeral loopback port
 // that serves fixture commits. No network access, no credentials and no
-// GitHub account are involved: `gh api` only sends an Authorization header to
-// github.com, so a loopback URL needs no token.
+// GitHub account are involved: the request goes to 127.0.0.1 and the mock
+// server answers it. The GitHub CLI still wants a token before it makes any
+// API call, so the child gets a placeholder that authenticates nothing.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -34,19 +35,25 @@ const WORKFLOW_PATH = path.join(
 // check. The filter is one single-quoted shell argument on one line.
 function readWorkflowFilter() {
   const workflow = fs.readFileSync(WORKFLOW_PATH, "utf8");
-  const line = workflow
+  const candidates = workflow
     .split("\n")
-    .find((candidate) => candidate.includes("--jq '"));
-  assert.ok(line, "the workflow must pass a --jq filter to gh api");
+    .filter((candidate) => candidate.includes("--jq '"));
+  assert.ok(candidates.length > 0, "the workflow must pass a --jq filter to gh api");
+  // The sign-off filter is the one that looks for a sign-off line, so it is
+  // picked out by what it checks rather than by where it sits in the file.
+  const signOffLines = candidates.filter((candidate) =>
+    candidate.includes("Signed-off-by"),
+  );
+  assert.equal(
+    signOffLines.length,
+    1,
+    "the workflow must pass exactly one sign-off filter to gh api",
+  );
+  const line = signOffLines[0];
   const start = line.indexOf("--jq '") + "--jq '".length;
   const end = line.lastIndexOf("'");
   assert.ok(end > start, "the --jq filter must be single-quoted on one line");
-  const filter = line.slice(start, end);
-  assert.ok(
-    filter.includes("Signed-off-by"),
-    "the extracted filter must be the sign-off filter",
-  );
-  return filter;
+  return line.slice(start, end);
 }
 
 const FILTER = readWorkflowFilter();

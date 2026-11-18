@@ -28,8 +28,10 @@ npm ci
 npm run check
 ```
 
-Use Node.js 20 or newer. Tests must not depend on a live Zendesk account or
-contain real customer data or credentials.
+Use Node.js 20 or newer. `npm run check` also runs the DCO sign-off check's
+self-test, which needs the GitHub CLI (`gh`) on the path; it uses no account
+and no network beyond loopback. Tests must not depend on a live Zendesk
+account or contain real customer data or credentials.
 
 ## For maintainers: pull requests
 
