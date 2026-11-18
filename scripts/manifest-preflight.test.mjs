@@ -172,3 +172,11 @@ test("aborts when the inspect status is missing", () => {
 test("aborts when the inspect status is not a number", () => {
   assert.equal(runScript(["not-a-number"], "manifest unknown"), 1);
 });
+
+test("a failed write to a script that never reads its input is not a failure", () => {
+  // The script exits before it reads stdin on a usage error, and the write
+  // to the closed pipe then fails with EPIPE. The input is larger than the
+  // pipe buffer, so the write cannot complete before the script is gone:
+  // that turns the race into a certainty and pins the behaviour above.
+  assert.equal(runScript([], "x".repeat(512 * 1024)), 1);
+});
