@@ -29,7 +29,10 @@ function runScript(arguments_, input) {
     input,
     encoding: "utf8",
   });
-  if (result.error) {
+  // The script can exit before it reads stdin - a usage error, for example -
+  // and the write to the closed pipe then fails with EPIPE. The exit status
+  // is still the script's own, so a failed write is not a failure here.
+  if (result.error && result.error.code !== "EPIPE") {
     throw result.error;
   }
   return result.status;
