@@ -32,7 +32,7 @@ export ZENDESK_READ_ONLY=1
 # zendesk_get_ticket_field,zendesk_list_ticket_forms,\
 # zendesk_get_ticket_form,zendesk_list_views,\
 # zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\
-# zendesk_get_trigger"
+# zendesk_get_trigger,zendesk_list_ticket_events"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 
@@ -286,7 +286,7 @@ part of `npm run check` or CI.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 23 tools: 20 read tools and 3 write tools.
+The connector ships 24 tools: 21 read tools and 3 write tools.
 
 - `zendesk_status`: verify OAuth and identify the authenticated user.
 - `zendesk_search_tickets`: search Zendesk with Zendesk search syntax.
@@ -308,6 +308,7 @@ The connector ships 23 tools: 20 read tools and 3 write tools.
 - `zendesk_get_view`: read one view by id.
 - `zendesk_list_triggers`: list triggers (ticket business rules) with page-based pagination.
 - `zendesk_get_trigger`: read one trigger by id.
+- `zendesk_list_ticket_events`: list the events of a ticket with page-based pagination.
 - `zendesk_create_ticket`: create a ticket.
 - `zendesk_update_ticket`: update common ticket fields.
 - `zendesk_add_ticket_comment`: add an internal note or public reply.

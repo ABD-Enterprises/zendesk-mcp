@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a read-only `zendesk_list_ticket_events` tool: it lists the events on
+  one ticket — the audit trail of every change, who made it and when, and
+  which automation fired — with page-based pagination. It reads the ticket's
+  history, not its current fields, and needs no OAuth scope or
+  default-scope change: `tickets:read` already covers it.
+
 - Pull requests are now welcome with a DCO sign-off (`git commit -s`): `CONTRIBUTING.md` says so, and a new `dco` workflow checks the sign-off on pull requests from outside contributors.
 - [INTERNAL] The licence changes from MIT to Apache-2.0, with a NOTICE file. Releases published before this change keep the MIT licence they shipped with; only new releases carry Apache-2.0.
 - Add read-only `zendesk_list_triggers` and `zendesk_get_trigger` tools: they

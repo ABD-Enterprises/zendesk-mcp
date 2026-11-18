@@ -158,6 +158,11 @@ const TOOL_DETAILS = {
     summary: "Read one trigger by id",
     inputs: "`triggerId` int (required)",
   },
+  zendesk_list_ticket_events: {
+    summary: "List the events of a ticket with page-based pagination",
+    inputs:
+      "`ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
 };
 
 // --- Reading the tool policy ------------------------------------------------

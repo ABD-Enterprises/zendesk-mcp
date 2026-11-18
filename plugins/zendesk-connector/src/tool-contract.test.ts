@@ -1546,6 +1546,156 @@ test("describes the result shape, the continuation and the ticket handoff", asyn
 });
 
 /** A Zendesk client whose endpoints answer with `respond`. */
+const EXAMPLE_TICKET_EVENT = {
+  id: 900,
+  type: "Comment",
+  body: "Example event",
+  public: true,
+  created_at: "2026-01-01T00:00:00Z",
+};
+
+test("lists the events of a ticket with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/tickets/42/events.json") {
+      return { events: [EXAMPLE_TICKET_EVENT], count: 3, next_page: null };
+    }
+    return { events: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_ticket_events",
+      { ticketId: 42, page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/tickets/42/events.json");
+    assert.equal(request.method, "GET");
+    // The page the caller asked for is the page that is fetched.
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    assert.equal(payload.count, 3);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.events, [EXAMPLE_TICKET_EVENT]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports the next page of a ticket's events when Zendesk sends one", async () => {
+  const { client } = contractClient(() => ({
+    events: [EXAMPLE_TICKET_EVENT],
+    next_page:
+      "https://example.zendesk.com/api/v2/tickets/42/events.json?page=3",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_ticket_events",
+      { ticketId: 42 },
+    );
+
+    assert.equal(payload.nextPageAvailable, true);
+    // The endpoint sends no total here, so the count falls back to the
+    // length of this page.
+    assert.equal(payload.count, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe ticket id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ events: [] }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const ticketId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "42",
+    ]) {
+      const result = await callContract(
+        session.client,
+        "zendesk_list_ticket_events",
+        { ticketId },
+      );
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed events envelope and an API error for a ticket's events", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname === "/api/v2/tickets/42/events.json") {
+      return { events: "not-an-array" };
+    }
+    return { events: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_ticket_events",
+      { ticketId: 42 },
+    );
+    assert.equal(malformed.isError, true);
+    // A successful response that does not carry the expected envelope fails
+    // with the fixed message and leaks no part of the raw body.
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "tickets:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_ticket_events",
+      { ticketId: 42 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
 function contractClient(
   respond: (url: URL) => Record<string, unknown>,
 ): { client: ZendeskClient; requests: RecordedRequest[] } {
@@ -1630,7 +1780,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_get_trigger,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_get_trigger,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment,zendesk_list_ticket_events";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);

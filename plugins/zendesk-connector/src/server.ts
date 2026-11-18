@@ -9,6 +9,7 @@ import { registerTicketTools } from "./tools/tickets.js";
 import { registerTicketMetadataTools } from "./tools/ticketMetadata.js";
 import { registerViewTools } from "./tools/views.js";
 import { registerTriggerTools } from "./tools/triggers.js";
+import { registerTicketEventTools } from "./tools/ticketEvents.js";
 
 export function createZendeskServer(client = new ZendeskClient()): McpServer {
   const allowedTools = configuredTools();
@@ -37,6 +38,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
   registerTicketMetadataTools(register, ctx);
   registerViewTools(register, ctx);
   registerTriggerTools(register, ctx);
+  registerTicketEventTools(register, ctx);
 
   return server;
 }
