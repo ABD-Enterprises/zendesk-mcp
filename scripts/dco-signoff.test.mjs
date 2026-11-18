@@ -103,6 +103,13 @@ const NOT_REPORTED = [
   ],
 ];
 
+// The GitHub CLI refuses to make an API call when it has no token, and in a
+// GitHub Actions workflow it says so outright. The token is not what these
+// tests check - the filter is - so the child gets a fixed placeholder that
+// authenticates nothing: the request goes to a loopback mock server that
+// ignores the header, and a real token from the environment is never used.
+const PLACEHOLDER_TOKEN = "dco-signoff-self-test-placeholder";
+
 // Run the `gh api` invocation and collect its output. The call is
 // asynchronous on purpose: the mock server runs in this process, so a
 // synchronous child process would block the event loop that has to answer
@@ -110,7 +117,11 @@ const NOT_REPORTED = [
 function runGhApi(url) {
   return new Promise((resolve, reject) => {
     const child = spawn("gh", ["api", "--paginate", url, "--jq", FILTER], {
-      env: { ...process.env, GH_TOKEN: "", GITHUB_TOKEN: "" },
+      env: {
+        ...process.env,
+        GH_TOKEN: PLACEHOLDER_TOKEN,
+        GITHUB_TOKEN: "",
+      },
     });
     let stdout = "";
     let stderr = "";
