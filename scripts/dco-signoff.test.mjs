@@ -115,6 +115,12 @@ const NOT_REPORTED = [
 // tests check - the filter is - so the child gets a fixed placeholder that
 // authenticates nothing: the request goes to a loopback mock server that
 // ignores the header, and a real token from the environment is never used.
+//
+// The enterprise token variables are cleared for the same reason. The CLI
+// treats a host that is not github.com as an enterprise host and prefers the
+// enterprise token over GH_TOKEN for it, so an inherited
+// GH_ENTERPRISE_TOKEN would be sent to the loopback mock server - a live
+// credential reaching a port the test opens.
 const PLACEHOLDER_TOKEN = "dco-signoff-self-test-placeholder";
 
 // Run the `gh api` invocation and collect its output. The call is
@@ -128,6 +134,8 @@ function runGhApi(url) {
         ...process.env,
         GH_TOKEN: PLACEHOLDER_TOKEN,
         GITHUB_TOKEN: "",
+        GH_ENTERPRISE_TOKEN: "",
+        GITHUB_ENTERPRISE_TOKEN: "",
       },
     });
     let stdout = "";
