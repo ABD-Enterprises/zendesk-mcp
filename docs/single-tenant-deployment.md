@@ -117,6 +117,12 @@ next token request pick it up in `client_credentials` mode — and allow
 `ticket_views:read` on the Zendesk OAuth client when it has allowed scopes
 configured.
 
+The trigger tools (`zendesk_list_triggers` and `zendesk_get_trigger`) need a
+scope the default scope does not include; the module design names
+`triggers:read` as a candidate, not yet verified against a sandbox. Grant it
+deliberately on the Zendesk OAuth client and include it in
+`ZENDESK_OAUTH_SCOPE`; a token without it gets the account's own HTTP 403.
+
 Override them with `ZENDESK_OAUTH_SCOPE` only when a workflow needs a
 different set. The OAuth mode is part of the deployment shape:
 `authorization_code` keeps an owner-only token file on disk,

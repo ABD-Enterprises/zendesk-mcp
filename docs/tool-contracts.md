@@ -102,8 +102,8 @@ The list tools and `zendesk_search_tickets` return a shared envelope:
   entirely when Zendesk reports no total, because a search total can be
   approximate or absent.
 - The items follow under a tool-specific key: `brands`, `groups`, `users`,
-  `organizations`, `ticket_fields`, `ticket_forms`, `views`, `tickets`, or
-  `results` for search.
+  `organizations`, `ticket_fields`, `ticket_forms`, `views`, `tickets`,
+  `triggers`, or `results` for search.
 
 Each search result additionally gains a `resultType` field that names the kind
 of record the search returned — `ticket`, `user`, `group` or `organization` —
@@ -241,6 +241,26 @@ The id comes from `zendesk_list_views`. If Zendesk rejects an id the account
 cannot read, its response surfaces through the error contract below.
 
 All three view tools need the `ticket_views:read` OAuth scope.
+
+### Triggers
+
+`zendesk_list_triggers` returns the account's triggers — the business rules
+that fire on ticket events — under the `triggers` key, with the shared list
+envelope above.
+
+`zendesk_get_trigger` returns the Zendesk trigger payload — `{ "trigger" }` —
+with the trigger object as Zendesk returns it, conditions and actions
+included; unknown fields pass through untouched. The id comes from
+`zendesk_list_triggers`. If Zendesk rejects an id the account cannot read,
+its response surfaces through the error contract below.
+
+The trigger tools are the first tools that need a scope the default scope
+does not include: `triggers:read` is a candidate string from the module
+design ([resource-module-design.md](resource-module-design.md)), not yet
+verified against a sandbox, and the default scope is unchanged. Grant the
+scope deliberately on the Zendesk OAuth client and in
+`ZENDESK_OAUTH_SCOPE`; a token without it gets the account's own permission
+denial (HTTP 403), which reads as an error, not as an empty list.
 
 ### Write results
 
