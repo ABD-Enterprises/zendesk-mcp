@@ -9,7 +9,7 @@ import { registerTicketTools } from "./tools/tickets.js";
 import { registerTicketMetadataTools } from "./tools/ticketMetadata.js";
 import { registerViewTools } from "./tools/views.js";
 import { registerTriggerTools } from "./tools/triggers.js";
-import { registerTicketEventTools } from "./tools/ticketEvents.js";
+import { registerTicketAuditTools } from "./tools/ticketAudits.js";
 import { registerTicketAttachmentTools } from "./tools/ticketAttachments.js";
 import { registerMacroTools } from "./tools/macros.js";
 
@@ -40,7 +40,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
   registerTicketMetadataTools(register, ctx);
   registerViewTools(register, ctx);
   registerTriggerTools(register, ctx);
-  registerTicketEventTools(register, ctx);
+  registerTicketAuditTools(register, ctx);
   registerTicketAttachmentTools(register, ctx);
   registerMacroTools(register, ctx);
 

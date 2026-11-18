@@ -323,10 +323,25 @@ function buildSteps(ticketId) {
         expectPresent(group.id, "group.id");
       },
     },
-    listStep("zendesk_list_users", "users"),
+    listStep("zendesk_list_users", "users", {
+      // The account's own user id, so the next step reads the organizations
+      // of a user that exists rather than one the harness invented.
+      capture: (state, data) => {
+        const id = positiveIntegerId(data.users[0]?.id);
+        if (id !== undefined) state.userId = id;
+      },
+    }),
     // A brand-new account may genuinely have no organizations, so an empty
     // list is allowed here; the array itself must still be present.
-    listStep("zendesk_list_organizations", "organizations", { allowEmpty: true }),
+    listStep("zendesk_list_organizations", "organizations", {
+      allowEmpty: true,
+      // The account's own organization id, so the next step reads the users
+      // of an organization that exists rather than one the harness invented.
+      capture: (state, data) => {
+        const id = positiveIntegerId(data.organizations[0]?.id);
+        if (id !== undefined) state.organizationId = id;
+      },
+    }),
     listStep("zendesk_list_ticket_fields", "ticket_fields", {
       // The account's own ticket-field id, so the next step reads a ticket
       // field that exists rather than one the harness invented.
@@ -398,6 +413,29 @@ function buildSteps(ticketId) {
           throw new Error(`expected ticket.id ${ticketId}, received ${String(ticket.id)}`);
         }
         expectArray(data, "comments");
+      },
+    });
+    steps.push({
+      tool: "zendesk_list_ticket_audits",
+      args: { ticketId },
+      allowForbidden: true,
+      verify: (data) => {
+        const audits = expectArray(data, "audits");
+        expectEnvelope(data, audits.length);
+        for (const [index, audit] of audits.entries()) {
+          expectPresent(audit?.id, `audits[${index}].id`);
+        }
+      },
+    });
+    steps.push({
+      tool: "zendesk_list_ticket_attachments",
+      args: { ticketId },
+      allowForbidden: true,
+      // A ticket that nobody sent a file on has no attachments, so an empty
+      // list is allowed here; the array itself must still be present.
+      verify: (data) => {
+        const attachments = expectArray(data, "attachments");
+        expectEnvelope(data, attachments.length);
       },
     });
   }
@@ -475,6 +513,84 @@ function buildSteps(ticketId) {
     verify: (data) => {
       const trigger = expectObject(data.trigger, "trigger");
       expectPresent(trigger.id, "trigger.id");
+    },
+  });
+
+  // The new read tools of the coverage extension. They come after the
+  // triggers, because a sandbox whose token lacks a scope answers 403 for
+  // the tool that needs it and these steps skip that answer instead of
+  // failing: the macros and the ticket audits read what the account holds.
+  steps.push({
+    tool: "zendesk_list_organization_users",
+    args: (state) =>
+      state.organizationId === undefined
+        ? undefined
+        : { organizationId: state.organizationId },
+    skipReason: "the account lists no organization to read the users of",
+    allowForbidden: true,
+    verify: (data) => {
+      const users = expectArray(data, "users");
+      expectEnvelope(data, users.length);
+    },
+  });
+  steps.push({
+    tool: "zendesk_list_user_organizations",
+    args: (state) =>
+      state.userId === undefined ? undefined : { userId: state.userId },
+    skipReason: "the account lists no user to read the organizations of",
+    allowForbidden: true,
+    verify: (data) => {
+      const organizations = expectArray(data, "organizations");
+      expectEnvelope(data, organizations.length);
+    },
+  });
+  steps.push({
+    tool: "zendesk_list_group_users",
+    args: (state) =>
+      state.groupId === undefined ? undefined : { groupId: state.groupId },
+    skipReason: "the account lists no group to read the users of",
+    allowForbidden: true,
+    verify: (data) => {
+      const users = expectArray(data, "users");
+      expectEnvelope(data, users.length);
+    },
+  });
+  steps.push({
+    tool: "zendesk_list_group_memberships",
+    args: (state) =>
+      state.groupId === undefined ? undefined : { groupId: state.groupId },
+    skipReason: "the account lists no group to read the memberships of",
+    allowForbidden: true,
+    verify: (data) => {
+      const memberships = expectArray(data, "memberships");
+      expectEnvelope(data, memberships.length);
+    },
+  });
+  steps.push({
+    tool: "zendesk_list_macros",
+    args: {},
+    // A token without the macros scope is denied with 403, and an account
+    // may hold no macros at all; both are skipped rather than failed.
+    allowForbidden: true,
+    allowEmpty: true,
+    verify: (data) => {
+      const macros = expectArray(data, "macros");
+      expectEnvelope(data, macros.length);
+    },
+    capture: (state, data) => {
+      const id = positiveIntegerId(data.macros[0]?.id);
+      if (id !== undefined) state.macroId = id;
+    },
+  });
+  steps.push({
+    tool: "zendesk_get_macro",
+    args: (state) =>
+      state.macroId === undefined ? undefined : { macroId: state.macroId },
+    skipReason: "the account lists no macro to read",
+    allowForbidden: true,
+    verify: (data) => {
+      const macro = expectObject(data.macro, "macro");
+      expectPresent(macro.id, "macro.id");
     },
   });
 

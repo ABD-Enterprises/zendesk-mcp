@@ -18,11 +18,14 @@ export function registerTicketAttachmentTools(
       title: "List Zendesk ticket attachments",
       description:
         "List the files attached to one Zendesk ticket — what the customer " +
-        "sent — with page-based pagination. count is Zendesk's total when " +
-        "provided, otherwise this page's length; attachments holds this " +
-        "page, and nextPageAvailable says whether more pages exist — call " +
-        "again with page to continue. The records name the file and how to " +
-        "read it; the connector does not download the content.",
+        "sent — with page-based pagination. Zendesk has no endpoint that " +
+        "lists a ticket's attachments: they hang off the ticket's comments, " +
+        "so this reads a page of comments and returns the attachments on " +
+        "them under the attachments key. count is the number of " +
+        "attachments on this page, and nextPageAvailable says whether the " +
+        "ticket has more comments — and so possibly more attachments — to " +
+        "read: call again with page to continue. The records name the file " +
+        "and how to read it; the connector does not download the content.",
       inputSchema: z.object({
         ticketId: z
           .number()
@@ -45,23 +48,23 @@ export function registerTicketAttachmentTools(
       // The schema guarantees ticketId is a positive safe integer, so it is
       // safe to interpolate into the path.
       const response = await client.request<{
-        attachments: JsonObject[];
-        count?: number;
+        comments: JsonObject[];
         next_page?: string | null;
-      }>(`/tickets/${ticketId}/attachments.json`, {
+      }>(`/tickets/${ticketId}/comments.json`, {
         query: { page, per_page: perPage },
-        collection: "attachments",
+        collection: "comments",
       });
-      const count =
-        typeof response.count === "number"
-          ? response.count
-          : response.attachments.length;
+      // Each comment carries the attachments that were made with it.
+      const attachments = response.comments.flatMap((comment) => {
+        const attached = comment.attachments;
+        return Array.isArray(attached) ? (attached as JsonObject[]) : [];
+      });
       return {
-        count,
+        count: attachments.length,
         page,
         perPage,
         nextPageAvailable: Boolean(response.next_page),
-        attachments: response.attachments,
+        attachments,
       };
     },
   );

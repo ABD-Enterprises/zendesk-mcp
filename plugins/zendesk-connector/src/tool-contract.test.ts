@@ -1546,33 +1546,42 @@ test("describes the result shape, the continuation and the ticket handoff", asyn
 });
 
 /** A Zendesk client whose endpoints answer with `respond`. */
-const EXAMPLE_TICKET_EVENT = {
+const EXAMPLE_TICKET_AUDIT = {
   id: 900,
-  type: "Comment",
-  body: "Example event",
-  public: true,
+  ticket_id: 42,
+  author_id: 801,
   created_at: "2026-01-01T00:00:00Z",
+  events: [
+    {
+      id: 9001,
+      type: "Change",
+      field_name: "status",
+      previous_value: "new",
+      value: "open",
+    },
+  ],
+  via: { channel: "web" },
 };
 
-test("lists the events of a ticket with the pagination the contract promises", async () => {
+test("lists the audits of a ticket with the pagination the contract promises", async () => {
   const { client, requests } = contractClient((url) => {
-    if (url.pathname === "/api/v2/tickets/42/events.json") {
-      return { events: [EXAMPLE_TICKET_EVENT], count: 3, next_page: null };
+    if (url.pathname === "/api/v2/tickets/42/audits.json") {
+      return { audits: [EXAMPLE_TICKET_AUDIT], count: 3, next_page: null };
     }
-    return { events: [] };
+    return { audits: [] };
   });
   const session = await connectContracts(client);
 
   try {
     const payload = await contractPayload(
       session.client,
-      "zendesk_list_ticket_events",
+      "zendesk_list_ticket_audits",
       { ticketId: 42, page: 2, perPage: 10 },
     );
 
     assert.equal(requests.length, 1);
     const request = requests[0];
-    assert.equal(request.url.pathname, "/api/v2/tickets/42/events.json");
+    assert.equal(request.url.pathname, "/api/v2/tickets/42/audits.json");
     assert.equal(request.method, "GET");
     // The page the caller asked for is the page that is fetched.
     assert.equal(request.url.searchParams.get("page"), "2");
@@ -1581,24 +1590,24 @@ test("lists the events of a ticket with the pagination the contract promises", a
     assert.equal(payload.page, 2);
     assert.equal(payload.perPage, 10);
     assert.equal(payload.nextPageAvailable, false);
-    assert.deepEqual(payload.events, [EXAMPLE_TICKET_EVENT]);
+    assert.deepEqual(payload.audits, [EXAMPLE_TICKET_AUDIT]);
   } finally {
     await session.close();
   }
 });
 
-test("reports the next page of a ticket's events when Zendesk sends one", async () => {
+test("reports the next page of a ticket's audits when Zendesk sends one", async () => {
   const { client } = contractClient(() => ({
-    events: [EXAMPLE_TICKET_EVENT],
+    audits: [EXAMPLE_TICKET_AUDIT],
     next_page:
-      "https://example.zendesk.com/api/v2/tickets/42/events.json?page=3",
+      "https://example.zendesk.com/api/v2/tickets/42/audits.json?page=3",
   }));
   const session = await connectContracts(client);
 
   try {
     const payload = await contractPayload(
       session.client,
-      "zendesk_list_ticket_events",
+      "zendesk_list_ticket_audits",
       { ticketId: 42 },
     );
 
@@ -1611,8 +1620,8 @@ test("reports the next page of a ticket's events when Zendesk sends one", async 
   }
 });
 
-test("rejects a missing, non-positive, fractional or unsafe ticket id before calling Zendesk", async () => {
-  const { client, requests } = contractClient(() => ({ events: [] }));
+test("rejects a missing, non-positive, fractional or unsafe ticket id before calling Zendesk for the audits", async () => {
+  const { client, requests } = contractClient(() => ({ audits: [] }));
   const session = await connectContracts(client);
 
   try {
@@ -1626,7 +1635,7 @@ test("rejects a missing, non-positive, fractional or unsafe ticket id before cal
     ]) {
       const result = await callContract(
         session.client,
-        "zendesk_list_ticket_events",
+        "zendesk_list_ticket_audits",
         { ticketId },
       );
       assert.equal(result.isError, true);
@@ -1638,19 +1647,19 @@ test("rejects a missing, non-positive, fractional or unsafe ticket id before cal
   }
 });
 
-test("reports a malformed events envelope and an API error for a ticket's events", async () => {
+test("reports a malformed events envelope and an API error for a ticket's audits", async () => {
   const { client } = contractClient((url) => {
-    if (url.pathname === "/api/v2/tickets/42/events.json") {
-      return { events: "not-an-array" };
+    if (url.pathname === "/api/v2/tickets/42/audits.json") {
+      return { audits: "not-an-array" };
     }
-    return { events: [] };
+    return { audits: [] };
   });
   const session = await connectContracts(client);
 
   try {
     const malformed = await callContract(
       session.client,
-      "zendesk_list_ticket_events",
+      "zendesk_list_ticket_audits",
       { ticketId: 42 },
     );
     assert.equal(malformed.isError, true);
@@ -1684,7 +1693,7 @@ test("reports a malformed events envelope and an API error for a ticket's events
   try {
     const result = await callContract(
       failingSession.client,
-      "zendesk_list_ticket_events",
+      "zendesk_list_ticket_audits",
       { ticketId: 42 },
     );
     assert.equal(result.isError, true);
@@ -1704,16 +1713,25 @@ const EXAMPLE_TICKET_ATTACHMENT = {
   content_url: "https://example.zendesk.com/attachments/901",
 };
 
+// Zendesk has no endpoint that lists a ticket's attachments: they hang off
+// the ticket's comments.
+const EXAMPLE_COMMENT_WITH_ATTACHMENT = {
+  id: 7,
+  body: "Example comment",
+  author_id: 801,
+  attachments: [EXAMPLE_TICKET_ATTACHMENT],
+};
+
 test("lists the attachments of a ticket with the pagination the contract promises", async () => {
   const { client, requests } = contractClient((url) => {
-    if (url.pathname === "/api/v2/tickets/42/attachments.json") {
+    if (url.pathname === "/api/v2/tickets/42/comments.json") {
       return {
-        attachments: [EXAMPLE_TICKET_ATTACHMENT],
+        comments: [EXAMPLE_COMMENT_WITH_ATTACHMENT],
         count: 2,
         next_page: null,
       };
     }
-    return { attachments: [] };
+    return { comments: [] };
   });
   const session = await connectContracts(client);
 
@@ -1726,11 +1744,13 @@ test("lists the attachments of a ticket with the pagination the contract promise
 
     assert.equal(requests.length, 1);
     const request = requests[0];
-    assert.equal(request.url.pathname, "/api/v2/tickets/42/attachments.json");
+    assert.equal(request.url.pathname, "/api/v2/tickets/42/comments.json");
     assert.equal(request.method, "GET");
     assert.equal(request.url.searchParams.get("page"), "2");
     assert.equal(request.url.searchParams.get("per_page"), "10");
-    assert.equal(payload.count, 2);
+    // The count is the number of attachments on this page of comments, not
+    // a total of attachments: Zendesk reports no such total.
+    assert.equal(payload.count, 1);
     assert.equal(payload.page, 2);
     assert.equal(payload.perPage, 10);
     assert.equal(payload.nextPageAvailable, false);
@@ -1742,9 +1762,9 @@ test("lists the attachments of a ticket with the pagination the contract promise
 
 test("reports the next page of a ticket's attachments when Zendesk sends one", async () => {
   const { client } = contractClient(() => ({
-    attachments: [EXAMPLE_TICKET_ATTACHMENT],
+    comments: [EXAMPLE_COMMENT_WITH_ATTACHMENT],
     next_page:
-      "https://example.zendesk.com/api/v2/tickets/42/attachments.json?page=3",
+      "https://example.zendesk.com/api/v2/tickets/42/comments.json?page=3",
   }));
   const session = await connectContracts(client);
 
@@ -1764,8 +1784,8 @@ test("reports the next page of a ticket's attachments when Zendesk sends one", a
   }
 });
 
-test("rejects a missing, non-positive, fractional or unsafe ticket id before calling Zendesk", async () => {
-  const { client, requests } = contractClient(() => ({ attachments: [] }));
+test("rejects a missing, non-positive, fractional or unsafe ticket id before calling Zendesk for the attachments", async () => {
+  const { client, requests } = contractClient(() => ({ comments: [] }));
   const session = await connectContracts(client);
 
   try {
@@ -1793,10 +1813,10 @@ test("rejects a missing, non-positive, fractional or unsafe ticket id before cal
 
 test("reports a malformed attachments envelope and an API error for a ticket's attachments", async () => {
   const { client } = contractClient((url) => {
-    if (url.pathname === "/api/v2/tickets/42/attachments.json") {
-      return { attachments: "not-an-array" };
+    if (url.pathname === "/api/v2/tickets/42/comments.json") {
+      return { comments: "not-an-array" };
     }
-    return { attachments: [] };
+    return { comments: [] };
   });
   const session = await connectContracts(client);
 
@@ -2175,7 +2195,7 @@ test("reports the next page of a group's users when Zendesk sends one", async ()
   }
 });
 
-test("rejects a bad group id before calling Zendesk", async () => {
+test("rejects a bad group id before calling Zendesk for the users", async () => {
   const { client, requests } = contractClient(() => ({ users: [] }));
   const session = await connectContracts(client);
 
@@ -2261,12 +2281,12 @@ test("lists the memberships of a group with the pagination the contract promises
   const { client, requests } = contractClient((url) => {
     if (url.pathname === "/api/v2/groups/4400/memberships.json") {
       return {
-        memberships: [EXAMPLE_GROUP_MEMBERSHIP],
+        group_memberships: [EXAMPLE_GROUP_MEMBERSHIP],
         count: 5,
         next_page: null,
       };
     }
-    return { memberships: [] };
+    return { group_memberships: [] };
   });
   const session = await connectContracts(client);
 
@@ -2293,8 +2313,8 @@ test("lists the memberships of a group with the pagination the contract promises
   }
 });
 
-test("rejects a bad group id before calling Zendesk", async () => {
-  const { client, requests } = contractClient(() => ({ memberships: [] }));
+test("rejects a bad group id before calling Zendesk for the memberships", async () => {
+  const { client, requests } = contractClient(() => ({ group_memberships: [] }));
   const session = await connectContracts(client);
 
   try {
@@ -2322,9 +2342,9 @@ test("rejects a bad group id before calling Zendesk", async () => {
 test("reports a malformed memberships envelope and an API error for a group's memberships", async () => {
   const { client } = contractClient((url) => {
     if (url.pathname === "/api/v2/groups/4400/memberships.json") {
-      return { memberships: "not-an-array" };
+      return { group_memberships: "not-an-array" };
     }
-    return { memberships: [] };
+    return { group_memberships: [] };
   });
   const session = await connectContracts(client);
 
@@ -2673,7 +2693,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_get_trigger,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment,zendesk_list_ticket_events,zendesk_list_ticket_attachments,zendesk_list_organization_users,zendesk_list_user_organizations,zendesk_list_group_users,zendesk_list_group_memberships,zendesk_list_macros,zendesk_get_macro";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_get_trigger,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment,zendesk_list_ticket_audits,zendesk_list_ticket_attachments,zendesk_list_organization_users,zendesk_list_user_organizations,zendesk_list_group_users,zendesk_list_group_memberships,zendesk_list_macros,zendesk_get_macro";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);

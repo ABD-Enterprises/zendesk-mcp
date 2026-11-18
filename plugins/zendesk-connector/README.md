@@ -34,7 +34,7 @@ export ZENDESK_READ_ONLY=1
 # zendesk_get_ticket_field,zendesk_list_ticket_forms,\
 # zendesk_get_ticket_form,zendesk_list_views,\
 # zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\
-# zendesk_get_trigger,zendesk_list_ticket_events,\
+# zendesk_get_trigger,zendesk_list_ticket_audits,\
 # zendesk_list_ticket_attachments,zendesk_list_macros,\
 # zendesk_get_macro"
 ```
@@ -316,7 +316,7 @@ The connector ships 31 tools: 28 read tools and 3 write tools.
 - `zendesk_get_view`: read one view by id.
 - `zendesk_list_triggers`: list triggers (ticket business rules) with page-based pagination.
 - `zendesk_get_trigger`: read one trigger by id.
-- `zendesk_list_ticket_events`: list the events of a ticket with page-based pagination.
+- `zendesk_list_ticket_audits`: list the audits of a ticket with page-based pagination.
 - `zendesk_list_ticket_attachments`: list the attachments of a ticket with page-based pagination.
 - `zendesk_list_macros`: list macros with page-based pagination.
 - `zendesk_get_macro`: read one macro by id.

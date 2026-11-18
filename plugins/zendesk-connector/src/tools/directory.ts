@@ -471,23 +471,23 @@ export function registerDirectoryTools(
       // The schema guarantees groupId is a positive safe integer, so it is
       // safe to interpolate into the path.
       const response = await client.request<{
-        memberships: JsonObject[];
+        group_memberships: JsonObject[];
         count?: number;
         next_page?: string | null;
       }>(`/groups/${groupId}/memberships.json`, {
         query: { page, per_page: perPage },
-        collection: "memberships",
+        collection: "group_memberships",
       });
       const count =
         typeof response.count === "number"
           ? response.count
-          : response.memberships.length;
+          : response.group_memberships.length;
       return {
         count,
         page,
         perPage,
         nextPageAvailable: Boolean(response.next_page),
-        memberships: response.memberships,
+        memberships: response.group_memberships,
       };
     },
   );

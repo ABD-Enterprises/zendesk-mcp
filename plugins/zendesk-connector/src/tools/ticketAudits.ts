@@ -6,31 +6,32 @@ import {
 } from "./shared.js";
 import { readAnnotations, type RegisterAllowedTool, type ToolContext } from "./register.js";
 
-export function registerTicketEventTools(
+export function registerTicketAuditTools(
   register: RegisterAllowedTool,
   ctx: ToolContext,
 ): void {
   const { client } = ctx;
 
   register(
-    "zendesk_list_ticket_events",
+    "zendesk_list_ticket_audits",
     {
-      title: "List Zendesk ticket events",
+      title: "List Zendesk ticket audits",
       description:
-        "List the events on one Zendesk ticket — the audit trail: every " +
-        "change to the ticket, who made it and when, and which automation " +
-        "fired — with page-based pagination. count is Zendesk's total when " +
-        "provided, otherwise this page's length; events holds this page, and " +
-        "nextPageAvailable says whether more pages exist — call again with " +
-        "page to continue. The events carry the ticket's history, not its " +
-        "current fields: read zendesk_get_ticket for those.",
+        "List the audits of one Zendesk ticket — its history: every change " +
+        "made to it, who made it and when, and which automation fired — " +
+        "with page-based pagination. count is Zendesk's total when " +
+        "provided, otherwise this page's length; audits holds this page, " +
+        "and nextPageAvailable says whether more pages exist — call again " +
+        "with page to continue. Each audit carries the events it records " +
+        "under its own events key; the audits carry the ticket's history, " +
+        "not its current fields, so read zendesk_get_ticket for those.",
       inputSchema: z.object({
         ticketId: z
           .number()
           .int()
           .safe()
           .positive()
-          .describe("Id of the ticket to read the events of."),
+          .describe("Id of the ticket to read the audits of."),
         page: z.number().int().positive().default(1),
         perPage: z
           .number()
@@ -46,21 +47,21 @@ export function registerTicketEventTools(
       // The schema guarantees ticketId is a positive safe integer, so it is
       // safe to interpolate into the path.
       const response = await client.request<{
-        events: JsonObject[];
+        audits: JsonObject[];
         count?: number;
         next_page?: string | null;
-      }>(`/tickets/${ticketId}/events.json`, {
+      }>(`/tickets/${ticketId}/audits.json`, {
         query: { page, per_page: perPage },
-        collection: "events",
+        collection: "audits",
       });
       const count =
-        typeof response.count === "number" ? response.count : response.events.length;
+        typeof response.count === "number" ? response.count : response.audits.length;
       return {
         count,
         page,
         perPage,
         nextPageAvailable: Boolean(response.next_page),
-        events: response.events,
+        audits: response.audits,
       };
     },
   );

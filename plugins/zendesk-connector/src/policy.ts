@@ -39,7 +39,7 @@ export const ALL_TOOLS = [
   "zendesk_get_view",
   "zendesk_list_triggers",
   "zendesk_get_trigger",
-  "zendesk_list_ticket_events",
+  "zendesk_list_ticket_audits",
   "zendesk_list_ticket_attachments",
   "zendesk_list_macros",
   "zendesk_get_macro",

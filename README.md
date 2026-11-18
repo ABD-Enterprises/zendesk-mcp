@@ -143,7 +143,7 @@ The connector ships 31 tools: 28 read tools and 3 write tools.
 | `zendesk_get_view` | Read | Read one view by id |
 | `zendesk_list_triggers` | Read | List triggers (ticket business rules) with page-based pagination |
 | `zendesk_get_trigger` | Read | Read one trigger by id |
-| `zendesk_list_ticket_events` | Read | List the events of a ticket with page-based pagination |
+| `zendesk_list_ticket_audits` | Read | List the audits of a ticket with page-based pagination |
 | `zendesk_list_ticket_attachments` | Read | List the attachments of a ticket with page-based pagination |
 | `zendesk_list_macros` | Read | List macros with page-based pagination |
 | `zendesk_get_macro` | Read | Read one macro by id |
@@ -380,11 +380,11 @@ expansion is needed for either of them.
 `zendesk_get_group`); it is part of the default scope, so no default-scope
 expansion is needed for either of them.
 
-The macro tools (`zendesk_list_macros` and `zendesk_get_macro`) are the first
-tools that need a scope the default scope does not include. The module design
-([docs/resource-module-design.md](docs/resource-module-design.md)) names
-`macros:read` as a candidate, not yet verified against a sandbox. Grant it
-deliberately on the Zendesk OAuth client and set `ZENDESK_OAUTH_SCOPE` to
+The macro tools (`zendesk_list_macros` and `zendesk_get_macro`) need a scope
+the default scope does not include, like the trigger tools need `triggers:read`.
+The module design ([docs/resource-module-design.md](docs/resource-module-design.md))
+names `macros:read` as a candidate, not yet verified against a sandbox. Grant
+it deliberately on the Zendesk OAuth client and set `ZENDESK_OAUTH_SCOPE` to
 include it; a token without it gets the account's own HTTP 403, which the tool
 surfaces as an error rather than an empty list. The default scope is unchanged
 until the scope string is verified.

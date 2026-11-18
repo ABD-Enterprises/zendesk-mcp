@@ -97,7 +97,7 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
         "zendesk_list_organization_users",
         "zendesk_list_organizations",
         "zendesk_list_ticket_attachments",
-        "zendesk_list_ticket_events",
+        "zendesk_list_ticket_audits",
         "zendesk_list_ticket_fields",
         "zendesk_list_ticket_forms",
         "zendesk_list_triggers",

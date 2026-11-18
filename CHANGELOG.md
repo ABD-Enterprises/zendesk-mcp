@@ -25,14 +25,17 @@
   `users:read` already cover them.
 
 - Add a read-only `zendesk_list_ticket_attachments` tool: it lists the files
-  attached to one ticket with page-based pagination. The records name the
+  attached to one ticket. Zendesk has no endpoint that lists a ticket's
+  attachments — they hang off the ticket's comments — so the tool reads a
+  page of comments and returns the attachments on them. The records name the
   file and how to read it; the connector does not download the content. It
   needs no OAuth scope or default-scope change: `tickets:read` already covers
   it.
 
-- Add a read-only `zendesk_list_ticket_events` tool: it lists the events on
-  one ticket — the audit trail of every change, who made it and when, and
-  which automation fired — with page-based pagination. It reads the ticket's
+- Add a read-only `zendesk_list_ticket_audits` tool: it lists the audits of
+  one ticket — its history: every change made to it, who made it and when,
+  and which automation fired — with page-based pagination. Each audit carries
+  the events it records under its own `events` key. It reads the ticket's
   history, not its current fields, and needs no OAuth scope or
   default-scope change: `tickets:read` already covers it.
 
