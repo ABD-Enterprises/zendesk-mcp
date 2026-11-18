@@ -583,7 +583,9 @@ npm pack --dry-run
 ```
 
 The tests use mock HTTP responses and in-memory MCP transports. They do not
-require a Zendesk account.
+require a Zendesk account. `npm run check` also runs the DCO sign-off check's
+self-test, which needs the GitHub CLI (`gh`) on the path; it uses no account
+and no network beyond loopback.
 
 ## Security
 
