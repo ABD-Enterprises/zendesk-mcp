@@ -41,6 +41,8 @@ export const ALL_TOOLS = [
   "zendesk_get_trigger",
   "zendesk_list_ticket_events",
   "zendesk_list_ticket_attachments",
+  "zendesk_list_macros",
+  "zendesk_get_macro",
 ] as const;
 
 export type ZendeskToolName = (typeof ALL_TOOLS)[number];

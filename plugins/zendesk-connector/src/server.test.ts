@@ -81,6 +81,7 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
       [
         "zendesk_get_brand",
         "zendesk_get_group",
+        "zendesk_get_macro",
         "zendesk_get_organization",
         "zendesk_get_ticket",
         "zendesk_get_ticket_field",
@@ -92,6 +93,7 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
         "zendesk_list_group_memberships",
         "zendesk_list_group_users",
         "zendesk_list_groups",
+        "zendesk_list_macros",
         "zendesk_list_organization_users",
         "zendesk_list_organizations",
         "zendesk_list_ticket_attachments",
@@ -116,7 +118,7 @@ test("read-only mode withholds the write tools over MCP", async (t) => {
 test("publishes every policy tool in order and serves status over MCP", async (t) => {
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   const originalTools = process.env.ZENDESK_ALLOWED_TOOLS;
-  // An ambient read-only flag would publish twenty tools instead of twenty-three.
+  // An ambient read-only flag would publish twenty-eight tools instead of thirty-one.
   delete process.env.ZENDESK_READ_ONLY;
   // An ambient allowlist would publish a subset instead of the whole policy.
   delete process.env.ZENDESK_ALLOWED_TOOLS;

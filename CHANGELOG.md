@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add read-only `zendesk_list_macros` and `zendesk_get_macro` tools: they
+  list the macros in an account — the prepared answers and actions an agent
+  can apply to a ticket — and read one macro with the actions it applies.
+  Reading macros needs the `macros:read` OAuth scope, which the default scope
+  does not include, so no OAuth scope or default-scope change is made: a
+  deployment grants the scope deliberately in its OAuth client and
+  `ZENDESK_OAUTH_SCOPE`, and a token without it gets the account's own HTTP
+  403.
+
 - Add read-only `zendesk_list_group_users` and `zendesk_list_group_memberships`
   tools: they read who belongs to a group — the users themselves, and the
   memberships that name each member and their role — with page-based

@@ -115,7 +115,7 @@ events, the allowlist, and the versioning policy — is in the
 [tool contracts](docs/tool-contracts.md) reference.
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 29 tools: 26 read tools and 3 write tools.
+The connector ships 31 tools: 28 read tools and 3 write tools.
 
 | Tool | Access | Purpose |
 | --- | --- | --- |
@@ -145,6 +145,8 @@ The connector ships 29 tools: 26 read tools and 3 write tools.
 | `zendesk_get_trigger` | Read | Read one trigger by id |
 | `zendesk_list_ticket_events` | Read | List the events of a ticket with page-based pagination |
 | `zendesk_list_ticket_attachments` | Read | List the attachments of a ticket with page-based pagination |
+| `zendesk_list_macros` | Read | List macros with page-based pagination |
+| `zendesk_get_macro` | Read | Read one macro by id |
 | `zendesk_create_ticket` | Write | Create a ticket |
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
@@ -377,6 +379,15 @@ expansion is needed for either of them.
 `groups:read` covers the group tools (`zendesk_list_groups` and
 `zendesk_get_group`); it is part of the default scope, so no default-scope
 expansion is needed for either of them.
+
+The macro tools (`zendesk_list_macros` and `zendesk_get_macro`) are the first
+tools that need a scope the default scope does not include. The module design
+([docs/resource-module-design.md](docs/resource-module-design.md)) names
+`macros:read` as a candidate, not yet verified against a sandbox. Grant it
+deliberately on the Zendesk OAuth client and set `ZENDESK_OAUTH_SCOPE` to
+include it; a token without it gets the account's own HTTP 403, which the tool
+surfaces as an error rather than an empty list. The default scope is unchanged
+until the scope string is verified.
 
 Override them with `ZENDESK_OAUTH_SCOPE` when your workflow needs a different
 set.

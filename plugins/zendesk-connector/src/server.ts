@@ -11,6 +11,7 @@ import { registerViewTools } from "./tools/views.js";
 import { registerTriggerTools } from "./tools/triggers.js";
 import { registerTicketEventTools } from "./tools/ticketEvents.js";
 import { registerTicketAttachmentTools } from "./tools/ticketAttachments.js";
+import { registerMacroTools } from "./tools/macros.js";
 
 export function createZendeskServer(client = new ZendeskClient()): McpServer {
   const allowedTools = configuredTools();
@@ -41,6 +42,7 @@ export function createZendeskServer(client = new ZendeskClient()): McpServer {
   registerTriggerTools(register, ctx);
   registerTicketEventTools(register, ctx);
   registerTicketAttachmentTools(register, ctx);
+  registerMacroTools(register, ctx);
 
   return server;
 }

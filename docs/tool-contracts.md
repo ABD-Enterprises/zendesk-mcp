@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 29 tools: 26 read tools and 3 write tools.
+The connector ships 31 tools: 28 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -46,6 +46,8 @@ The connector ships 29 tools: 26 read tools and 3 write tools.
 | `zendesk_get_trigger` | Read | Read one trigger by id | `triggerId` int (required) | Yes |
 | `zendesk_list_ticket_events` | Read | List the events of a ticket with page-based pagination | `ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_ticket_attachments` | Read | List the attachments of a ticket with page-based pagination | `ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_macros` | Read | List macros with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_get_macro` | Read | Read one macro by id | `macroId` int (required) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `public` bool (default true); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of non-empty strings (optional) | Yes |
 | `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one non-empty string (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
@@ -361,6 +363,76 @@ reads one.
 Both group tools need the `groups:read` OAuth scope, which is in the default
 scope, so no default-scope change is made.
 
+### Ticket events
+
+`zendesk_list_ticket_events` returns the events on one ticket — the audit
+trail: every change to the ticket, who made it and when, and which automation
+fired — under the `events` key, with the shared list envelope above. The
+endpoint reports a total when the account's response carries one and falls
+back to the page's length otherwise. The events carry the ticket's history,
+not its current fields; `zendesk_get_ticket` reads those.
+
+### Ticket attachments
+
+`zendesk_list_ticket_attachments` returns the files attached to one ticket —
+what the customer sent — under the `attachments` key, with the shared list
+envelope above. The endpoint reports a total when the account's response
+carries one and falls back to the page's length otherwise. The records name
+the file and how to read it; the connector does not download the content.
+
+### Organization and user relationships
+
+`zendesk_list_organization_users` returns the users who belong to one
+organization, under the `users` key, with the shared list envelope above. The
+endpoint reports a total when the account's response carries one and falls
+back to the page's length otherwise. The user's id comes from the users
+themselves; `zendesk_get_user` reads one.
+
+`zendesk_list_user_organizations` returns the organizations one user belongs
+to, under the `organizations` key, with the same envelope. The organization's
+id comes from the organizations themselves; `zendesk_get_organization` reads
+one.
+
+The two tools read the same relationship from both sides: which users an
+organization has, and which organizations a user has. The organization tools
+need the `organizations:read` OAuth scope and the user tools the
+`users:read` scope; both are in the default scope, so no default-scope
+change is made.
+
+### Group members
+
+`zendesk_list_group_users` returns the users who belong to one group, under
+the `users` key, with the shared list envelope above. The endpoint reports a
+total when the account's response carries one and falls back to the page's
+length otherwise.
+
+`zendesk_list_group_memberships` returns the memberships of one group — each
+member and the role the group gives them — under the `memberships` key, with
+the same envelope. A membership names the user id, so `zendesk_get_user`
+reads one.
+
+Both group tools need the `groups:read` OAuth scope, which is in the default
+scope, so no default-scope change is made.
+
+### Macros
+
+`zendesk_list_macros` returns the macros in an account — the prepared answers
+and actions an agent can apply to a ticket — under the `macros` key, with the
+shared list envelope above. The endpoint reports a total when the account's
+response carries one and falls back to the page's length otherwise.
+
+`zendesk_get_macro` returns the Zendesk macro payload — `{ "macro" }` — with
+the macro object as Zendesk returns it, the actions it applies included;
+unknown fields pass through untouched. The id comes from `zendesk_list_macros`.
+If Zendesk rejects an id the account cannot read, its response surfaces
+through the error contract below.
+
+The macro tools need the `macros:read` OAuth scope, which the default scope
+does not include: grant it deliberately on the Zendesk OAuth client and set
+`ZENDESK_OAUTH_SCOPE` to include it. A token without it gets the account's
+own HTTP 403, which the tool surfaces as an error rather than an empty list.
+The default scope is unchanged until the scope string is verified.
+
 ### Write results
 
 `zendesk_create_ticket`, `zendesk_update_ticket`, and
@@ -495,7 +567,7 @@ zendesk_list_ticket_fields,zendesk_get_ticket_field,\
 zendesk_list_ticket_forms,zendesk_get_ticket_form,zendesk_list_views,\
 zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\
 zendesk_get_trigger,zendesk_list_ticket_events,\
-zendesk_list_ticket_attachments"
+zendesk_list_ticket_attachments,zendesk_list_macros,zendesk_get_macro"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 

@@ -188,6 +188,16 @@ const TOOL_DETAILS = {
     inputs:
       "`ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
   },
+  zendesk_list_macros: {
+    summary: "List macros with page-based pagination",
+    inputs:
+      "`page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_get_macro: {
+    summary: "Read one macro by id",
+    inputs:
+      "`macroId` int (required)",
+  },
 
 };
 
