@@ -16,7 +16,7 @@ envelope.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 23 tools: 20 read tools and 3 write tools.
+The connector ships 31 tools: 28 read tools and 3 write tools.
 
 | Tool | Access | Purpose | Inputs (types and defaults) | Audit |
 | --- | --- | --- | --- | --- |
@@ -31,6 +31,10 @@ The connector ships 23 tools: 20 read tools and 3 write tools.
 | `zendesk_get_user` | Read | Read one user by id | `userId` int (required) | Yes |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_organization` | Read | Read one organization by id | `organizationId` int (required) | Yes |
+| `zendesk_list_organization_users` | Read | List the users of an organization with page-based pagination | `organizationId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_user_organizations` | Read | List the organizations of a user with page-based pagination | `userId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_group_users` | Read | List the users of a group with page-based pagination | `groupId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_group_memberships` | Read | List the memberships of a group with page-based pagination | `groupId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) | None | Yes |
 | `zendesk_get_ticket_field` | Read | Read one ticket field by id | `ticketFieldId` int (required) | Yes |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
@@ -40,6 +44,10 @@ The connector ships 23 tools: 20 read tools and 3 write tools.
 | `zendesk_get_view` | Read | Read one view by id | `viewId` int (required) | Yes |
 | `zendesk_list_triggers` | Read | List triggers (ticket business rules) with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
 | `zendesk_get_trigger` | Read | Read one trigger by id | `triggerId` int (required) | Yes |
+| `zendesk_list_ticket_audits` | Read | List the audits of a ticket with page-based pagination | `ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_ticket_attachments` | Read | List the attachments of a ticket with page-based pagination | `ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_list_macros` | Read | List macros with page-based pagination | `page` int (default 1); `perPage` int (default 25, max 100) | Yes |
+| `zendesk_get_macro` | Read | Read one macro by id | `macroId` int (required) | Yes |
 | `zendesk_create_ticket` | Write | Create a ticket | `subject` string (required); `comment` string (required); `public` bool (default true); `requesterEmail` valid email (optional); `requesterName` string (optional); `priority` enum: urgent, high, normal, low (optional); `status` enum: new, open, pending, hold, solved, closed (optional); `type` enum: problem, incident, question, task (optional); `tags` array of non-empty strings (optional) | Yes |
 | `zendesk_update_ticket` | Write | Update common ticket fields | `ticketId` int (required); `subject` string (optional); `priority`, `status`, `type` enums as in create (optional); `tags` array of at least one non-empty string (optional); at least one update field required | Yes |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply | `ticketId` int (required); `body` string (required); `public` bool (default false) | Yes |
@@ -254,13 +262,86 @@ included; unknown fields pass through untouched. The id comes from
 `zendesk_list_triggers`. If Zendesk rejects an id the account cannot read,
 its response surfaces through the error contract below.
 
-The trigger tools are the first tools that need a scope the default scope
-does not include: `triggers:read` is a candidate string from the module
-design ([resource-module-design.md](resource-module-design.md)), not yet
-verified against a sandbox, and the default scope is unchanged. Grant the
-scope deliberately on the Zendesk OAuth client and in
-`ZENDESK_OAUTH_SCOPE`; a token without it gets the account's own permission
-denial (HTTP 403), which reads as an error, not as an empty list.
+The module design names `triggers:read` as a candidate scope pending sandbox
+verification. The default scope excludes it. Grant it on the Zendesk OAuth
+client and include it in `ZENDESK_OAUTH_SCOPE` when using the trigger tools.
+The connector surfaces permission denials as HTTP 403 errors.
+[Resource module design](resource-module-design.md)
+
+### Ticket audits
+
+`zendesk_list_ticket_audits` returns the audits of one ticket — its history:
+every change made to it, who made it and when, and which automation fired —
+under the `audits` key, with the shared list envelope above. The endpoint
+reports a total when the account's response carries one and falls back to the
+page's length otherwise. Each audit carries the events it records under its
+own `events` key, and the audits carry the ticket's history, not its current
+fields; `zendesk_get_ticket` reads those.
+
+### Ticket attachments
+
+`zendesk_list_ticket_attachments` returns the files attached to one ticket —
+what the customer sent — under the `attachments` key. Zendesk has no endpoint
+that lists a ticket's attachments: they hang off the ticket's comments, so the
+tool reads a page of comments and returns the attachments on them. The count is
+the number of attachments on that page, and `nextPageAvailable` says whether
+the ticket has more comments — and so possibly more attachments — to read.
+The records name the file and how to read it; the connector does not download
+the content.
+
+### Organization and user relationships
+
+`zendesk_list_organization_users` returns the users who belong to one
+organization, under the `users` key, with the shared list envelope above. The
+endpoint reports a total when the account's response carries one and falls
+back to the page's length otherwise. The user's id comes from the users
+themselves; `zendesk_get_user` reads one.
+
+`zendesk_list_user_organizations` returns the organizations one user belongs
+to, under the `organizations` key, with the same envelope. The organization's
+id comes from the organizations themselves; `zendesk_get_organization` reads
+one.
+
+The two tools read the same relationship from both sides: which users an
+organization has, and which organizations a user has. The organization tools
+need the `organizations:read` OAuth scope and the user tools the
+`users:read` scope; both are in the default scope, so no default-scope
+change is made.
+
+### Group members
+
+`zendesk_list_group_users` returns the users who belong to one group, under
+the `users` key, with the shared list envelope above. The endpoint reports a
+total when the account's response carries one and falls back to the page's
+length otherwise.
+
+`zendesk_list_group_memberships` returns the memberships of one group — each
+member and the role the group gives them — under the `memberships` key, with
+the same envelope. The endpoint answers with `group_memberships`; the key the
+tool returns is the shorter `memberships`. A membership names the user id, so
+`zendesk_get_user` reads one.
+
+Both group tools need the `groups:read` OAuth scope, which is in the default
+scope, so no default-scope change is made.
+
+### Macros
+
+`zendesk_list_macros` returns the macros in an account — the prepared answers
+and actions an agent can apply to a ticket — under the `macros` key, with the
+shared list envelope above. The endpoint reports a total when the account's
+response carries one and falls back to the page's length otherwise.
+
+`zendesk_get_macro` returns the Zendesk macro payload — `{ "macro" }` — with
+the macro object as Zendesk returns it, the actions it applies included;
+unknown fields pass through untouched. The id comes from `zendesk_list_macros`.
+If Zendesk rejects an id the account cannot read, its response surfaces
+through the error contract below.
+
+`macros:read` is a candidate OAuth scope outside the default set. Whether
+Zendesk offers a per-resource macros scope is unverified. Use the broad
+`read` scope as the fallback if Zendesk rejects `macros:read`. Grant the
+scope on the Zendesk OAuth client and include it in `ZENDESK_OAUTH_SCOPE`.
+The connector surfaces permission denials as HTTP 403 errors.
 
 ### Write results
 
@@ -390,10 +471,13 @@ export ZENDESK_ALLOWED_TOOLS="zendesk_status,zendesk_search_tickets,\
 zendesk_get_ticket,zendesk_list_brands,zendesk_get_brand,\
 zendesk_list_groups,zendesk_get_group,zendesk_list_users,\
 zendesk_get_user,zendesk_list_organizations,zendesk_get_organization,\
+zendesk_list_organization_users,zendesk_list_user_organizations,\
+zendesk_list_group_users,zendesk_list_group_memberships,\
 zendesk_list_ticket_fields,zendesk_get_ticket_field,\
 zendesk_list_ticket_forms,zendesk_get_ticket_form,zendesk_list_views,\
 zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\
-zendesk_get_trigger"
+zendesk_get_trigger,zendesk_list_ticket_audits,\
+zendesk_list_ticket_attachments,zendesk_list_macros,zendesk_get_macro"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 

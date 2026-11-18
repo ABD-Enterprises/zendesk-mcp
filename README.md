@@ -115,7 +115,7 @@ events, the allowlist, and the versioning policy — is in the
 [tool contracts](docs/tool-contracts.md) reference.
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 23 tools: 20 read tools and 3 write tools.
+The connector ships 31 tools: 28 read tools and 3 write tools.
 
 | Tool | Access | Purpose |
 | --- | --- | --- |
@@ -130,6 +130,10 @@ The connector ships 23 tools: 20 read tools and 3 write tools.
 | `zendesk_get_user` | Read | Read one user by id |
 | `zendesk_list_organizations` | Read | List organizations with page-based pagination |
 | `zendesk_get_organization` | Read | Read one organization by id |
+| `zendesk_list_organization_users` | Read | List the users of an organization with page-based pagination |
+| `zendesk_list_user_organizations` | Read | List the organizations of a user with page-based pagination |
+| `zendesk_list_group_users` | Read | List the users of a group with page-based pagination |
+| `zendesk_list_group_memberships` | Read | List the memberships of a group with page-based pagination |
 | `zendesk_list_ticket_fields` | Read | List all ticket fields (one unpaginated response) |
 | `zendesk_get_ticket_field` | Read | Read one ticket field by id |
 | `zendesk_list_ticket_forms` | Read | List ticket forms with page-based pagination |
@@ -139,6 +143,10 @@ The connector ships 23 tools: 20 read tools and 3 write tools.
 | `zendesk_get_view` | Read | Read one view by id |
 | `zendesk_list_triggers` | Read | List triggers (ticket business rules) with page-based pagination |
 | `zendesk_get_trigger` | Read | Read one trigger by id |
+| `zendesk_list_ticket_audits` | Read | List the audits of a ticket with page-based pagination |
+| `zendesk_list_ticket_attachments` | Read | List the attachments of a ticket with page-based pagination |
+| `zendesk_list_macros` | Read | List macros with page-based pagination |
+| `zendesk_get_macro` | Read | Read one macro by id |
 | `zendesk_create_ticket` | Write | Create a ticket |
 | `zendesk_update_ticket` | Write | Update common ticket fields |
 | `zendesk_add_ticket_comment` | Write | Add an internal note or public reply |
@@ -372,14 +380,17 @@ expansion is needed for either of them.
 `zendesk_get_group`); it is part of the default scope, so no default-scope
 expansion is needed for either of them.
 
-The trigger tools (`zendesk_list_triggers` and `zendesk_get_trigger`) are the
-first tools that need a scope the default scope does not include. The module
-design ([docs/resource-module-design.md](docs/resource-module-design.md))
-names `triggers:read` as a candidate, not yet verified against a sandbox.
-Grant it deliberately on the Zendesk OAuth client and set
-`ZENDESK_OAUTH_SCOPE` to include it; a token without it gets the account's
-own HTTP 403, which the tool surfaces as an error rather than an empty list.
-The default scope is unchanged until the scope string is verified.
+The module design names `triggers:read` for the trigger tools
+(`zendesk_list_triggers` and `zendesk_get_trigger`) and `macros:read` for the
+macro tools (`zendesk_list_macros` and `zendesk_get_macro`) as candidate
+scopes pending sandbox verification. Neither candidate is included in the
+default scope. [Resource module design](docs/resource-module-design.md)
+
+Whether Zendesk offers a per-resource macros scope is unverified. Use the
+broad `read` scope as the fallback if Zendesk rejects `macros:read`.
+Grant the scope you need on the Zendesk OAuth client and include it in
+`ZENDESK_OAUTH_SCOPE`. If Zendesk denies a request for insufficient scope,
+the connector surfaces the HTTP 403 as an error.
 
 Override them with `ZENDESK_OAUTH_SCOPE` when your workflow needs a different
 set.

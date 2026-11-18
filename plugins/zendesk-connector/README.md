@@ -28,11 +28,15 @@ export ZENDESK_READ_ONLY=1
 # zendesk_search_tickets,zendesk_get_ticket,zendesk_list_brands,\
 # zendesk_get_brand,zendesk_list_groups,zendesk_get_group,\
 # zendesk_list_users,zendesk_get_user,zendesk_list_organizations,\
-# zendesk_get_organization,zendesk_list_ticket_fields,\
+# zendesk_get_organization,zendesk_list_organization_users,\
+# zendesk_list_user_organizations,zendesk_list_group_users,\
+# zendesk_list_group_memberships,zendesk_list_ticket_fields,\
 # zendesk_get_ticket_field,zendesk_list_ticket_forms,\
 # zendesk_get_ticket_form,zendesk_list_views,\
 # zendesk_list_view_tickets,zendesk_get_view,zendesk_list_triggers,\
-# zendesk_get_trigger"
+# zendesk_get_trigger,zendesk_list_ticket_audits,\
+# zendesk_list_ticket_attachments,zendesk_list_macros,\
+# zendesk_get_macro"
 ```
 <!-- END GENERATED: read-only allowlist example -->
 
@@ -286,7 +290,7 @@ part of `npm run check` or CI.
 ## Tools
 
 <!-- BEGIN GENERATED: tool table -->
-The connector ships 23 tools: 20 read tools and 3 write tools.
+The connector ships 31 tools: 28 read tools and 3 write tools.
 
 - `zendesk_status`: verify OAuth and identify the authenticated user.
 - `zendesk_search_tickets`: search Zendesk with Zendesk search syntax.
@@ -299,6 +303,10 @@ The connector ships 23 tools: 20 read tools and 3 write tools.
 - `zendesk_get_user`: read one user by id.
 - `zendesk_list_organizations`: list organizations with page-based pagination.
 - `zendesk_get_organization`: read one organization by id.
+- `zendesk_list_organization_users`: list the users of an organization with page-based pagination.
+- `zendesk_list_user_organizations`: list the organizations of a user with page-based pagination.
+- `zendesk_list_group_users`: list the users of a group with page-based pagination.
+- `zendesk_list_group_memberships`: list the memberships of a group with page-based pagination.
 - `zendesk_list_ticket_fields`: list all ticket fields (one unpaginated response).
 - `zendesk_get_ticket_field`: read one ticket field by id.
 - `zendesk_list_ticket_forms`: list ticket forms with page-based pagination.
@@ -308,6 +316,10 @@ The connector ships 23 tools: 20 read tools and 3 write tools.
 - `zendesk_get_view`: read one view by id.
 - `zendesk_list_triggers`: list triggers (ticket business rules) with page-based pagination.
 - `zendesk_get_trigger`: read one trigger by id.
+- `zendesk_list_ticket_audits`: list the audits of a ticket with page-based pagination.
+- `zendesk_list_ticket_attachments`: list the attachments of a ticket with page-based pagination.
+- `zendesk_list_macros`: list macros with page-based pagination.
+- `zendesk_get_macro`: read one macro by id.
 - `zendesk_create_ticket`: create a ticket.
 - `zendesk_update_ticket`: update common ticket fields.
 - `zendesk_add_ticket_comment`: add an internal note or public reply.

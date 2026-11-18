@@ -120,6 +120,26 @@ const TOOL_DETAILS = {
     summary: "Read one organization by id",
     inputs: "`organizationId` int (required)",
   },
+  zendesk_list_organization_users: {
+    summary: "List the users of an organization with page-based pagination",
+    inputs:
+      "`organizationId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_list_user_organizations: {
+    summary: "List the organizations of a user with page-based pagination",
+    inputs:
+      "`userId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_list_group_users: {
+    summary: "List the users of a group with page-based pagination",
+    inputs:
+      "`groupId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_list_group_memberships: {
+    summary: "List the memberships of a group with page-based pagination",
+    inputs:
+      "`groupId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
   zendesk_list_ticket_fields: {
     summary: "List all ticket fields (one unpaginated response)",
     inputs: "None",
@@ -157,6 +177,25 @@ const TOOL_DETAILS = {
   zendesk_get_trigger: {
     summary: "Read one trigger by id",
     inputs: "`triggerId` int (required)",
+  },
+  zendesk_list_ticket_audits: {
+    summary: "List the audits of a ticket with page-based pagination",
+    inputs:
+      "`ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_list_ticket_attachments: {
+    summary: "List the attachments of a ticket with page-based pagination",
+    inputs:
+      "`ticketId` int (required); `page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_list_macros: {
+    summary: "List macros with page-based pagination",
+    inputs:
+      "`page` int (default 1); `perPage` int (default 25, max 100)",
+  },
+  zendesk_get_macro: {
+    summary: "Read one macro by id",
+    inputs: "`macroId` int (required)",
   },
 };
 

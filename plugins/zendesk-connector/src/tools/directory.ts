@@ -281,4 +281,214 @@ export function registerDirectoryTools(
       return { organization: response.organization };
     },
   );
+
+  register(
+    "zendesk_list_organization_users",
+    {
+      title: "List the users of a Zendesk organization",
+      description:
+        "List the users who belong to one Zendesk organization, with " +
+        "page-based pagination. count is Zendesk's total when provided, " +
+        "otherwise this page's length; users holds this page, and " +
+        "nextPageAvailable says whether more pages exist — call again with " +
+        "page to continue. Pass a user's id to zendesk_get_user.",
+      inputSchema: z.object({
+        organizationId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the organization to read the users of."),
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    "read",
+    async ({ organizationId, page, perPage }) => {
+      // The schema guarantees organizationId is a positive safe integer, so
+      // it is safe to interpolate into the path.
+      const response = await client.request<{
+        users: JsonObject[];
+        count?: number;
+        next_page?: string | null;
+      }>(`/organizations/${organizationId}/users.json`, {
+        query: { page, per_page: perPage },
+        collection: "users",
+      });
+      const count =
+        typeof response.count === "number" ? response.count : response.users.length;
+      return {
+        count,
+        page,
+        perPage,
+        nextPageAvailable: Boolean(response.next_page),
+        users: response.users,
+      };
+    },
+  );
+
+  register(
+    "zendesk_list_user_organizations",
+    {
+      title: "List the organizations of a Zendesk user",
+      description:
+        "List the organizations one Zendesk user belongs to, with " +
+        "page-based pagination. count is Zendesk's total when provided, " +
+        "otherwise this page's length; organizations holds this page, and " +
+        "nextPageAvailable says whether more pages exist — call again with " +
+        "page to continue. Pass an organization's id to " +
+        "zendesk_get_organization.",
+      inputSchema: z.object({
+        userId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the user to read the organizations of."),
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    "read",
+    async ({ userId, page, perPage }) => {
+      // The schema guarantees userId is a positive safe integer, so it is
+      // safe to interpolate into the path.
+      const response = await client.request<{
+        organizations: JsonObject[];
+        count?: number;
+        next_page?: string | null;
+      }>(`/users/${userId}/organizations.json`, {
+        query: { page, per_page: perPage },
+        collection: "organizations",
+      });
+      const count =
+        typeof response.count === "number"
+          ? response.count
+          : response.organizations.length;
+      return {
+        count,
+        page,
+        perPage,
+        nextPageAvailable: Boolean(response.next_page),
+        organizations: response.organizations,
+      };
+    },
+  );
+
+  register(
+    "zendesk_list_group_users",
+    {
+      title: "List the users of a Zendesk group",
+      description:
+        "List the users who belong to one Zendesk group, with page-based " +
+        "pagination. count is Zendesk's total when provided, otherwise this " +
+        "page's length; users holds this page, and nextPageAvailable says " +
+        "whether more pages exist — call again with page to continue. Pass " +
+        "a user's id to zendesk_get_user.",
+      inputSchema: z.object({
+        groupId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the group to read the users of."),
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    "read",
+    async ({ groupId, page, perPage }) => {
+      // The schema guarantees groupId is a positive safe integer, so it is
+      // safe to interpolate into the path.
+      const response = await client.request<{
+        users: JsonObject[];
+        count?: number;
+        next_page?: string | null;
+      }>(`/groups/${groupId}/users.json`, {
+        query: { page, per_page: perPage },
+        collection: "users",
+      });
+      const count =
+        typeof response.count === "number" ? response.count : response.users.length;
+      return {
+        count,
+        page,
+        perPage,
+        nextPageAvailable: Boolean(response.next_page),
+        users: response.users,
+      };
+    },
+  );
+
+  register(
+    "zendesk_list_group_memberships",
+    {
+      title: "List the memberships of a Zendesk group",
+      description:
+        "List the memberships of one Zendesk group — each member and the " +
+        "role the group gives them — with page-based pagination. count is " +
+        "Zendesk's total when provided, otherwise this page's length; " +
+        "memberships holds this page, and nextPageAvailable says whether " +
+        "more pages exist — call again with page to continue. A membership " +
+        "names the user id, so pass it to zendesk_get_user.",
+      inputSchema: z.object({
+        groupId: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .describe("Id of the group to read the memberships of."),
+        page: z.number().int().positive().default(1),
+        perPage: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE),
+      }),
+      annotations: readAnnotations,
+    },
+    "read",
+    async ({ groupId, page, perPage }) => {
+      // The schema guarantees groupId is a positive safe integer, so it is
+      // safe to interpolate into the path.
+      const response = await client.request<{
+        group_memberships: JsonObject[];
+        count?: number;
+        next_page?: string | null;
+      }>(`/groups/${groupId}/memberships.json`, {
+        query: { page, per_page: perPage },
+        collection: "group_memberships",
+      });
+      const count =
+        typeof response.count === "number"
+          ? response.count
+          : response.group_memberships.length;
+      return {
+        count,
+        page,
+        perPage,
+        nextPageAvailable: Boolean(response.next_page),
+        memberships: response.group_memberships,
+      };
+    },
+  );
 }

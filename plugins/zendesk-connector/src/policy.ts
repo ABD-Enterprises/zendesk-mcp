@@ -26,6 +26,10 @@ export const ALL_TOOLS = [
   "zendesk_get_user",
   "zendesk_list_organizations",
   "zendesk_get_organization",
+  "zendesk_list_organization_users",
+  "zendesk_list_user_organizations",
+  "zendesk_list_group_users",
+  "zendesk_list_group_memberships",
   "zendesk_list_ticket_fields",
   "zendesk_get_ticket_field",
   "zendesk_list_ticket_forms",
@@ -35,6 +39,10 @@ export const ALL_TOOLS = [
   "zendesk_get_view",
   "zendesk_list_triggers",
   "zendesk_get_trigger",
+  "zendesk_list_ticket_audits",
+  "zendesk_list_ticket_attachments",
+  "zendesk_list_macros",
+  "zendesk_get_macro",
 ] as const;
 
 export type ZendeskToolName = (typeof ALL_TOOLS)[number];

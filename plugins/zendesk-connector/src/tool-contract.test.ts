@@ -1546,6 +1546,1069 @@ test("describes the result shape, the continuation and the ticket handoff", asyn
 });
 
 /** A Zendesk client whose endpoints answer with `respond`. */
+const EXAMPLE_TICKET_AUDIT = {
+  id: 900,
+  ticket_id: 42,
+  author_id: 801,
+  created_at: "2026-01-01T00:00:00Z",
+  events: [
+    {
+      id: 9001,
+      type: "Change",
+      field_name: "status",
+      previous_value: "new",
+      value: "open",
+    },
+  ],
+  via: { channel: "web" },
+};
+
+test("lists the audits of a ticket with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/tickets/42/audits.json") {
+      return { audits: [EXAMPLE_TICKET_AUDIT], count: 3, next_page: null };
+    }
+    return { audits: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_ticket_audits",
+      { ticketId: 42, page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/tickets/42/audits.json");
+    assert.equal(request.method, "GET");
+    // The page the caller asked for is the page that is fetched.
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    assert.equal(payload.count, 3);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.audits, [EXAMPLE_TICKET_AUDIT]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports the next page of a ticket's audits when Zendesk sends one", async () => {
+  const { client } = contractClient(() => ({
+    audits: [EXAMPLE_TICKET_AUDIT],
+    next_page:
+      "https://example.zendesk.com/api/v2/tickets/42/audits.json?page=3",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_ticket_audits",
+      { ticketId: 42 },
+    );
+
+    assert.equal(payload.nextPageAvailable, true);
+    // The endpoint sends no total here, so the count falls back to the
+    // length of this page.
+    assert.equal(payload.count, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe ticket id before calling Zendesk for the audits", async () => {
+  const { client, requests } = contractClient(() => ({ audits: [] }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const ticketId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "42",
+    ]) {
+      const result = await callContract(
+        session.client,
+        "zendesk_list_ticket_audits",
+        { ticketId },
+      );
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed events envelope and an API error for a ticket's audits", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname === "/api/v2/tickets/42/audits.json") {
+      return { audits: "not-an-array" };
+    }
+    return { audits: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_ticket_audits",
+      { ticketId: 42 },
+    );
+    assert.equal(malformed.isError, true);
+    // A successful response that does not carry the expected envelope fails
+    // with the fixed message and leaks no part of the raw body.
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "tickets:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_ticket_audits",
+      { ticketId: 42 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+const EXAMPLE_TICKET_ATTACHMENT = {
+  id: 901,
+  file_name: "example.txt",
+  content_type: "text/plain",
+  size: 12,
+  content_url: "https://example.zendesk.com/attachments/901",
+};
+
+// Zendesk has no endpoint that lists a ticket's attachments: they hang off
+// the ticket's comments.
+const EXAMPLE_COMMENT_WITH_ATTACHMENT = {
+  id: 7,
+  body: "Example comment",
+  author_id: 801,
+  attachments: [EXAMPLE_TICKET_ATTACHMENT],
+};
+
+test("lists the attachments of a ticket with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/tickets/42/comments.json") {
+      return {
+        comments: [EXAMPLE_COMMENT_WITH_ATTACHMENT],
+        count: 2,
+        next_page: null,
+      };
+    }
+    return { comments: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_ticket_attachments",
+      { ticketId: 42, page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/tickets/42/comments.json");
+    assert.equal(request.method, "GET");
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    // The count is the number of attachments on this page of comments, not
+    // a total of attachments: Zendesk reports no such total.
+    assert.equal(payload.count, 1);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.attachments, [EXAMPLE_TICKET_ATTACHMENT]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports the next page of a ticket's attachments when Zendesk sends one", async () => {
+  const { client } = contractClient(() => ({
+    comments: [EXAMPLE_COMMENT_WITH_ATTACHMENT],
+    next_page:
+      "https://example.zendesk.com/api/v2/tickets/42/comments.json?page=3",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_ticket_attachments",
+      { ticketId: 42 },
+    );
+
+    assert.equal(payload.nextPageAvailable, true);
+    // The endpoint sends no total here, so the count falls back to the
+    // length of this page.
+    assert.equal(payload.count, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe ticket id before calling Zendesk for the attachments", async () => {
+  const { client, requests } = contractClient(() => ({ comments: [] }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const ticketId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "42",
+    ]) {
+      const result = await callContract(
+        session.client,
+        "zendesk_list_ticket_attachments",
+        { ticketId },
+      );
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed attachments envelope and an API error for a ticket's attachments", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname === "/api/v2/tickets/42/comments.json") {
+      return { comments: "not-an-array" };
+    }
+    return { comments: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_ticket_attachments",
+      { ticketId: 42 },
+    );
+    assert.equal(malformed.isError, true);
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "tickets:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_ticket_attachments",
+      { ticketId: 42 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+const EXAMPLE_ORGANIZATION_USER = {
+  id: 802,
+  name: "Example Organization User",
+  email: "member@example.com",
+};
+
+test("lists the users of an organization with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/organizations/3600/users.json") {
+      return { users: [EXAMPLE_ORGANIZATION_USER], count: 4, next_page: null };
+    }
+    return { users: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_organization_users",
+      { organizationId: 3600, page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/organizations/3600/users.json");
+    assert.equal(request.method, "GET");
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    assert.equal(payload.count, 4);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.users, [EXAMPLE_ORGANIZATION_USER]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports the next page of an organization's users when Zendesk sends one", async () => {
+  const { client } = contractClient(() => ({
+    users: [EXAMPLE_ORGANIZATION_USER],
+    next_page:
+      "https://example.zendesk.com/api/v2/organizations/3600/users.json?page=3",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_organization_users",
+      { organizationId: 3600 },
+    );
+
+    assert.equal(payload.nextPageAvailable, true);
+    // The endpoint sends no total here, so the count falls back to the
+    // length of this page.
+    assert.equal(payload.count, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a bad organization id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ users: [] }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const organizationId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "3600",
+    ]) {
+      const result = await callContract(
+        session.client,
+        "zendesk_list_organization_users",
+        { organizationId },
+      );
+      assert.equal(result.isError, true);
+    }
+    // Nothing reached the mocked Zendesk: the schema refused the input.
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed users envelope and an API error for an organization's users", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname === "/api/v2/organizations/3600/users.json") {
+      return { users: "not-an-array" };
+    }
+    return { users: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_organization_users",
+      { organizationId: 3600 },
+    );
+    assert.equal(malformed.isError, true);
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "organizations:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_organization_users",
+      { organizationId: 3600 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+test("lists the organizations of a user with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/users/801/organizations.json") {
+      return {
+        organizations: [EXAMPLE_ORGANIZATION],
+        count: 1,
+        next_page: null,
+      };
+    }
+    return { organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_user_organizations",
+      { userId: 801, page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/users/801/organizations.json");
+    assert.equal(request.method, "GET");
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    assert.equal(payload.count, 1);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.organizations, [EXAMPLE_ORGANIZATION]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a bad user id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ organizations: [] }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const userId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "801",
+    ]) {
+      const result = await callContract(
+        session.client,
+        "zendesk_list_user_organizations",
+        { userId },
+      );
+      assert.equal(result.isError, true);
+    }
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed organizations envelope and an API error for a user's organizations", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname === "/api/v2/users/801/organizations.json") {
+      return { organizations: "not-an-array" };
+    }
+    return { organizations: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_user_organizations",
+      { userId: 801 },
+    );
+    assert.equal(malformed.isError, true);
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "users:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_user_organizations",
+      { userId: 801 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+const EXAMPLE_GROUP_USER = {
+  id: 803,
+  name: "Example Group User",
+  email: "groupmember@example.com",
+};
+
+const EXAMPLE_GROUP_MEMBERSHIP = {
+  user_id: 803,
+  role: "agent",
+};
+
+test("lists the users of a group with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/groups/4400/users.json") {
+      return { users: [EXAMPLE_GROUP_USER], count: 5, next_page: null };
+    }
+    return { users: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_group_users",
+      { groupId: 4400, page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/groups/4400/users.json");
+    assert.equal(request.method, "GET");
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    assert.equal(payload.count, 5);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.users, [EXAMPLE_GROUP_USER]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports the next page of a group's users when Zendesk sends one", async () => {
+  const { client } = contractClient(() => ({
+    users: [EXAMPLE_GROUP_USER],
+    next_page:
+      "https://example.zendesk.com/api/v2/groups/4400/users.json?page=3",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_group_users",
+      { groupId: 4400 },
+    );
+
+    assert.equal(payload.nextPageAvailable, true);
+    assert.equal(payload.count, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a bad group id before calling Zendesk for the users", async () => {
+  const { client, requests } = contractClient(() => ({ users: [] }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const groupId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "4400",
+    ]) {
+      const result = await callContract(
+        session.client,
+        "zendesk_list_group_users",
+        { groupId },
+      );
+      assert.equal(result.isError, true);
+    }
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed users envelope and an API error for a group's users", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname === "/api/v2/groups/4400/users.json") {
+      return { users: "not-an-array" };
+    }
+    return { users: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_group_users",
+      { groupId: 4400 },
+    );
+    assert.equal(malformed.isError, true);
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "groups:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_group_users",
+      { groupId: 4400 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+test("lists the memberships of a group with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/groups/4400/memberships.json") {
+      return {
+        group_memberships: [EXAMPLE_GROUP_MEMBERSHIP],
+        count: 5,
+        next_page: null,
+      };
+    }
+    return { group_memberships: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_group_memberships",
+      { groupId: 4400, page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/groups/4400/memberships.json");
+    assert.equal(request.method, "GET");
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    assert.equal(payload.count, 5);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.memberships, [EXAMPLE_GROUP_MEMBERSHIP]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a bad group id before calling Zendesk for the memberships", async () => {
+  const { client, requests } = contractClient(() => ({ group_memberships: [] }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const groupId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "4400",
+    ]) {
+      const result = await callContract(
+        session.client,
+        "zendesk_list_group_memberships",
+        { groupId },
+      );
+      assert.equal(result.isError, true);
+    }
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed memberships envelope and an API error for a group's memberships", async () => {
+  const { client } = contractClient((url) => {
+    if (url.pathname === "/api/v2/groups/4400/memberships.json") {
+      return { group_memberships: "not-an-array" };
+    }
+    return { group_memberships: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_group_memberships",
+      { groupId: 4400 },
+    );
+    assert.equal(malformed.isError, true);
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "groups:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_group_memberships",
+      { groupId: 4400 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+const EXAMPLE_MACRO = {
+  id: 4711,
+  title: "Example macro",
+  active: true,
+  actions: [{ field: "status", value: "solved" }],
+};
+
+test("lists the macros of an account with the pagination the contract promises", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/macros.json") {
+      return { macros: [EXAMPLE_MACRO], count: 6, next_page: null };
+    }
+    return { macros: [] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_macros",
+      { page: 2, perPage: 10 },
+    );
+
+    assert.equal(requests.length, 1);
+    const request = requests[0];
+    assert.equal(request.url.pathname, "/api/v2/macros.json");
+    assert.equal(request.method, "GET");
+    assert.equal(request.url.searchParams.get("page"), "2");
+    assert.equal(request.url.searchParams.get("per_page"), "10");
+    assert.equal(payload.count, 6);
+    assert.equal(payload.page, 2);
+    assert.equal(payload.perPage, 10);
+    assert.equal(payload.nextPageAvailable, false);
+    assert.deepEqual(payload.macros, [EXAMPLE_MACRO]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports the next page of the macros when Zendesk sends one", async () => {
+  const { client } = contractClient(() => ({
+    macros: [EXAMPLE_MACRO],
+    next_page: "https://example.zendesk.com/api/v2/macros.json?page=3",
+  }));
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(
+      session.client,
+      "zendesk_list_macros",
+      {},
+    );
+
+    assert.equal(payload.nextPageAvailable, true);
+    // The endpoint sends no total here, so the count falls back to the
+    // length of this page.
+    assert.equal(payload.count, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed macros envelope and an API error for the macros", async () => {
+  const { client } = contractClient(() => ({ macros: "not-an-array" }));
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(
+      session.client,
+      "zendesk_list_macros",
+      {},
+    );
+    assert.equal(malformed.isError, true);
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "macros:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "Forbidden", description: "Missing scope" },
+        }),
+        { status: 403, statusText: "Forbidden" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_list_macros",
+      {},
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    // A token without the macros scope gets the account's own 403, which
+    // surfaces as an error rather than an empty list.
+    assert.equal(payload.status, 403);
+    assert.equal(payload.details.response.error.title, "Forbidden");
+  } finally {
+    await failingSession.close();
+  }
+});
+
+test("reads one macro by id and returns the macro object untouched", async () => {
+  const { client, requests } = contractClient((url) => {
+    if (url.pathname === "/api/v2/macros/4711.json") {
+      return { macro: EXAMPLE_MACRO, unknown_macro_field: "kept" };
+    }
+    return { macros: [EXAMPLE_MACRO] };
+  });
+  const session = await connectContracts(client);
+
+  try {
+    const payload = await contractPayload(session.client, "zendesk_get_macro", {
+      macroId: 4711,
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url.pathname, "/api/v2/macros/4711.json");
+    assert.equal(requests[0].method, "GET");
+    // The contract says the payload is exactly the macro object, and fields
+    // the connector does not know survive untouched.
+    assert.deepEqual(Object.keys(payload), ["macro"]);
+    assert.deepEqual(payload.macro, EXAMPLE_MACRO);
+  } finally {
+    await session.close();
+  }
+});
+
+test("rejects a missing, non-positive, fractional or unsafe macro id before calling Zendesk", async () => {
+  const { client, requests } = contractClient(() => ({ macro: EXAMPLE_MACRO }));
+  const session = await connectContracts(client);
+
+  try {
+    for (const macroId of [
+      undefined,
+      0,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "4711",
+    ]) {
+      const result = await callContract(session.client, "zendesk_get_macro", {
+        macroId,
+      });
+      assert.equal(result.isError, true);
+    }
+    assert.equal(requests.length, 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports a malformed macro envelope and an API error for a macro", async () => {
+  const { client } = contractClient(() => ({ macro: "not-an-object" }));
+  const session = await connectContracts(client);
+
+  try {
+    const malformed = await callContract(session.client, "zendesk_get_macro", {
+      macroId: 4711,
+    });
+    assert.equal(malformed.isError, true);
+    assert.deepEqual(JSON.parse(malformed.text), {
+      error: INVALID_ENVELOPE_MESSAGE,
+    });
+  } finally {
+    await session.close();
+  }
+
+  const failing = new ZendeskClient(
+    {
+      baseUrl: "https://example.zendesk.com",
+      mode: "access_token",
+      accessToken: "oauth-access-token",
+      tokenFile: "/unused/oauth.json",
+      scope: "macros:read",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { title: "RecordNotFound", description: "Not found" },
+        }),
+        { status: 404, statusText: "Not Found" },
+      ),
+  );
+  const failingSession = await connectContracts(failing);
+
+  try {
+    const result = await callContract(
+      failingSession.client,
+      "zendesk_get_macro",
+      { macroId: 4711 },
+    );
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.text);
+    assert.equal(payload.status, 404);
+    assert.equal(payload.details.response.error.title, "RecordNotFound");
+  } finally {
+    await failingSession.close();
+  }
+});
+
 function contractClient(
   respond: (url: URL) => Record<string, unknown>,
 ): { client: ZendeskClient; requests: RecordedRequest[] } {
@@ -1630,7 +2693,7 @@ function createContractServer(
   const originalReadOnly = process.env.ZENDESK_READ_ONLY;
   process.env.ZENDESK_ALLOWED_TOOLS =
     allowedTools ??
-    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_get_trigger,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment";
+    "zendesk_get_ticket,zendesk_get_user,zendesk_get_organization,zendesk_get_view,zendesk_get_brand,zendesk_get_group,zendesk_get_ticket_field,zendesk_get_ticket_form,zendesk_get_trigger,zendesk_search_tickets,zendesk_create_ticket,zendesk_update_ticket,zendesk_add_ticket_comment,zendesk_list_ticket_audits,zendesk_list_ticket_attachments,zendesk_list_organization_users,zendesk_list_user_organizations,zendesk_list_group_users,zendesk_list_group_memberships,zendesk_list_macros,zendesk_get_macro";
   delete process.env.ZENDESK_READ_ONLY;
   try {
     return createZendeskServer(zendesk);

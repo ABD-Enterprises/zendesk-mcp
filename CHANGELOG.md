@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- Add read-only `zendesk_list_macros` and `zendesk_get_macro` tools: they
+  list the macros in an account — the prepared answers and actions an agent
+  can apply to a ticket — and read one macro with the actions it applies.
+  Reading macros needs the `macros:read` OAuth scope, which the default scope
+  does not include, so no OAuth scope or default-scope change is made: a
+  deployment grants the scope deliberately in its OAuth client and
+  `ZENDESK_OAUTH_SCOPE`, and a token without it gets the account's own HTTP
+  403.
+
+- Add read-only `zendesk_list_group_users` and `zendesk_list_group_memberships`
+  tools: they read who belongs to a group — the users themselves, and the
+  memberships that name each member and their role — with page-based
+  pagination. They need no OAuth scope or default-scope change:
+  `groups:read` already covers them.
+
+- Add read-only `zendesk_list_organization_users` and
+  `zendesk_list_user_organizations` tools: they read the organization and
+  user relationship from both sides — which users an organization has, and
+  which organizations a user belongs to — with page-based pagination. They
+  need no OAuth scope or default-scope change: `organizations:read` and
+  `users:read` already cover them.
+
+- Add a read-only `zendesk_list_ticket_attachments` tool: it lists the files
+  attached to one ticket. Zendesk has no endpoint that lists a ticket's
+  attachments — they hang off the ticket's comments — so the tool reads a
+  page of comments and returns the attachments on them. The records name the
+  file and how to read it; the connector does not download the content. It
+  needs no OAuth scope or default-scope change: `tickets:read` already covers
+  it.
+
+- Add a read-only `zendesk_list_ticket_audits` tool: it lists the audits of
+  one ticket — its history: every change made to it, who made it and when,
+  and which automation fired — with page-based pagination. Each audit carries
+  the events it records under its own `events` key. It reads the ticket's
+  history, not its current fields, and needs no OAuth scope or
+  default-scope change: `tickets:read` already covers it.
+
 - Pull requests are now welcome with a DCO sign-off (`git commit -s`): `CONTRIBUTING.md` says so, and a new `dco` workflow checks the sign-off on pull requests from outside contributors.
 - [INTERNAL] The licence changes from MIT to Apache-2.0, with a NOTICE file. Releases published before this change keep the MIT licence they shipped with; only new releases carry Apache-2.0.
 - Add read-only `zendesk_list_triggers` and `zendesk_get_trigger` tools: they

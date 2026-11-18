@@ -47,6 +47,14 @@ const EXERCISED_TOOLS = [
   "zendesk_get_view",
   "zendesk_list_triggers",
   "zendesk_get_trigger",
+  "zendesk_list_ticket_audits",
+  "zendesk_list_ticket_attachments",
+  "zendesk_list_organization_users",
+  "zendesk_list_user_organizations",
+  "zendesk_list_group_users",
+  "zendesk_list_group_memberships",
+  "zendesk_list_macros",
+  "zendesk_get_macro",
 ];
 
 // The trigger the mock reports first, so the harness reads this one.
@@ -68,6 +76,17 @@ const EXAMPLE_TICKET_FORM_ID = 1;
 // this one.
 const EXAMPLE_VIEW_ID = 401;
 
+// The organization the mock reports first, so the harness reads the users
+// of this one.
+const EXAMPLE_ORGANIZATION_ID = 503;
+
+// The user the mock reports first, so the harness reads the organizations
+// of this one.
+const EXAMPLE_USER_ID = 7001;
+
+// The macro the mock reports first, so the harness reads this one.
+const EXAMPLE_MACRO_ID = 801;
+
 // The exact set of endpoints the harness is expected to fetch, keyed by
 // pathname; compared as a set so no assertion depends on hand-written sort
 // order (and so default page/per_page query parameters cannot break it).
@@ -84,6 +103,13 @@ const EXPECTED_REQUESTS = [
   `GET /api/v2/ticket_forms/${EXAMPLE_TICKET_FORM_ID}.json`,
   "GET /api/v2/tickets/601.json",
   "GET /api/v2/tickets/601/comments.json",
+  "GET /api/v2/tickets/601/audits.json",
+  `GET /api/v2/organizations/${EXAMPLE_ORGANIZATION_ID}/users.json`,
+  `GET /api/v2/users/${EXAMPLE_USER_ID}/organizations.json`,
+  `GET /api/v2/groups/${EXAMPLE_GROUP_ID}/users.json`,
+  `GET /api/v2/groups/${EXAMPLE_GROUP_ID}/memberships.json`,
+  "GET /api/v2/macros.json",
+  `GET /api/v2/macros/${EXAMPLE_MACRO_ID}.json`,
   "GET /api/v2/users.json",
   "GET /api/v2/users/me.json",
   "GET /api/v2/views.json",
@@ -131,7 +157,7 @@ test("harness runs the read-only tools against a local mock Zendesk", async (t) 
   for (const tool of EXERCISED_TOOLS) {
     assert.match(run.stdout, new RegExp(`^harness: PASS ${tool}$`, "m"));
   }
-  assert.match(run.stdout, /^harness: 18 passed, 0 failed$/m);
+  assert.match(run.stdout, /^harness: 26 passed, 0 failed$/m);
 
   // The harness fetched exactly the expected endpoints, as a set.
   assert.deepEqual(new Set(mock.state.requests), new Set(EXPECTED_REQUESTS));
@@ -226,6 +252,71 @@ test("harness fails when the views endpoint returns a malformed payload", async 
   // The views collection has to be a list of records: a payload that is
   // not one must fail the run instead of passing it silently.
   const mock = await startMockZendesk({
+    "GET /api/v2/tickets/601/audits.json": () => ({
+      count: 1,
+      next_page: null,
+      audits: [
+        {
+          id: 9101,
+          ticket_id: 601,
+          author_id: 7001,
+          created_at: "2026-01-01T00:00:00Z",
+          events: [
+            {
+              id: 9102,
+              type: "Change",
+              field_name: "status",
+              previous_value: "new",
+              value: "open",
+            },
+          ],
+          via: { channel: "web" },
+        },
+      ],
+    }),
+    [`GET /api/v2/organizations/${EXAMPLE_ORGANIZATION_ID}/users.json`]: () => ({
+      count: 1,
+      next_page: null,
+      users: [{ id: 7002, name: "Example Requester", email: "requester@example.test" }],
+    }),
+    [`GET /api/v2/users/${EXAMPLE_USER_ID}/organizations.json`]: () => ({
+      count: 1,
+      next_page: null,
+      organizations: [{ id: EXAMPLE_ORGANIZATION_ID, name: "Example Org" }],
+    }),
+    [`GET /api/v2/groups/${EXAMPLE_GROUP_ID}/users.json`]: () => ({
+      count: 1,
+      next_page: null,
+      users: [{ id: 7001, name: "Example Agent", email: "agent@example.test" }],
+    }),
+    [`GET /api/v2/groups/${EXAMPLE_GROUP_ID}/memberships.json`]: () => ({
+      count: 1,
+      next_page: null,
+      // Zendesk answers this endpoint with group_memberships.
+      group_memberships: [
+        { id: 9201, group_id: EXAMPLE_GROUP_ID, user_id: 7001, default: true },
+      ],
+    }),
+    "GET /api/v2/macros.json": () => ({
+      count: 1,
+      next_page: null,
+      macros: [
+        {
+          id: EXAMPLE_MACRO_ID,
+          title: "Example macro",
+          active: true,
+          actions: [{ field: "status", value: "solved" }],
+        },
+      ],
+    }),
+    [`GET /api/v2/macros/${EXAMPLE_MACRO_ID}.json`]: () => ({
+      macro: {
+        id: EXAMPLE_MACRO_ID,
+        title: "Example macro",
+        active: true,
+        actions: [{ field: "status", value: "solved" }],
+      },
+    }),
     "GET /api/v2/views.json": () => ({ views: "not-a-list" }),
   });
   t.after(() => closeMock(mock));
@@ -252,6 +343,71 @@ test("harness skips the view-tickets step when the account lists no views", asyn
   // step passes on the empty list and the view-tickets step is skipped
   // rather than failed.
   const mock = await startMockZendesk({
+    "GET /api/v2/tickets/601/audits.json": () => ({
+      count: 1,
+      next_page: null,
+      audits: [
+        {
+          id: 9101,
+          ticket_id: 601,
+          author_id: 7001,
+          created_at: "2026-01-01T00:00:00Z",
+          events: [
+            {
+              id: 9102,
+              type: "Change",
+              field_name: "status",
+              previous_value: "new",
+              value: "open",
+            },
+          ],
+          via: { channel: "web" },
+        },
+      ],
+    }),
+    [`GET /api/v2/organizations/${EXAMPLE_ORGANIZATION_ID}/users.json`]: () => ({
+      count: 1,
+      next_page: null,
+      users: [{ id: 7002, name: "Example Requester", email: "requester@example.test" }],
+    }),
+    [`GET /api/v2/users/${EXAMPLE_USER_ID}/organizations.json`]: () => ({
+      count: 1,
+      next_page: null,
+      organizations: [{ id: EXAMPLE_ORGANIZATION_ID, name: "Example Org" }],
+    }),
+    [`GET /api/v2/groups/${EXAMPLE_GROUP_ID}/users.json`]: () => ({
+      count: 1,
+      next_page: null,
+      users: [{ id: 7001, name: "Example Agent", email: "agent@example.test" }],
+    }),
+    [`GET /api/v2/groups/${EXAMPLE_GROUP_ID}/memberships.json`]: () => ({
+      count: 1,
+      next_page: null,
+      // Zendesk answers this endpoint with group_memberships.
+      group_memberships: [
+        { id: 9201, group_id: EXAMPLE_GROUP_ID, user_id: 7001, default: true },
+      ],
+    }),
+    "GET /api/v2/macros.json": () => ({
+      count: 1,
+      next_page: null,
+      macros: [
+        {
+          id: EXAMPLE_MACRO_ID,
+          title: "Example macro",
+          active: true,
+          actions: [{ field: "status", value: "solved" }],
+        },
+      ],
+    }),
+    [`GET /api/v2/macros/${EXAMPLE_MACRO_ID}.json`]: () => ({
+      macro: {
+        id: EXAMPLE_MACRO_ID,
+        title: "Example macro",
+        active: true,
+        actions: [{ field: "status", value: "solved" }],
+      },
+    }),
     "GET /api/v2/views.json": () => ({ count: 0, next_page: null, views: [] }),
   });
   t.after(() => closeMock(mock));
@@ -272,7 +428,7 @@ test("harness skips the view-tickets step when the account lists no views", asyn
   assert.match(run.stdout, /^harness: PASS zendesk_list_views$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_list_view_tickets: .*$/m);
   assert.match(run.stdout, /^harness: SKIP zendesk_get_view: .*$/m);
-  assert.match(run.stdout, /^harness: 15 passed, 0 failed, 2 skipped$/m);
+  assert.match(run.stdout, /^harness: 21 passed, 0 failed, 2 skipped$/m);
   assert.ok(
     !mock.state.requests.some((request) => request.includes("/tickets.json")),
     `the view-tickets endpoint must not be called without a view, received ${JSON.stringify(mock.state.requests)}`,
@@ -316,7 +472,7 @@ test("harness skips the trigger steps when the token lacks the trigger scope", a
     /^harness: SKIP zendesk_list_triggers: the sandbox token lacks the scope this tool needs$/m,
   );
   assert.match(run.stdout, /^harness: SKIP zendesk_get_trigger: .*$/m);
-  assert.match(run.stdout, /^harness: 15 passed, 0 failed, 2 skipped$/m);
+  assert.match(run.stdout, /^harness: 21 passed, 0 failed, 2 skipped$/m);
   assert.ok(
     !mock.state.requests.some((request) => request.includes("/triggers/")),
     `the trigger detail endpoint must not be called without a trigger, received ${JSON.stringify(mock.state.requests)}`,
@@ -493,6 +649,71 @@ async function startMockZendesk(overrides = {}) {
       ],
       users: [{ id: 7001, name: "Example Agent" }],
       next_page: null,
+    }),
+    "GET /api/v2/tickets/601/audits.json": () => ({
+      count: 1,
+      next_page: null,
+      audits: [
+        {
+          id: 9101,
+          ticket_id: 601,
+          author_id: 7001,
+          created_at: "2026-01-01T00:00:00Z",
+          events: [
+            {
+              id: 9102,
+              type: "Change",
+              field_name: "status",
+              previous_value: "new",
+              value: "open",
+            },
+          ],
+          via: { channel: "web" },
+        },
+      ],
+    }),
+    [`GET /api/v2/organizations/${EXAMPLE_ORGANIZATION_ID}/users.json`]: () => ({
+      count: 1,
+      next_page: null,
+      users: [{ id: 7002, name: "Example Requester", email: "requester@example.test" }],
+    }),
+    [`GET /api/v2/users/${EXAMPLE_USER_ID}/organizations.json`]: () => ({
+      count: 1,
+      next_page: null,
+      organizations: [{ id: EXAMPLE_ORGANIZATION_ID, name: "Example Org" }],
+    }),
+    [`GET /api/v2/groups/${EXAMPLE_GROUP_ID}/users.json`]: () => ({
+      count: 1,
+      next_page: null,
+      users: [{ id: 7001, name: "Example Agent", email: "agent@example.test" }],
+    }),
+    [`GET /api/v2/groups/${EXAMPLE_GROUP_ID}/memberships.json`]: () => ({
+      count: 1,
+      next_page: null,
+      // Zendesk answers this endpoint with group_memberships.
+      group_memberships: [
+        { id: 9201, group_id: EXAMPLE_GROUP_ID, user_id: 7001, default: true },
+      ],
+    }),
+    "GET /api/v2/macros.json": () => ({
+      count: 1,
+      next_page: null,
+      macros: [
+        {
+          id: EXAMPLE_MACRO_ID,
+          title: "Example macro",
+          active: true,
+          actions: [{ field: "status", value: "solved" }],
+        },
+      ],
+    }),
+    [`GET /api/v2/macros/${EXAMPLE_MACRO_ID}.json`]: () => ({
+      macro: {
+        id: EXAMPLE_MACRO_ID,
+        title: "Example macro",
+        active: true,
+        actions: [{ field: "status", value: "solved" }],
+      },
     }),
     "GET /api/v2/views.json": () => ({
       count: 2,
