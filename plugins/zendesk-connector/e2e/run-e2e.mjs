@@ -572,7 +572,6 @@ function buildSteps(ticketId) {
     // A token without the macros scope is denied with 403, and an account
     // may hold no macros at all; both are skipped rather than failed.
     allowForbidden: true,
-    allowEmpty: true,
     verify: (data) => {
       const macros = expectArray(data, "macros");
       expectEnvelope(data, macros.length);
