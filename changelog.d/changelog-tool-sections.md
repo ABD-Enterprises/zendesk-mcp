@@ -1,0 +1,1 @@
+- [Changed] Sync `scripts/changelog.py` with the fleet copy, which now accepts an optional `changelog.d/sections.json` for a repository's own tags. This repository has no such file, so nothing changes here.

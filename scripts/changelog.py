@@ -18,7 +18,7 @@ or more entries:
     - [Changed] What changed and why it matters (#123)
       An indented line continues the entry above it.
 
-The tag is one of the Keep a Changelog sections below. `assemble` puts each entry, without its tag, at
+The tag is one of the Keep a Changelog sections below (or of the repository's own, see changelog.d/sections.json). `assemble` puts each entry, without its tag, at
 the end of the first `### <Section>` list in Unreleased (adding the list heading when it is missing),
 in file-name order.
 
@@ -32,22 +32,35 @@ typo in an existing Unreleased entry reads as an added line and fails the guard:
 release PR that moves the section under a version heading. Hidden files in changelog.d/ (.DS_Store) are ignored. CI runs it on pull requests with --base HEAD^1: the checkout is the PR merged
 into its base, so HEAD^1 is the base tip.
 
+A repository whose changelog uses other tags may add an optional changelog.d/sections.json:
+
+    {"sections": ["BREAKING", "FEATURE", "FIX"], "style": "heading", "heading": "### [{tag}]"}
+
+"sections" lists the allowed tags. "style" is "heading" (the default: entries go under the heading made from
+"heading", default "### {tag}", with "{tag}" replaced) or "flat" (each entry is written as `- [TAG] text`, tag
+kept, at the end of Unreleased). Without the file nothing changes.
+
 Runs on Python 3.9 (macOS /usr/bin/python3): no 3.10+ syntax. Exit 0 = clean, 1 = findings, 2 = usage
 or git error.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
 
-SECTIONS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
+DEFAULT_SECTIONS = SECTIONS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
+TAG = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
+CONFIG_FILE = "sections.json"
+FLAT = False  # entries are written as `- [TAG] text` instead of under a heading
+HEADING = "### {tag}"
 UNRELEASED_HEADINGS = ("## Unreleased", "## [Unreleased]")
 NOTES_DIR = "changelog.d"
-SKIP = {"README.md"}
+SKIP = {"README.md", CONFIG_FILE}
 NOTE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 
 Entry = tuple[str, list[str]]  # (section, lines with the tag removed)
@@ -55,6 +68,31 @@ Entry = tuple[str, list[str]]  # (section, lines with the tag removed)
 
 class NoteError(ValueError):
     pass
+
+
+def load_config(root: Path) -> None:
+    """Read the optional changelog.d/sections.json into the module settings (defaults when absent).
+
+    The settings are per process: this is a command-line tool, and `check` and `main` load them for their root.
+    """
+    global SECTIONS, FLAT, HEADING
+    SECTIONS, FLAT, HEADING = DEFAULT_SECTIONS, False, "### {tag}"
+    path = root / NOTES_DIR / CONFIG_FILE
+    if not path.is_file():
+        return
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+        sections, style, heading = config["sections"], config.get("style", "heading"), config.get("heading", "### {tag}")
+        valid = (isinstance(config, dict) and isinstance(sections, list) and sections and len(set(sections)) == len(sections)
+                 and all(isinstance(t, str) and TAG.fullmatch(t) for t in sections)
+                 and style in ("heading", "flat") and isinstance(heading, str) and heading.startswith("### ") and "{tag}" in heading and "\n" not in heading and "\r" not in heading
+                 and set(config) <= {"sections", "style", "heading"})
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        raise NoteError(f"{NOTES_DIR}/{CONFIG_FILE}: unreadable ({exc})") from None
+    if not valid:
+        raise NoteError(f"{NOTES_DIR}/{CONFIG_FILE}: need \"sections\" (unique tags of letters, digits, '_' and '-'), "
+                        "\"style\" 'heading' or 'flat', and a \"heading\" starting '### ' and containing {tag}; no other keys")
+    SECTIONS, FLAT, HEADING = tuple(sections), style == "flat", heading
 
 
 def parse_note(name: str, text: str) -> list[Entry]:
@@ -115,12 +153,19 @@ def assemble(changelog: str, entries: list[Entry]) -> str:
     lines = changelog.split("\n")
     for section, body in entries:
         start, end = unreleased_bounds(lines)
-        heading = next((i for i in range(start + 1, end) if lines[i].rstrip() == f"### {section}"), None)
+        if FLAT:
+            at = end
+            while at > start + 1 and not lines[at - 1].strip():
+                at -= 1
+            lines[at:at] = [f"- [{section}] {body[0][2:]}", *body[1:]]
+            continue
+        wanted = HEADING.replace("{tag}", section)
+        heading = next((i for i in range(start + 1, end) if lines[i].rstrip() == wanted), None)
         if heading is None:
             at = end
             while at > start + 1 and not lines[at - 1].strip():
                 at -= 1
-            lines[at:at] = ["", f"### {section}", *body]
+            lines[at:at] = ["", wanted, *body]
             continue
         at = next((i for i in range(heading + 1, end) if lines[i].startswith("#")), end)
         while at > heading + 1 and not lines[at - 1].strip():
@@ -161,7 +206,10 @@ def unreleased_findings(root: Path, base: str) -> list[str]:
 
 
 def is_section_heading(line: str) -> bool:
-    return line.startswith("### ") and line[4:].strip() in SECTIONS
+    line = line.rstrip()
+    prefix, _, suffix = HEADING.partition("{tag}")
+    name = line[len(prefix):len(line) - len(suffix)] if suffix else line[len(prefix):]
+    return not FLAT and line.startswith(prefix) and line.endswith(suffix) and name.strip() in SECTIONS
 
 
 def folded_entries(root: Path, merge_base: str) -> list[Entry]:
@@ -199,6 +247,7 @@ def folded_entries(root: Path, merge_base: str) -> list[Entry]:
 
 
 def check(root: Path, base: str | None) -> list[str]:
+    load_config(root)
     findings = []
     for path in note_paths(root):
         if path.suffix != ".md":
@@ -226,6 +275,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args(argv)
     root: Path = args.root
+    try:
+        load_config(root)
+    except NoteError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
     if args.command == "check":
         try:
