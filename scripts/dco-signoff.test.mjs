@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -121,21 +122,33 @@ const NOT_REPORTED = [
 // enterprise token over GH_TOKEN for it, so an inherited
 // GH_ENTERPRISE_TOKEN would be sent to the loopback mock server - a live
 // credential reaching a port the test opens.
+//
+// The CLI's own configuration is a credential source as well: an entry for
+// 127.0.0.1 in the stored hosts file is sent to the mock server even
+// when the environment is cleared. The child therefore gets a configuration
+// directory of its own, empty, so no stored credential is read either.
 const PLACEHOLDER_TOKEN = "dco-signoff-self-test-placeholder";
 
 // Run the `gh api` invocation and collect its output. The call is
 // asynchronous on purpose: the mock server runs in this process, so a
 // synchronous child process would block the event loop that has to answer
 // the request.
-function runGhApi(url) {
+function runGhApi(url, overrides = {}) {
   return new Promise((resolve, reject) => {
+    // A configuration directory of the test's own, so the CLI reads no
+    // stored credential.
+    const configDirectory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "dco-signoff-gh-"),
+    );
     const child = spawn("gh", ["api", "--paginate", url, "--jq", FILTER], {
       env: {
         ...process.env,
+        ...overrides,
         GH_TOKEN: PLACEHOLDER_TOKEN,
         GITHUB_TOKEN: "",
         GH_ENTERPRISE_TOKEN: "",
         GITHUB_ENTERPRISE_TOKEN: "",
+        GH_CONFIG_DIR: configDirectory,
       },
     });
     let stdout = "";
@@ -167,6 +180,7 @@ function runGhApi(url) {
     }, 30_000);
     child.on("close", (status) => {
       clearTimeout(timer);
+      fs.rmSync(configDirectory, { recursive: true, force: true });
       resolve({ status, stdout, stderr });
     });
   });
@@ -204,6 +218,35 @@ test("the filter the workflow ships reports the commits without a sign-off", asy
     .sort();
   const expected = REPORTED.map(([, value]) => value.sha.slice(0, 12)).sort();
   assert.deepEqual(reported, expected);
+});
+
+test("no stored credential reaches the mock server", async () => {
+  // The CLI's own configuration is a credential source as well: a stored
+  // entry that authenticates the loopback address is sent to the mock
+  // server even when the environment is cleared. The child reads a
+  // configuration directory of its own, so nothing stored is sent.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dco-signoff-home-"));
+  fs.mkdirSync(path.join(home, ".config", "gh"), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, ".config", "gh", "hosts.yml"),
+    "127.0.0.1:\n    oauth_token: fake-hosts-config-token\n",
+  );
+  const received = [];
+  const server = http.createServer((request, response) => {
+    received.push(request.headers.authorization);
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify([{ id: "1" }]));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const result = await runGhApi(`http://127.0.0.1:${port}/commits`, { HOME: home });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(received, [undefined]);
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("a signed commit with Windows line endings is not reported", async () => {
