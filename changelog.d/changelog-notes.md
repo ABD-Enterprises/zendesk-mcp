@@ -1,0 +1,1 @@
+- [Changed] Adopt the fleet changelog notes tool so pull requests can add release entries without conflicting in CHANGELOG.md.

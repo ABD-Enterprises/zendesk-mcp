@@ -50,11 +50,15 @@ account or contain real customer data or credentials.
   generator's own tests.
 - Run `npm run check` and `npm pack --dry-run` before opening a pull request.
 
-Ordinary changes add no changelog entry. Write an entry into the `Unreleased`
-section of `CHANGELOG.md` only when a user-facing change is deliberately being
-recorded: replace the placeholder line there and leave the released version
-sections untouched. At release preparation, the `Unreleased` section becomes
-the new version section and a fresh `Unreleased` section is started.
+Ordinary changes add no changelog entry. To record a user-facing change
+deliberately, add a note file, `changelog.d/<slug>.md`, with one or more
+entries such as `- [Fixed] What changed and why it matters.` (the section is
+`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security`). Do not
+edit the `Unreleased` section of `CHANGELOG.md` directly: pull request CI
+rejects that. At release preparation, `python3 scripts/changelog.py assemble`
+folds the notes into `Unreleased`, and then the `Unreleased` section becomes
+the new version section and a fresh `Unreleased` section is started. See
+`changelog.d/README.md`.
 
 Use issues for feature proposals that materially expand ticket access or add
 new Zendesk resources so permissions and OAuth scopes can be reviewed first.
