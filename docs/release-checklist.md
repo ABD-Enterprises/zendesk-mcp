@@ -2,7 +2,7 @@
 
 ## Before release
 
-- [ ] Confirm the version and update `CHANGELOG.md`.
+- [ ] Confirm the version, run `python3 scripts/changelog.py assemble` to fold the notes in `changelog.d/` into `## Unreleased`, and update `CHANGELOG.md`. Start the fresh `## Unreleased` section with only a bare `### Changed` heading, not a placeholder line.
 - [ ] Run `npm ci`, `npm run check`, and `npm pack --dry-run` in
   `plugins/zendesk-connector`.
 - [ ] Review the package contents for credentials, customer data, and generated

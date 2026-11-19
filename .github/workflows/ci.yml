@@ -113,6 +113,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The first parent of the pull request merge commit is its base tip.
+          fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
@@ -120,6 +122,11 @@ jobs:
         run: node scripts/check-changelog.mjs
       - name: Run the changelog check self-tests
         run: node scripts/check-changelog.mjs --self-test
+      - name: Check changelog notes
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/changelog.py check --base HEAD^1
+      - name: Run the changelog notes tool self-tests
+        run: node --test scripts/changelog-tool.test.mjs
 
   manifest-preflight:
     runs-on: ${{ fromJSON(vars.LINUX_RUNNER_LABELS) }}

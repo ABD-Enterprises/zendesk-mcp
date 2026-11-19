@@ -66,8 +66,9 @@ patterns the existing fourteen tools already establish:
   outcome ([audit.ts](../plugins/zendesk-connector/src/audit.ts)). New
   modules must not weaken either mechanism.
 - **Versioning.** Adding tools is a minor-version change; changing a shipped
-  tool's contract is a breaking change and belongs in `CHANGELOG.md` under
-  `Unreleased` with the root README called out, per the versioning policy.
+  tool's contract is a breaking change and is recorded as a `changelog.d/` note
+  (it reaches `Unreleased` at release preparation) with the root README called
+  out, per the versioning policy.
 
 ## Known OAuth scope facts (this repository only)
 
@@ -372,7 +373,7 @@ sandbox or test account only for anything that writes.
    paths, verbs, envelopes, and scope strings against current Zendesk
    endpoint documentation; update the candidate markings in this document.
 2. **Read tools first (one module per PR).** Policy entry, generated tool
-   tables, changelog entry under `Unreleased`, hermetic tests, and
+   tables, a `changelog.d/` note, hermetic tests, and
    `npm run check` green before merge. Views' remaining read gap
    (`zendesk_get_view`) can ride with any module's PR or its own.
 3. **Sandbox read validation (blocking for writes).** Record observed
