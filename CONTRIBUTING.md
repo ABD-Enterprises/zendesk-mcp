@@ -57,7 +57,9 @@ entries such as `- [Fixed] What changed and why it matters.` (the section is
 edit the `Unreleased` section of `CHANGELOG.md` directly: pull request CI
 rejects that. At release preparation, `python3 scripts/changelog.py assemble`
 folds the notes into `Unreleased`, and then the `Unreleased` section becomes
-the new version section and a fresh `Unreleased` section is started. See
+the new version section and a fresh `Unreleased` section is started with
+only a bare `### Changed` heading (CI rejects an empty section and a placeholder
+line). See
 `changelog.d/README.md`.
 
 Use issues for feature proposals that materially expand ticket access or add
