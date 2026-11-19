@@ -2,7 +2,7 @@
 
 OAuth-only MCP server and Codex plugin for Zendesk Support, maintained by ABD
 Enterprises. See the public
-[repository README](https://github.com/SureForgeTech/zendesk-mcp#readme) for
+[repository README](https://github.com/SureForgeTech/sureforge-zendesk#readme) for
 installation, configuration, security, and contribution guidance.
 
 ## Configure OAuth
